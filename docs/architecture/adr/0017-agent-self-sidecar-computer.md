@@ -1,7 +1,7 @@
 # ADR 0017: The agent is the self; the workspace is the data plane — pod-per-agent, and tools are scripts with manifests
 
-> Status: accepted
-> Date: 2026-08-09 (revised in place 2026-08-13; 2026-08-14; 2026-08-17; 2026-09-25; 2026-10-28; 2026-11-11)
+> Status: superseded by ADR 0031
+> Date: 2026-08-09 (revised in place 2026-08-13; 2026-08-14; 2026-08-17; 2026-09-25; 2026-10-28; 2026-11-11; 2026-11-21)
 
 ## Contents
 - Context

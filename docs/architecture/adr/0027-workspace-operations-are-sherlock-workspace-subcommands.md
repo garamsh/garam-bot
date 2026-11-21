@@ -1,7 +1,7 @@
 # ADR 0027: The workspace's operations are `sherlock workspace` subcommands that reach it only through its listener
 
-> Status: accepted
-> Date: 2026-10-18
+> Status: superseded by ADR 0031
+> Date: 2026-10-18 (revised in place 2026-11-21)
 
 Drafted for #1111, step 1 of the owner's direction relayed in #1110. Facts about Sherlock hold at `dev` `4709de335d66a14b8884a8a7e6f28445892e12cf`.
 

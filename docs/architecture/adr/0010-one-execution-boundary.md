@@ -1,7 +1,7 @@
 # ADR 0010: One execution boundary — agent-influenced effects under the unprivileged UID
 
-> Status: accepted
-> Date: 2026-08-02 (revised in place 2026-10-10)
+> Status: superseded by ADR 0031
+> Date: 2026-08-02 (revised in place 2026-10-10; 2026-11-21)
 
 ## Context
 

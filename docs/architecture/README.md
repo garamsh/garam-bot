@@ -2,7 +2,9 @@
 
 Current architecture of the system and the decisions behind it. This file is the index; workers read it before touching code, the PM keeps it honest.
 
-One pod per agent, two containers (ADR 0017): the agent container is the agent's self (gateway, reasoning loop, memory, mouth, tool client); the sidecar container is the agent's workspace — the computer: the gRPC data plane serving files and process execution. Tools are scripts the operator installs under `tools/<name>/` with a `manifest.json` and an executable; the platform owns the manifest format, the stdio call protocol, the boundary validation, and the drift pin. The code ships one binary with two subcommands (`sherlock agent`, `sherlock workspace`); first-party and third-party tools ship the same way, as `tools/<name>/` directories. Deployment artifacts live at `build/agent.Dockerfile` and `build/workspace.Dockerfile` (one image each, built by `make build-images`) and `deploy/local/`; the agent image carries the first-party tool executables at `/opt/sherlock/tools/` (ADR 0021), so no third image is built or pushed.
+**garam-bot** is the open-source execution core that runs bots (ADR 0031). The execution unit is the bot; an agent (Claude Code, Codex, or a later in-house implementation) is the harness a bot uses. Control (garam) is optional; garam-bot works from files or Kubernetes CRDs without garam. Five interfaces govern the boundary: declaration spec, agent, workspace provider, control connection protocol, and model gateway. The agent runs inside the workspace; the bot process runs outside. One pod is one PC: one organization's bots, a process per bot.
+
+The current code is the workspace and tool infrastructure from the previous sherlock architecture (ADR 0031). One pod carries two processes: the workspace process serves the gRPC data plane (Read, Write, List, Exec) over a loopback listener; a second process holds the in-house agent loop (gateway, reasoning loop, memory, tool client), which the new direction supersedes. The workspace and tool contracts — gRPC workspace, workspace MCP server, workspace CLI, script-with-manifest tool format — are candidates for the garam-bot agent and workspace provider interfaces (ADR 0031). The code ships one binary (`sherlock`) with subcommands `sherlock workspace` and `sherlock agent`; first-party and third-party tools ship as `tools/<name>/` directories. Deployment artifacts live at `build/agent.Dockerfile` and `build/workspace.Dockerfile` (built by `make build-images`) and `deploy/local/`.
 
 ## Structure
 
@@ -65,6 +67,7 @@ One pod per agent, two containers (ADR 0017): the agent container is the agent's
 - `0028` — `sherlock workspace mcp` is a stdio MCP server whose tools each run one workspace CLI operation as a child process
 - `0029` — the model credential is a file Sherlock re-reads
 - `0030` — every model request of a turn carries one turn identifier
+- `0031` — garam-bot is the execution core for bots; an agent is the harness; the in-house agent loop is superseded
 
 ### Modules
 
