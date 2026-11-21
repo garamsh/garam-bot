@@ -1,23 +1,53 @@
-# sherlock
+# garam-bot
 
-sherlock is an autonomous agent platform written in Go. It runs AI agents that can reason over multi-turn conversations, call tools, and manage their own long-term memory.
+garam-bot is the open-source execution core that runs bots. The execution unit is the bot; an agent (Claude Code, Codex, or a later in-house implementation) is the harness a bot uses. Control (garam) is optional — garam-bot works from files or Kubernetes CRDs without it.
 
 ## Contents
-- Principles
-- Who it is for
+- Architecture
+- Deployments
+- Current state
 - Running
 - Development
 
-## Principles
+## Architecture
 
-- **Two processes per agent: self and workspace.** The agent process holds the gateway (message ingress and the monitoring stream), the reasoning loop, long-term memory, the mouth (outbound messaging), and the script-tool runtime (`internal/tool`) that loads each tool from `tools/<name>/manifest.json` and dispatches calls as one-shot stdio processes (ADR 0017, ADR 0009). The workspace process is the computer: a gRPC server for the filesystem (Read, Write, List) and process execution (Exec) in the workspace directory. Tools are stand-alone executables behind a fixed stdio contract; the agent binary hosts no tool behavior.
-- **The workspace enforces permissions at the action site.** Agent-influenced file writes run under the workspace's own UID, and workspace ownership is kernel-enforced (ADR 0008, ADR 0010). Process exec is the workspace's capability (ADR 0017), surfaced to the model as the `shell_exec` tool: the tool calls the workspace's Exec RPC, and children drop to the configured exec UID and run in the workspace directory, so exec'd programs see the files the tools see. The agent executes nothing. The orchestration layer manages the pod boundary (network egress, mounts, lifecycle).
-- **Capabilities arrive as tools, so the agent is general-purpose.** What an agent can do is the set of tools its operator installs under `tools/`, not code in the agent binary (ADR 0009, ADR 0017). The shipped set works on files, runs commands, sends messages, acts on GitHub, and generates images and speech: `image_generate` and `speech_generate` call a generation endpoint and write the result into the workspace as a file, where the other tools can work on it. Generation is a tool's call to a generation endpoint, never the reasoning model's output.
-- **Memory is source-linked.** Completed turns save visible user and assistant messages before synthesis. Short memory is the rolling recent conversation; each full four-message batch produces a mid episode stored with its summary's embedding. Recall combines two recent episodes with up to five more most similar to the task and pending source previews, with no model call; the agent can inspect saved source messages when it needs exact wording. See [Memory](docs/architecture/memory.md) for recall and context compaction.
+Five interfaces govern every component boundary (ADR 0031):
 
-## Who it is for
+| Interface | Responsibility |
+|---|---|
+| Declaration spec | Bot, Workspace, WorkspaceClass, BotPool objects |
+| Agent | How a harness (Claude Code, Codex) connects and operates a workspace |
+| Workspace provider | Supplies isolated workspaces (the workspace gRPC contract and MCP server are candidates) |
+| Control connection protocol | The optional garam plane's connection to garam-bot |
+| Model gateway | Routes model requests; supports BYOK |
 
-Developers who want to build and operate autonomous agents on a minimal, explicit architecture — without framework lock-in or hidden subsystems.
+The agent runs inside the workspace; the bot process runs outside. The workspace holds only short-lived gateway tokens, never the agent's real credentials. One pod is one PC: one organization's bots, a process per bot. Organizations are not mixed.
+
+Each interface is versioned, has conformance tests, and accepts more than one implementation from the start (ADR 0031).
+
+## Deployments
+
+The four deployment shapes share one configuration:
+
+| Deployment | Description |
+|---|---|
+| Local single | One machine, files as the declaration path |
+| Cloud, your garam-bot | Your cloud host, your garam-bot instance |
+| Your Kubernetes | Kubernetes CRDs as the declaration path |
+| garam cloud | Managed by garam |
+
+## Current state
+
+The current codebase is the workspace and tool infrastructure from the previous sherlock architecture. It does not yet implement the full garam-bot design above; that work begins after neocity #268 and the cluster goals (ADR 0031).
+
+What ships today and carries forward as interface candidates (ADR 0031):
+
+- **Workspace gRPC contract** (Read, Write, List, Exec): the workspace provider interface.
+- **Workspace MCP server** (`sherlock workspace mcp`): the agent interface shape — Claude Code configured here operates a workspace without an in-house loop (ADR 0028).
+- **Workspace CLI operations** (`sherlock workspace read|write|list|exec`): the backing of the MCP server, and the shape a bot process uses to reach a workspace (ADR 0027).
+- **Script-with-manifest tools** (`tools/<name>/manifest.json` and an executable): the tool extension point.
+
+What the current code also ships but the new direction supersedes (ADR 0031): the in-house agent loop (gateway, reasoning loop, memory, mouth), the in-house model clients, and the container-based execution boundary.
 
 ## Running
 

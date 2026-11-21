@@ -1,7 +1,9 @@
 # ADR 0028: `sherlock workspace mcp` is a stdio MCP server whose tools each run one workspace CLI operation as a child process
 
 > Status: accepted
-> Date: 2026-10-18
+> Date: 2026-10-18 (revised in place 2026-11-21)
+
+ADR 0031 is the target replacing this decision. This record describes the shipped workspace MCP server until P2 of ADR 0031 lands.
 
 Drafted for #1112, step 2 of the owner's direction relayed in #1110. Facts about Sherlock hold at `dev` `499108d2bdb884bb648bfebf266381415a486383`.
 

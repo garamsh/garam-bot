@@ -2,6 +2,8 @@
 
 Governs what has to be true to run this workload as a pod: the two processes, what they bind, what they mount, what kills them at boot, what an orchestrator must allow on shutdown, and how an agent's stored state is copied and restored. The architecture behind it is `environment.md` and `security.md`; this file states the operator-facing consequences and does not restate them. Rationale: ADR 0017, ADR 0012, ADR 0008, ADR 0010, ADR 0003, ADR 0020, ADR 0002, ADR 0022, ADR 0024, ADR 0025, ADR 0026, ADR 0029.
 
+The target direction replaces the deployment topology described here — the two-container pod, the in-house agent loop, and the execution boundary (ADR 0031). This document describes the shipped shape until P2 of ADR 0031 lands.
+
 ## Contents
 - The two processes
 - Listeners and the bind gate
