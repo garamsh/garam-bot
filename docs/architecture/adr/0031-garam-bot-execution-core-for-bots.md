@@ -10,6 +10,7 @@
 - Consequences
 - Signs the decision was wrong
 
+
 ## Context
 
 Owner decision recorded at https://github.com/garamsh/discussions/discussions/6#discussioncomment-19791278 (2026-11-21):
@@ -26,32 +27,37 @@ The previous direction — an **in-house agent loop** (gateway, reasoning loop, 
 
 The existing workspace and tool infrastructure is a separable concern: `sherlock workspace mcp` already shows the agent interface shape — Claude Code configured with the workspace MCP server operates a workspace without the in-house loop — and the workspace gRPC contract is a workspace provider interface candidate. The in-house loop does not need to carry forward for these contracts to be useful.
 
-Issue #1172 (2026-10-29) reopened ADR 0010 when hardware-isolated microVMs replaced the container-based execution boundary. This record supersedes ADR 0010 on a wider basis: the entire in-house execution shape is replaced, not only its isolation mechanism.
+Issue #1172 (2026-10-29) reopened ADR 0010 when hardware-isolated microVMs replaced the container-based execution boundary. This record is the target replacing ADR 0010 on a wider basis: the entire in-house execution shape is replaced, not only its isolation mechanism.
 
 ## Decision
 
 garam-bot is the open-source execution core that runs bots. It is not an agent and does not contain a reasoning loop. The in-house agent loop (sherlock), its gateway, and execution on gaon are superseded. The workspace and tool contracts from the previous sherlock architecture are candidates for the garam-bot agent and workspace provider interfaces.
 
-Superseded records, updated in place:
+Records updated in place with this one — each remains accepted and describes the shipped shape until P2 lands:
 
-- **ADR 0017** (agent-self-sidecar-computer): the in-house agent and its pod topology are superseded. The workspace data plane (Read, Write, List, Exec) remains as a workspace provider interface candidate.
-- **ADR 0010** (one-execution-boundary): the in-kernel execution boundary (UID drop, network namespace, seccomp) assumed a container topology this direction does not use. MicroVM isolation replaces it.
-- **ADR 0027** (workspace-operations-are-sherlock-workspace-subcommands): the workspace CLI operations are a workspace provider interface candidate; the sherlock branding they carry is replaced by garam-bot.
-- **ADR 0028** (workspace-mcp-server-runs-workspace-cli-over-stdio): this is the direct candidate for the agent interface shape — an MCP-capable agent (Claude Code) operating a workspace through its listener is the garam-bot agent interface as described in the owner's decision.
+- **ADR 0017** (agent-self-sidecar-computer): the target replacing its pod topology is this record. The workspace data plane (Read, Write, List, Exec) is a workspace provider interface candidate.
+- **ADR 0010** (one-execution-boundary): the target replacing its in-kernel boundary (UID drop, network namespace, seccomp) is this record. MicroVM isolation is the P2 replacement.
+- **ADR 0027** (workspace-operations-are-sherlock-workspace-subcommands): the target replacing the sherlock-branded workspace CLI is this record. The workspace CLI operations are a workspace provider interface candidate.
+- **ADR 0028** (workspace-mcp-server-runs-workspace-cli-over-stdio): the target replacing its workspace MCP server is this record. The workspace MCP server is the direct candidate for the agent interface shape.
 
 ## Memory and tool contracts
 
 ### Kept as candidates for the agent and workspace provider interfaces
 
 - **Workspace gRPC contract** (ADR 0017's data plane): the workspace provider interface. An agent inside the workspace reaches files and exec through it.
-- **Workspace MCP server** (ADR 0028): the agent interface candidate. Claude Code configured with `garam-bot workspace mcp` demonstrates the shape: an MCP-capable agent operating a workspace without the in-house loop.
+- **Workspace MCP server** (ADR 0028): the agent interface candidate. Claude Code configured with `sherlock workspace mcp` demonstrates the shape: an MCP-capable agent operating a workspace without the in-house loop.
 - **Workspace CLI operations** (ADR 0027): the backing of the MCP server, and the shape a bot process or operator uses to reach a workspace directly.
 - **Script-with-manifest tool format** (ADR 0009): the tool extension point. A capability is a directory the operator drops; the platform owns the protocol. The composition model carries forward.
+
+### Kept as a candidate for the bot's memory interface
+
+The bot owns memory — it is part of the bot's identity alongside permissions and its mailbox (§Context). The agent harness is not the owner.
+
+- **In-house memory** (ADR 0002, 0006, 0011, 0018, 0019, 0025): the SQLite-backed episodic, source-linked memory store. It was built as part of the in-house loop, but its concern — persistent, structured memory outside the workspace — is the bot's memory contract, not the agent harness's. It is a candidate for the bot-memory interface. What the P2 bot-memory interface keeps and what it replaces is an open question.
 
 ### Dropped
 
 - **In-house gateway** (ADR 0007, 0012, 0015, 0016, 0026): the HTTP gateway served the in-house reasoning loop. External agents have their own ingress. The control connection protocol (interface 4) is a separate garam-bot interface, not the sherlock gateway.
-- **In-house memory** (ADR 0002, 0006, 0011, 0018, 0019, 0025): the SQLite-backed episodic memory was part of the in-house loop. External agents manage their own memory. The garam-bot memory contract is not a carry-forward of these ADRs.
 - **In-house model access** (ADR 0004, 0029, 0030): model protocol clients inside the loop. The model gateway (interface 5) is a garam-bot interface that external agents route through; it is not the in-process client these ADRs described.
 - **In-house execution boundary** (ADR 0008, 0010): UID drop and in-kernel isolation. MicroVM isolation replaces the container-based boundary.
 - **Tool executables baked into the agent image** (ADR 0021): the in-house agent image shape. garam-bot's image shape is a P2 decision.
@@ -60,7 +66,7 @@ Superseded records, updated in place:
 
 - P0 (documentation and repository cleanup) proceeds now. P1 (interface specifications and conformance test skeletons for the five interfaces) follows. Implementation (P2 and later) begins after neocity #268 and the cluster goals (owner decision, 2026-11-21, https://github.com/garamsh/discussions/discussions/6#discussioncomment-19791278).
 - The current codebase is the workspace and tool infrastructure from the previous sherlock architecture. That infrastructure — the workspace server, the workspace CLI, the workspace MCP server, and the script-with-manifest tool format — is the starting material for the workspace provider and agent interfaces. The in-house agent loop is not carried forward.
-- The responsibility documents and their indexed ADRs describe the previous sherlock architecture as it ships today. Where a document describes something the new direction supersedes, it now points here.
+- The responsibility documents (`environment.md`, `security.md`, `deployment.md`, `memory.md`, `agent.md`) describe the previous sherlock architecture as it ships today, with a pointer at the top of each to this record. The indexed ADRs (0017, 0010, 0027, 0028) carry an in-place pointer line to this record and remain accepted until P2 lands.
 - Closes #1172: the execution shape question that issue reopened is settled by this direction (microVMs; the specific microVM mechanism is a P2 decision for ADR 0010's replacement).
 
 ## Signs the decision was wrong

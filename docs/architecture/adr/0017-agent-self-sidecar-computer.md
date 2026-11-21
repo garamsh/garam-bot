@@ -1,7 +1,9 @@
 # ADR 0017: The agent is the self; the workspace is the data plane — pod-per-agent, and tools are scripts with manifests
 
-> Status: superseded by ADR 0031
+> Status: accepted
 > Date: 2026-08-09 (revised in place 2026-08-13; 2026-08-14; 2026-08-17; 2026-09-25; 2026-10-28; 2026-11-11; 2026-11-21)
+
+ADR 0031 is the target replacing this decision. This record describes the shipped pod topology until P2 of ADR 0031 lands.
 
 ## Contents
 - Context

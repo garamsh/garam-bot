@@ -2,6 +2,8 @@
 
 Governs the agent's source-linked conversation memory and its lifecycle. Rationale: ADR 0002, ADR 0006, ADR 0011, ADR 0018, ADR 0019, ADR 0025, ADR 0026.
 
+The target direction keeps memory as a concern for the bot (identity, memory, permissions, mailbox — ADR 0031 §Context). The in-house memory contracts described here are candidates for the bot's memory interface (ADR 0031). This document describes the shipped shape until P2 of ADR 0031 lands.
+
 ## Current decisions
 
 - Memory is Sherlock's own method and is not extracted as a shared component for other agents (#1110).

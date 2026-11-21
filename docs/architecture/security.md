@@ -2,6 +2,8 @@
 
 Governs the security model: trust domains, secret custody, and egress. Rationale: ADR 0017, ADR 0009, ADR 0003, ADR 0005, ADR 0008, ADR 0010, ADR 0012, ADR 0013, ADR 0014, ADR 0019, ADR 0021, ADR 0026, ADR 0029, ADR 0030.
 
+The target direction replaces the in-house agent loop, the execution boundary, and the deployment topology described here (ADR 0031). This document describes the shipped shape until P2 of ADR 0031 lands.
+
 ## Current decisions
 
 - Two containers, two trust postures (ADR 0017):

@@ -2,6 +2,8 @@
 
 Governs the environment model: what an environment is, its topology, and its trust boundaries. Rationale: ADR 0017, ADR 0008, ADR 0009, ADR 0010, ADR 0027, ADR 0028.
 
+The target direction replaces the workspace-sidecar topology, the execution boundary, the workspace CLI, and the workspace MCP server described here (ADR 0031). This document describes the shipped shape until P2 of ADR 0031 lands.
+
 ## Current decisions
 
 - The environment is split into two layers: the workspace (the agent's data plane) and the tools (the agent's capabilities). The workspace is a dedicated sidecar container in the agent's pod; the tools are scripts the operator installs under `tools/<name>/` and the platform runs over stdio (ADR 0017, ADR 0009). One pod per agent; one workspace per agent to start.

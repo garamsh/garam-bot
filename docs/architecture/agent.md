@@ -2,6 +2,8 @@
 
 Governs the agent: the reasoning loop, memory, tool use, and model access. Rationale: ADR 0017, ADR 0009, ADR 0004, ADR 0006, ADR 0011, ADR 0019, ADR 0024, ADR 0029, ADR 0030.
 
+The target direction replaces the in-house agent loop, model clients, and tool format described here with external agents (Claude Code, Codex) as harnesses (ADR 0031). The tool and memory contracts are candidates for the garam-bot agent and bot-memory interfaces. This document describes the shipped shape until P2 of ADR 0031 lands.
+
 ## Current decisions
 
 - The agent is the self: one continuous rolling session per agent, running in its own container (ADR 0017). Its organs:
