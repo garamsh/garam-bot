@@ -1,4 +1,4 @@
-.PHONY: lint format format-fix test test-privileged build build-tools build-images toolchain-image proto ci hooks
+.PHONY: lint format format-fix test test-privileged build build-tools build-images toolchain-image proto generate ci hooks
 
 # The toolchain floor every go command below runs under: `go install tool@version`
 # and `go run tool@version` take the toolchain from the tool's own `go.mod` rather
@@ -45,14 +45,31 @@ export GOLANGCI_LINT_CACHE = $(CURDIR)/.cache/golangci-lint
 # the recipe line that expands this.
 go_packages = packages=$$(go list ./...) || exit $$?; \
 	selected=$$(printf '%s' "$$packages" | awk 'END{print NR}'); \
-	test "$$selected" -gt 0 || { echo "$@: ./... selected no packages under $(CURDIR); the run covered nothing"; exit 1; }; \
-	echo "$@: ./... selected $$selected packages"
+	test "$$selected" -gt 0 || { echo "$@: ./... selected no packages under $$PWD; the run covered nothing"; exit 1; }; \
+	echo "$@: ./... selected $$selected packages under $$PWD"
+
+# The Go modules the build, test and vet entry points run in, each from its own
+# directory: the shipped system at the root, and the published interfaces under
+# api/ (ADR 0032). `./...` in one module never selects the other's packages, so
+# each recipe runs once per module and `go_packages` counts each run.
+go_modules = . api
+
+# The API server and etcd binaries the interface conformance suites run against
+# (api/declaration/v1alpha1/conformance), fetched once into the checkout's
+# cache. setup-envtest is pinned by its module version under the checksum
+# database, and the Kubernetes release by its exact number; both move with the
+# Kubernetes libraries api/go.mod requires, by whoever moves those.
+SETUP_ENVTEST = sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.24.1
+ENVTEST_K8S_VERSION = 1.36.2
+envtest_assets = go run $(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(CURDIR)/.cache/envtest -p path
 
 lint:
-	@$(go_packages); \
-	echo "go vet ./..."; \
-	go vet ./...
-	golangci-lint run ./...
+	@for module in $(go_modules); do \
+		(cd $$module && $(go_packages); echo "go vet ./... under $$PWD"; go vet ./...) || exit $$?; \
+	done
+	@for module in $(go_modules); do \
+		(cd $$module && echo "golangci-lint run ./... under $$PWD" && golangci-lint run ./...) || exit $$?; \
+	done
 
 # The Go files a commit could carry: tracked, plus untracked files git does not
 # ignore, leaving out what .gitignore, .git/info/exclude and the global
@@ -87,9 +104,10 @@ format-fix:
 	$(go_files) | xargs -0 -r gofmt -w
 
 test:
-	@$(go_packages); \
-	echo "go test ./..."; \
-	go test ./...
+	@assets=$$($(envtest_assets)) || exit $$?; \
+	for module in $(go_modules); do \
+		(cd $$module && $(go_packages); echo "go test ./... under $$PWD"; KUBEBUILDER_ASSETS=$$assets go test ./...) || exit $$?; \
+	done
 
 # The capability list the tests below run under is read out of the deployment
 # rather than repeated here (#620): it has one owner, `cap_add` in
@@ -153,9 +171,9 @@ test-privileged:
 # zero exactly like a run that compiled every one (#715, #653). The count
 # `go_packages` prints is what tells the two apart.
 build:
-	@$(go_packages); \
-	echo "go build ./..."; \
-	go build ./...
+	@for module in $(go_modules); do \
+		(cd $$module && $(go_packages); echo "go build ./... under $$PWD"; go build ./...) || exit $$?; \
+	done
 
 # A `for` loop's status is its last iteration's, so a tool that failed to
 # compile left the target at exit 0 having written fewer executables than it
@@ -307,6 +325,18 @@ proto:
 # target, and read from status rather than diff, so a stub that appeared counts as
 # one that moved. A stub named here is not committed; committing it clears this.
 	@test -z "$$(git status --porcelain -- '*.pb.go')" || { git status --porcelain -- '*.pb.go'; exit 1; }
+
+# Regenerates the interface packages' deep-copy methods and
+# CustomResourceDefinitions from their Go types, then fails where that moved a
+# generated file, scoped and read from status as proto is. controller-gen is
+# pinned by its module version under the checksum database, and moves with the
+# Kubernetes libraries api/go.mod requires.
+CONTROLLER_GEN = sigs.k8s.io/controller-tools/cmd/controller-gen@v0.21.0
+generated = api/declaration/v1alpha1/zz_generated.deepcopy.go api/declaration/v1alpha1/crds
+
+generate:
+	cd api && go run $(CONTROLLER_GEN) object paths=./... crd:crdVersions=v1 output:crd:dir=./declaration/v1alpha1/crds
+	@test -z "$$(git status --porcelain -- $(generated))" || { git status --porcelain -- $(generated); exit 1; }
 
 hooks:
 	@lefthook install
