@@ -1,6 +1,6 @@
 # ADR 0095: The operator lives in garam-bot under operator/
 
-> Status: accepted
+> Status: accepted; the push role of decision 3 amended by garam-bot ADR 0041
 > Date: 2026-11-25
 
 Append-only: once merged, the body below is not rewritten. A fact later found wrong is corrected in an appended note, not edited out; a revised decision is a new ADR that supersedes this one.

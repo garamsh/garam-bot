@@ -226,7 +226,7 @@ each is written once.
   digests are pinned nowhere else in this repository.
 - **Building it.** `make guest-image` builds `build/guest.Dockerfile`
   with the repository root as context, as
-  `garam-agent-operator/gaon-guest:<REVISION>`, and pushes nothing. The
+  `garam-bot/operator-guest:<REVISION>`, and pushes nothing. The
   three sources are in a private registry, so the build needs a login
   that can pull them and `make ci` does not run it. No workflow of this
   repository builds or publishes the guest image or the operator's
@@ -365,9 +365,10 @@ is not gaon's.
 ## What is not built
 
 - The `NetworkPolicy`.
-- A workflow that publishes `garam-agent-operator/gaon-operator` or
-  `garam-agent-operator/gaon-guest`: the operator is discontinued and not
-  released (ADR 0086), so no repository name or tag is chosen for them.
+- A workflow that publishes the gaon operator or the guest image: the
+  operator is discontinued and not released (ADR 0086). garam-bot ADR 0041
+  names `garam-bot/operator-guest` for the guest image; no repository name
+  is chosen for the gaon operator's, and no tag for either.
 - Renewing an agent's token by restarting its MicroVM.
 - Replacing a MicroVM of another revision.
 - The agent's instructions file and message issuers.
