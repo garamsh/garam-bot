@@ -73,7 +73,10 @@ COPY --from=build --chown=65532:65532 /out/data /data
 # volume mounted at /opt/sherlock/tools overrides individual entries.
 COPY --from=build --chown=65532:65532 /out/tools /opt/sherlock/tools
 
-USER nonroot
+# Numeric, so the kubelet can check runAsNonRoot against it: it cannot resolve
+# a user name from the image and refuses the container. `make build-images`
+# checks the built image's Config.User for this.
+USER 65532:65532
 ENV SHERLOCK_TOOLS_DIR=/opt/sherlock/tools
 # Relative config paths resolve here: `tools-dir`'s default `./tools` is
 # /home/nonroot/tools. The base sets the same value; stating it means a

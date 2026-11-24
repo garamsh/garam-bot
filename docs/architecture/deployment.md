@@ -26,7 +26,7 @@ One pod per agent, two containers (ADR 0017). Both are the same binary under dif
 |---|---|---|
 | Command | `sherlock agent` | `sherlock workspace` |
 | Image built from | `build/agent.Dockerfile` | `build/workspace.Dockerfile` |
-| Runs as | `nonroot`, uid 65532 | root |
+| Runs as | uid and gid 65532, named by number | root |
 | Shell in the image | none | yes |
 | Serves | the HTTP gateway | the gRPC data plane (Read, Write, List, Exec) |
 | Repository example | `configs/agent.yaml` | `configs/workspace.yaml` |
@@ -154,7 +154,7 @@ In the privileged shape the workspace container needs five, and they divide on a
 
 **The privileged shape targets `baseline` and cannot reach `restricted`; the unprivileged shape reaches `restricted`.** `restricted` is reached only where every container in the pod runs non-root, and the privileged shape's workspace runs as root to drop Exec children to another uid (§The two processes). Admission evaluates the pod and the two containers share one (ADR 0017), so what the agent container could satisfy alone decides nothing. For the privileged shape `baseline` is what is left, and the `SYS_ADMIN` row is what reaching it costs. The unprivileged shape adds no capability and runs non-root; what it gives up for `restricted` is the uid boundary between an Exec child and the workspace process (ADR 0008): the child reads what the workspace's uid can, and can signal the workspace server, stopping the data plane until the container restarts. What it asks of the node instead is two host requirements, below.
 
-**A manifest asserts the agent container's non-root run; the image's `USER` does not.** Set `runAsNonRoot: true` on that container's security context. The *Runs as* row in §The two processes is the image — `build/agent.Dockerfile` declares `USER nonroot` — and an orchestrator enforcing non-root reads what the pod asserts rather than what the image ships, so a manifest that leaves the question to the image is refused at admission with nothing in the image and nothing in this repository having been wrong. A numeric `runAsUser` is not the assertion either: it states which uid to run as and asserts nothing about that uid, so a value that is not zero reads as non-root to a person and to nothing else.
+**A manifest asserts the agent container's non-root run; the image's `USER` does not.** Set `runAsNonRoot: true` on that container's security context. The *Runs as* row in §The two processes is the image — `build/agent.Dockerfile` declares `USER 65532:65532` — and an orchestrator enforcing non-root reads what the pod asserts rather than what the image ships, so a manifest that leaves the question to the image is refused at admission with nothing in the image and nothing in this repository having been wrong. A numeric `runAsUser` is not the assertion either: it states which uid to run as and asserts nothing about that uid, so a value that is not zero reads as non-root to a person and to nothing else. Nor does the assertion need one: the kubelet checks `runAsNonRoot` against the image's user, which is numeric for that reason, and `make build-images` refuses an agent image whose user is a name, which the kubelet cannot check and so refuses the container.
 
 **`SYS_ADMIN` is netns creation, and it cannot be moved to an initContainer.** The unshare happens inside each Exec child immediately before the credential drop, not once at startup (`internal/workspace/shell/`), so the workspace container holds the capability for its whole life.
 

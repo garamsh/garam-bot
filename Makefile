@@ -287,6 +287,12 @@ dirty_inputs = $(if $(and $(REVISION),$(revision_is_default),$(context_paths)),$
 # flags would fail the build.
 BUILD_ENV = BUILDX_NO_DEFAULT_ATTESTATIONS=1
 
+# The images that run as a non-root user, each checked after the build for a
+# numeric Config.User: the kubelet checks `runAsNonRoot` against the image's
+# user and refuses a name it cannot resolve. The workspace image runs as root
+# in the privileged shape and is not one of them.
+non_root_images = sherlock-agent garam-bot-runtime
+
 build-images:
 	@test -n "$(REVISION)" || { echo "build-images: REVISION is empty, and it is both the tag and the label; the default reads 'git rev-parse HEAD', which a checkout with no git metadata does not answer - pass one: make build-images REVISION=<commit>"; exit 1; }
 	@test -z "$(revision_is_default)" || test -z "$(shapeless_ignores)" || { echo "[$(shapeless_ignores)]: want '*' and then one '!<path>' per admitted path: the tree is checked over the paths these files re-include, which are the build contexts only while everything is excluded first"; exit 1; }
@@ -296,7 +302,7 @@ build-images:
 	$(BUILD_ENV) docker build -f $(AGENT_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t sherlock-agent:$(REVISION) .
 	$(BUILD_ENV) docker build -f $(WORKSPACE_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t sherlock-workspace:$(REVISION) .
 	$(BUILD_ENV) docker build -f $(RUNTIME_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t garam-bot-runtime:$(REVISION) .
-	@user=$$(docker image inspect --format '{{.Config.User}}' garam-bot-runtime:$(REVISION)) && printf '%s' "$$user" | grep -Eq '^[0-9]+(:[0-9]+)?$$' || { echo "garam-bot-runtime:$(REVISION): Config.User is [$$user], want a numeric uid or uid:gid, which the kubelet can check runAsNonRoot against"; exit 1; }
+	@for image in $(non_root_images); do user=$$(docker image inspect --format '{{.Config.User}}' $$image:$(REVISION)) && printf '%s' "$$user" | grep -Eq '^[0-9]+(:[0-9]+)?$$' || { echo "$$image:$(REVISION): Config.User is [$$user], want a numeric uid or uid:gid, which the kubelet can check runAsNonRoot against"; exit 1; }; done
 
 # The toolchain image the privileged CI job runs in, read out of the
 # Dockerfile that owns the pin rather than restated in the workflow (#633).
