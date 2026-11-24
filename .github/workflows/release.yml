@@ -8,7 +8,7 @@ name: release
 # A tag filter is a glob and cannot spell `vX.Y.Z`, so `v*` is as narrow as the
 # trigger itself goes. It is also exactly the ref the push role admits — its
 # trust policy matches the subject
-# `repo:garamsh@307152666/sherlock@1311139677:ref:refs/tags/v*` — so a run on any
+# `repo:garamsh@307152666/garam-bot@1311139677:ref:refs/tags/v*` — so a run on any
 # other ref receives no credential even if something else starts one. What `v*`
 # admits and the scheme does not is refused by the first step below, before any
 # AWS call: every repository pushed to here is IMMUTABLE and a wrong name is
@@ -40,6 +40,16 @@ jobs:
       # baseline). This job writes nothing back to the repository.
       contents: read
       id-token: write
+    # The images this job publishes, each `<local name>=<repository>`: the
+    # local name is the one `make build-images` writes, tagged with the
+    # revision, and the repository is the one it is pushed to. The three steps
+    # below read this one list, so an image cannot be pushed and left unread.
+    # The order is the push order, least proven repository first: a grant
+    # that is missing on garam-bot/runtime then stops the run before the two
+    # sherlock repositories, whose pushes earlier releases have shown, take
+    # the version.
+    env:
+      IMAGES: garam-bot-runtime=garam-bot/runtime sherlock-agent=sherlock/agent sherlock-workspace=sherlock/workspace
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -67,12 +77,12 @@ jobs:
       # shape that cannot hold that property, so this workflow does not use it.
       #
       # The agent image carries the first-party tools at /opt/sherlock/tools/
-      # (ADR 0021); there is no separate sherlock/tools image and no third
-      # image to push. The workspace image is unchanged.
+      # (ADR 0021); there is no separate sherlock/tools image. The workspace
+      # image is unchanged. The runtime image runs one Bot (ADR 0033).
       #
-      # Each image has one repository, `sherlock/<image>`: the account names
-      # a repository `<publishing repository>/<image>`, and the image name
-      # never repeats the prefix (ADR 0020). Releases and development builds
+      # Each image has one repository, `$IMAGES` above: the account names a
+      # repository `<publishing repository>/<image>`, and the image name never
+      # repeats the prefix (ADR 0020). Releases and development builds
       # share it and are told apart by tag. Release tags are semver (`0.1.0`,
       # `0.1.1`, ...) — a `v`-prefixed git tag with the `v` stripped — and
       # only this workflow pushes one. Development tags are the commit short
@@ -109,23 +119,51 @@ jobs:
       - id: ecr
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
 
+      # Still reversible: before the first push, each repository is asked for
+      # the version's tag, and only the answer "no such tag" lets the run go
+      # on. That answer needs the repository to exist and the role to read it,
+      # so a repository that is missing (RepositoryNotFoundException), a read
+      # the role is refused (AccessDeniedException), and a version a repository
+      # already holds each stop the run while nothing is published. It proves
+      # the read and not the push grant; the order of `$IMAGES` covers that.
+      - env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for image in $IMAGES; do
+            repository="${image#*=}"
+            if ! answer=$(aws ecr batch-get-image \
+              --repository-name "$repository" \
+              --image-ids imageTag="$VERSION" \
+              --query '[length(images), failures[0].failureCode]' \
+              --output text 2>&1); then
+              echo "$repository: the registry refused the read, so nothing was published: $answer" >&2
+              exit 1
+            fi
+            if [ "$answer" != "$(printf '0\tImageTagDoesNotExist')" ]; then
+              echo "$repository:$VERSION: want no such tag (0, ImageTagDoesNotExist), got [$answer]: nothing was published" >&2
+              exit 1
+            fi
+          done
+
       # The only irreversible step. Every local image is renamed first, so a
       # reference this cannot form fails before any upload begins.
       #
-      # `sherlock-<image>:<revision>` is the name the Makefile writes for each
-      # of the two. They are not re-derived here: a rename there leaves
-      # `docker tag` with no such image, which fails this step rather than
-      # pushing something else.
-      - env:
+      # `<local name>:<revision>` is the name the Makefile writes for each
+      # image. It is not re-derived here: a rename there leaves `docker tag`
+      # with no such image, which fails this step rather than pushing something
+      # else.
+      - id: push
+        env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          for image in agent workspace; do
-            docker tag "sherlock-$image:$GITHUB_SHA" "$REGISTRY/sherlock/$image:$VERSION"
+          for image in $IMAGES; do
+            docker tag "${image%%=*}:$GITHUB_SHA" "$REGISTRY/${image#*=}:$VERSION"
           done
-          for image in agent workspace; do
-            docker push "$REGISTRY/sherlock/$image:$VERSION"
+          for image in $IMAGES; do
+            docker push "$REGISTRY/${image#*=}:$VERSION"
           done
 
       # What the registry holds, read back from the registry rather than from a
@@ -145,15 +183,23 @@ jobs:
       # `ecr:GetDownloadUrlForLayer`, and the role lacks that (#960). A tag that
       # resolves to nothing returns no image, only a `failures` entry, so a
       # missing digest is refused before the media type is read.
-      - env:
+      #
+      # It runs whenever the push step ran and the run was not cancelled, a
+      # failed push included: an earlier image may already hold the version
+      # then, and its digest is still recorded. The list is read in push
+      # order, so the first image that holds nothing ends the pushed images
+      # and fails the step there.
+      - if: ${{ !cancelled() && (steps.push.outcome == 'success' || steps.push.outcome == 'failure') }}
+        env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          for image in agent workspace; do
-            ref="$REGISTRY/sherlock/$image:$VERSION"
+          for image in $IMAGES; do
+            repository="${image#*=}"
+            ref="$REGISTRY/$repository:$VERSION"
             fields=$(aws ecr batch-get-image \
-              --repository-name "sherlock/$image" \
+              --repository-name "$repository" \
               --image-ids imageTag="$VERSION" \
               --query 'images[0].[imageManifestMediaType, imageId.imageDigest]' \
               --output text)

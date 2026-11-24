@@ -79,7 +79,7 @@ Each object has exactly one owner, `garam` or the cluster (`garamsh/garam-bot-op
 
 Bot and Workspace have a status subresource, written by what runs them: `observedGeneration` and `conditions`.
 
-- **STA-1.** What runs a Bot MUST set its condition `Running` to `True` while the bot's process runs, and to `False` otherwise, with `observedGeneration` the generation of the spec it runs. How a runner observes the process is the runtime's status contract.
+- **STA-1.** What runs a Bot MUST set its condition `Running` to `True` while the bot's process runs, and to `False` otherwise, with `observedGeneration` the generation of the spec it runs.
 
 No Workspace condition is defined yet (Open questions).
 

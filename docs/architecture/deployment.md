@@ -310,7 +310,12 @@ Registry: **ECR, `ap-northeast-2`, account `486152169996`.** Each image has one 
 - **Release.** A `v`-prefixed git tag triggers the release workflow, which strips the `v` and pushes the resulting semver (e.g., `0.1.0`) to `sherlock/agent` and `sherlock/workspace`. A semver tag is pushed by the release workflow and by nothing else.
 - **Development.** A contributor builds and pushes by hand to the same two repositories, with a tag of the build's commit short SHA (`git rev-parse --short=12`, as `837b80afe272`), never a semver. A semver holds two dots and a short SHA none, so the two patterns cannot meet.
 
-Two repositories, two images. The sherlock-agent image carries the first-party tool executables at `/opt/sherlock/tools/<name>/` (ADR 0021); there is no separate tools image and no third image. A repository this project does not publish to is not sherlock's, whatever it is named.
+Two repositories, two images for the agent pod. The sherlock-agent image carries the first-party tool executables at `/opt/sherlock/tools/<name>/` (ADR 0021); there is no separate tools image.
+
+**The runtime image** that runs one Bot (ADR 0033, `runtime.md`) has a third repository, **`garam-bot/runtime`**, under the same naming and tag rules. Locally it is `garam-bot-runtime:<commit>`, built by `make build-images` beside the two, which also refuses it unless its `Config.User` is numeric, so the kubelet can check `runAsNonRoot` against it. The repository and the release role's push grant on it are the account owner's (garamsh/aurora), and both exist. No development build of it is pushed by hand. The release workflow pushes it first and reads its digest back as it does theirs:
+- **Before any push,** it asks each of the three repositories for the version's tag and goes on only on `ImageTagDoesNotExist`. A missing repository, a refused read, or a version already taken stops the run with nothing published.
+- **The order.** That read does not prove the push grant, so the least proven repository is pushed first: a refused push there stops the run before either `sherlock` repository takes the version.
+- **After a failed push,** the read-back still runs and records the digest of each image that was pushed. A repository this project does not publish to is not sherlock's, whatever it is named.
 
 **Pushing a development build by hand.** In order, from a checkout at the commit to publish:
 

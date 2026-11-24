@@ -167,6 +167,6 @@ func Cases() []Case {
 			Manifest: strings.Replace(bot(""), "{name: mira}", "{name: mira, labels: {bot.garam.sh/managed-by: garam}}", 1)},
 
 		{Requirement: "STA-1", Name: "Running is True while the bot's process runs",
-			Pending: "the runtime's status contract, which defines how the process is observed"},
+			Pending: "a runner suite: the manager that writes the condition from the runtime's status contract is garam-bot-operator's Bot reconciler"},
 	}
 }
