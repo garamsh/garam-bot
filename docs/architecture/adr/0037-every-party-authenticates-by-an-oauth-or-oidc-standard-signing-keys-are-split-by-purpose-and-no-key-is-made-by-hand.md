@@ -16,6 +16,7 @@
 - **The remaining items, decided on 2026-11-24** (comment 19858505):
   - OpenBao's recovery keys and naru's recovery key are emergency keys the system makes once and uses only in a disaster, kept offline on USB;
   - naru's `*.m.garam.sh` is issued by ACME DNS-01, with a Cloudflare token limited to DNS edits in the `m.garam.sh` zone, which sauce issues at the registration step at the end of the build.
+- **Bound bot tokens** (sauce, 2026-11-25, comment 19863377): a bot token a holder can use until it expires is usable if it leaks, so a bot's token is bound to its process's key, by DPoP (RFC 9449). The PM extended it to every token garam issues to a bot's process, and chose DPoP over mTLS binding (garam#2078).
 - **What garam has** (garam at `dc030cd1c48b8324b207a65a2606448ecb9203ea`):
   - OIDC with PKCE against Google;
   - the CLI's device grant (garam ADR-0120);
@@ -32,6 +33,7 @@
    - **The CLI and the PC app:** RFC 8628 device authorization.
    - **A connector:** `private_key_jwt` (RFC 7523), exchanged for a token of one hour.
    - **A bot garam declared and placed:** a token its place's connector obtains by RFC 8693 token exchange. The connector presents its own access token as the `actor_token`, and a `subject_token` of a garam-defined type whose value names the bot's GRN, with garam's `audience` and an explicit `scope`. The issued token's `sub` is the bot's GRN, `act.sub` the place's GRN, `aud` garam's audience and `scope` what was asked and allowed, and it lasts at most one hour. garam refuses a bot that no live declaration places on that place (garam ADR-0184's decision "A cluster's token reaches the cluster-connection routes", and AUTH-5). The token stays at the place: the workspace holds only narrower model and tool tokens (interface 2's CRED-1). A bot declared at its place gets no garam token.
+   - **Binding:** every token garam issues to a bot's process, the exchanged access token and garam's model and tool tokens, is a DPoP token (RFC 9449) bound by `cnf.jkt` to a key the bot's process makes when it starts and never lets leave it. The exchange carries a proof that process signed. A new process makes a new key and a new exchange. garam's resource servers verify each proof, refuse a replayed one, and refuse a bound token presented as `Bearer`. mTLS binding (RFC 8705) is not used: a place does not control where TLS is terminated. No bound token enters a workspace.
    - **A first-party service** (cowork, codehub): `private_key_jwt` with a key held in Transit.
 2. **One signing key per purpose:**
    - the OIDC issuer;
@@ -61,6 +63,7 @@
 
 - Transit and cert-manager are dependencies of every deployment, and a local run needs an OpenBao dev server or material made in memory.
 - A token's verifier fetches JWKS and follows rotation, and a hand-pinned root goes.
+- A stolen bot token is useless without the bot process's key. In exchange, the bot's process signs a proof for every request, and its connector needs a proof from it for every exchange.
 - Operator PEM issuance and download leave garam, and the manager and the control service authenticate through the connector.
 - garam-bot#1207 moves the manager and the control service onto the registration path. It lands with the later ADR that garam-bot-operator ADR 0093's decision "The manager's and the control service's issued keys do not meet this rule yet" waits for, and that ADR also replaces ADR 0090's decision "The control-service path is not part of the connector", which leaves retiring that path "a later decision". Its number is reserved when garam-bot#1207 starts.
 
