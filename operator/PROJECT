@@ -6,7 +6,7 @@ cliVersion: 4.15.0
 domain: garam.sh
 layout:
 - go.kubebuilder.io/v4
-projectName: garam-agent-operator
+projectName: garam-bot-operator
 repo: github.com/garamsh/garam-bot/operator
 resources:
 - api:
