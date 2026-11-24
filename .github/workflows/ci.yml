@@ -1,10 +1,19 @@
 name: CI
 
+# The root and api modules' checks. A change to operator/ alone is the
+# operator's, which operator-checks.yml runs; a change to api/ runs both,
+# because the operator requires api.
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "operator/**"
+      - ".github/workflows/operator-*.yml"
   push:
     branches: [main]
+    paths-ignore:
+      - "operator/**"
+      - ".github/workflows/operator-*.yml"
 
 permissions: read-all
 
@@ -33,7 +42,7 @@ jobs:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.12.2
+          version: v2.15.0
       - uses: bufbuild/buf-action@37ac33d8960807670a6e9719080e885197b09cc6 # v1.7.0
         with:
           setup_only: true

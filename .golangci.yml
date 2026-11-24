@@ -6,10 +6,17 @@
 # `defer x.Close()` / `t.Cleanup(func(){ x.Close() })` patterns are noise
 # in Go. Catching genuine unhandled errors is still the job of code review.
 #
-# Pinned version: v2.12.2 — verified against
+# Pinned version: v2.15.0 — verified against
 # https://github.com/golangci/golangci-lint/releases/latest before adoption
 # (docs/convention/ci.md §"Verify a pinned dependency before adopting it").
 version: "2"
+
+run:
+  # The linter analyses what a build with these tags would compile, so without
+  # them the conformance suites behind `//go:build conformance` are invisible
+  # to `make lint`, which reports `0 issues.` either way.
+  build-tags:
+    - conformance
 
 linters:
   default: standard

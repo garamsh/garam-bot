@@ -1,0 +1,154 @@
+# Architecture
+
+Current architecture of the system and the decisions behind it. This file is the index; workers read it before touching code, the PM keeps it honest.
+
+## Structure
+
+- **Responsibility documents** (one `.md` per domain or concern, e.g. `memory.md`, `gateway.md`) — the single source of truth for how the system is shaped *now*. To know the current state, read only these.
+- **`adr/`** — the record of individual decisions: direction taken, context, rejected alternatives.
+
+## Rules
+
+1. **Responsibility document skeleton**: current decisions (consolidated) / rationale summary with links to the relevant ADRs / open questions. Do not copy ADR content — synthesize the present state.
+2. **ADRs are append-only.** Once merged, the body is frozen. Exceptions: updating the status field (`accepted` → `superseded by ADR-XXXX`), fixing typos or broken links, and appending a dated entry under `## Errata` when the decision stands but a fact supporting it was wrong — the erratum names what falsified it, and the original text stays intact. A changed decision means a new ADR that supersedes the old one — never an edit.
+3. **Decisions land in pairs.** A PR that adds or supersedes an ADR must update the affected responsibility documents in the same PR. A PR with only one of the two is rejected — the final state must always live in the responsibility documents.
+4. Keep this index current: every responsibility document and every ADR is listed here. An ADR covers a decision that changes a project rule — a settled choice that does not affect the rules does not earn one.
+5. **Every domain or concern has a responsibility document.** The PR that introduces one adds its document; the PR that removes one deletes it. A system with no code yet has no more than `structure.md` (rule 6), and that is the correct state.
+6. **Structural rules live in `structure.md`.** The shape chosen at bootstrap imposes rules — what the unit is, what may reference what, when a new one is earned — and they belong in the responsibility document for that concern, where a reviewer cites one by line and a correction is an ordinary edit. Not the ADR: rule 2 freezes that body, so superseding the choice of shape would be the price of fixing a rule's wording.
+7. **A point the structural rules leave to the project is settled in an ADR** — the one recording the shape where the question is met at bootstrap, a later one where it is met later. Which side is taken decides what counts as a defect, so it is a decision under rule 4, and the ADR still holds the record after bootstrap. Nothing obliges a project to settle a question it has not met: until then the point waits under `structure.md`'s open questions, where it binds nothing, and moves into that document's current decisions when the project takes a side.
+8. **Structural rules yield only to what a framework imposes.** Where `structure.md` and a convention file decide the same case differently, `structure.md` governs, unless the stack-specific file that applies decides it as its framework imposes it — the alternative fails to build or run, so the project cannot restate it. A stack file's spelling of a structural rule is not that: the rule it spells is `structure.md`'s. The shape chosen at bootstrap is this project's own refinement of what a stack-neutral file states for every project. A project with no `structure.md` meets no such conflict, and this rule asks nothing of it.
+
+### What this file does not take from the template
+
+`structure.md` landed in #222, so the template's rules 5 to 8 are taken here. The refusal recorded in PR #68, and re-examined on 2026-08-31, applied to a project with no `structure.md`, and that ground is gone. Two clauses are still not taken. Both name the template's `structures/` folder, which this project chose from (ADR 0038) and never holds:
+
+| Not taken | Template commit | Why it cannot be true here |
+|---|---|---|
+| §Structure's `structures/` bullet | `d2675ce`, `65523e6`, `548895a`, `133b60c` | Describes a folder this repository does not have. |
+| Rule 4's `structures/` sentence | `d2675ce` (`convention-driven-project#276`) | Same folder. |
+| §Shape rules every project carries, formerly §Rules every shape carries | `548895a`, `133b60c`, `51daaeb5b8b61ed49297605eb46805d5f4640a04` | Bootstrap input: its own text says to copy its bullets into `structure.md` and then delete it. Its bullets are in `structure.md` §Surfaces and references, adapted to this project's two binaries. |
+
+Before a delta between this file and the template is called stale, read it against this list and against this project's merged pull requests for the path.
+
+## Index
+
+### Responsibility documents
+
+| Document | Covers |
+|---|---|
+| `agent.md` | The `agent.garam.sh` API group, the `Agent` kind, and its controller |
+| `configuration.md` | How this project's binaries are configured, and which repository owns each value |
+| `connector.md` | How a user's own cluster connects to garam: the connector chart and its two programs, registration and identity, declarations synced both ways, rights in the cluster, and what garam owes |
+| `control.md` | The control service: definitions and revisions, templates, profiles, creation and configure requests, recoveries and stops, what each controller reports of itself, their store, the console API that changes and reads them, and the controller API that releases them |
+| `gaon-operator.md` | The operator that runs each managed agent as one MicroVM on a gaon cluster, imported from garam, discontinued and not released (ADR 0086): its reconciler, wire clients, guest image, and what is not built |
+| `delivery.md` | The images this project publishes, the reference a deployment uses, and where its output lands in a cluster |
+| `structure.md` | What a unit of this code is, what may reference what, and when a new unit is earned |
+| `integration.md` | How a change reaches `dev` and then `main`, and which checks run at each step |
+
+### ADRs
+
+| ADR | Decision | Status |
+|---|---|---|
+| `adr/0001-kubebuilder-go-v4-scaffold.md` | Build the operator on the kubebuilder go/v4 scaffold | accepted |
+| `adr/0002-dev-integration-branch.md` | Integrate on `dev` and keep `main` for released state | accepted |
+| `adr/0003-single-stack-convention-file.md` | Govern Go with one stack file written for the operator | superseded by ADR-0004 |
+| `adr/0004-extend-stack-go.md` | Extend `stack-go.md` instead of replacing it | accepted |
+| `adr/0005-statefulset-of-one.md` | Run an agent as a StatefulSet of one replica | accepted |
+| `adr/0006-credential-group.md` | Carry credential access on a group, not on a user | accepted |
+| `adr/0007-claim-definitions-from-a-poller.md` | Claim garam's definitions from a poller beside the reconciler | accepted; composition held by garam superseded by ADR-0032; GRN never in spec superseded by ADR-0037; the poller and its claim superseded by ADR-0077 |
+| `adr/0008-renew-the-operator-credential-into-the-secret-it-is-read-from.md` | Renew the operator's credential into the Secret it is read from | superseded by ADR-0072 |
+| `adr/0009-construct-a-claimed-agent-from-the-operators-own-configuration.md` | Construct a claimed agent from the operator's own configuration, and place the credential the claim admits it to | accepted; the certificate route and the credential it places superseded by ADR-0073; the construction of a claimed agent superseded by ADR-0077 |
+| `adr/0010-copy-an-agents-credential-into-a-memory-volume-the-pods-own-user-owns.md` | Copy an agent's credential into a memory volume the Pod's own user owns | superseded by ADR-0073 |
+| `adr/0011-the-conventions-template-is-the-frame.md` | The conventions template is the frame, and a divergence is earned by a fact | accepted |
+| `adr/0012-declare-an-agents-tool-set-in-its-definitions-values.md` | Declare an agent's tool set in its definition's values, and carry the keys this operator knows into a file | accepted; declaration site in garam's values superseded by ADR-0032 |
+| `adr/0013-the-base-carries-what-every-deployment-shares.md` | Carry what every deployment shares in the base, and an environment's values where that environment is reconciled | superseded by ADR-0017 |
+| `adr/0014-the-image-repository-is-immutable-and-a-deployment-references-a-digest.md` | Keep the image repository immutable with a tag naming one commit, and reference the image by digest with the tag beside it | accepted; the index digest, and the commit hash as a release's tag, superseded by ADR-0051 |
+| `adr/0015-run-the-e2e-suite-where-a-change-lands-and-advance-main-only-by-a-human-promotion.md` | Run the e2e suite where a change lands and not on every pull request, and advance `main` only by a human promotion | accepted; trigger decisions superseded by ADR-0028; publishing as what advances `main` superseded by ADR-0051; merging without squashing superseded by ADR-0070 |
+| `adr/0016-report-what-the-operator-observed-and-stay-silent-where-it-observed-nothing.md` | Report to `garam` what this operator observed, stay silent where it observed nothing, and carry the epoch on the `Agent` it was proved at | superseded by ADR-0077; earlier, epoch held in Status only superseded in part by ADR-0037 |
+| `adr/0017-an-unreconciled-environments-values-live-in-an-overlay-here.md` | Keep an environment's values where that environment is reconciled, and in an overlay here where nothing reconciles it | accepted |
+| `adr/0018-keep-the-image-of-an-agent-this-operator-constructed-current-with-its-own-configuration.md` | Keep the image of an agent this operator constructed current with its own configuration | accepted; the constructor's correction superseded by ADR-0077 |
+| `adr/0019-mount-an-agents-tool-tree-from-an-image-this-operator-names.md` | Mount an agent's tool tree from an image this operator names, and point the agent at it | superseded by ADR-0027 |
+| `adr/0020-enroll-this-operator-with-a-one-time-token-and-keep-the-key-it-generated.md` | Enroll this operator with a one-time token, and keep the key it generated | superseded by ADR-0021; the enrollment removed by ADR-0072 |
+| `adr/0021-present-any-one-enrollment-token-once-and-wait-for-another.md` | Present any one enrollment token once and wait for another, and end the enrollment on a certificate rather than on an attempt | superseded by ADR-0022; the enrollment removed by ADR-0072 |
+| `adr/0022-end-the-enrollment-on-a-certificate-that-has-not-expired.md` | End the enrollment on a certificate that has not expired, rather than on one this operator can read | superseded by ADR-0072 |
+| `adr/0023-run-an-agents-workspace-as-a-second-container-this-operator-names.md` | Run an agent's workspace as a second container this operator names, and give it the user the Pod already names | accepted; the workspace on the state volume superseded by ADR-0044 |
+| `adr/0024-write-an-agents-config-file-from-an-init-container-into-a-directory-this-operator-names.md` | Render a declared tool set into the Pod through an init container that writes a config file into a directory this operator names | accepted |
+| `adr/0025-generalize-the-agent-kind-by-agent-type.md` | Generalize the `Agent` kind by `spec.type`, with a closed enum and a per-type dispatch table in the controller | accepted; descriptor fields extended by ADR-0029 |
+| `adr/0026-single-ecr-repository-dev-tag-by-role.md` | Publish one image to one ECR repository, with a `dev-<hash>` tag on bring-up builds and the commit-hash tag carrying the identifier | superseded by ADR-0066; earlier, one-image scope superseded by ADR-0033 and the release tag by ADR-0051 |
+| `adr/0027-an-agents-tools-arrive-in-its-own-image-and-this-operator-mounts-no-tool-tree.md` | An agent's tools arrive in its own image, and this operator mounts no tool tree | accepted |
+| `adr/0028-run-the-checks-and-the-e2e-suite-on-the-promotion-to-main-and-nothing-on-dev.md` | Run the checks and the e2e suite on the promotion to `main`, and nothing on `dev` | accepted |
+| `adr/0029-route-every-agent-specific-name-in-the-pod-through-its-types-descriptor.md` | Route every agent-specific name in the Pod through its type's descriptor, and keep the operator's images out of it | accepted |
+| `adr/0030-carry-the-operators-certificate-expiry-and-garams-refusals-as-metrics.md` | Carry the operator's certificate expiry and garam's refusals as metrics, under names an alert can depend on | accepted; the certificate-expiry gauge superseded by ADR-0072; the refusal labels amended by ADR-0072 |
+| `adr/0031-support-agents-declared-in-garam-on-one-cluster-of-the-sherlock-type.md` | Support agents declared in garam, on one cluster, of the sherlock type, and keep a hand-written `Agent` to development | accepted; §1 superseded by ADR-0032 |
+| `adr/0032-own-an-agents-desired-definition-in-this-projects-control-service.md` | Own an agent's desired definition in this project's control service, and render every `Agent` carrying a GRN from it | accepted; the customer's cluster as where the manager runs amended by ADR-0079 |
+| `adr/0033-publish-the-control-service-as-a-second-image-to-its-own-repository.md` | Publish the control service as a second image, to a repository of its own, under the rules every image here follows | accepted; the tags superseded by ADR-0051; one repository per image, for development builds, superseded by ADR-0066 and restored by ADR-0078; the repository names superseded by ADR-0078; the customer's cluster as a reason for two images amended by ADR-0079 |
+| `adr/0034-place-garams-adapter-as-a-native-sidecar-beside-every-agent-this-operator-constructed.md` | Place garam's adapter as a native sidecar beside every agent this operator constructed, and own its placement only | accepted; the credential copy the adapter mounts, and its certificate and key settings, superseded by ADR-0073 |
+| `adr/0035-carry-an-agents-model-and-ego-in-its-spec-and-render-them-through-its-types-descriptor.md` | Carry an agent's model and ego in its spec, and render them into the Pod through its type's descriptor | accepted |
+| `adr/0036-persist-the-control-services-desired-state-in-its-own-postgresql-database.md` | Persist the control service's desired state in its own PostgreSQL database, through pgx v5 | accepted; the customer's cluster as the ground for rejecting Kubernetes objects amended by ADR-0079 |
+| `adr/0037-carry-an-agents-identity-in-its-spec-and-start-the-agent-under-it.md` | Carry an agent's identity in its spec, and start the agent under it | accepted; the epoch's flag superseded by ADR-0068 |
+| `adr/0038-partition-the-code-by-domain.md` | Partition the code by domain, and let a domain depend on a sibling through its surface in one direction | accepted |
+| `adr/0039-serve-the-consoles-mutations-from-a-console-domain-over-the-definition-domains-surface.md` | Serve the console's mutations from a console domain over the definition domain's surface, and keep the request record with the revision it produced | accepted |
+| `adr/0040-release-desired-state-to-controllers-from-a-distribution-domain-each-decision-proved-by-garam.md` | Release desired state to controllers from a distribution domain, each decision proved by garam, as a whole set on every answer | accepted; C2 wire extended by ADR-0052 and amended by ADR-0053; the controller's client certificate superseded by ADR-0072 |
+| `adr/0041-join-garams-reply-instruction-to-the-ego-wherever-the-adapter-is-placed.md` | Join garam's reply instruction to the agent's ego wherever the adapter is placed | superseded by ADR-0045 |
+| `adr/0042-fence-each-agent-pod-on-positive-evidence-its-writers-stopped-and-mint-an-adapter-only-placement-token.md` | Fence each agent Pod on positive evidence that its writers stopped, and mint an adapter-only placement token per placement | accepted; "never started" extended by ADR-0061; grace period stated by ADR-0064; last writer recorded on its claim by ADR-0065; the token's delivery by copy superseded by ADR-0073 |
+| `adr/0043-pull-managed-agents-desired-state-from-the-control-service-and-keep-each-grn-on-one-source.md` | Pull managed agents' desired state from the control service in a domain of its own, and keep each GRN on one source by a marker set when its Agent is built | accepted; rendered fields extended by ADR-0054; the client certificate superseded by ADR-0072; the source marker superseded by ADR-0077 |
+| `adr/0044-give-an-agents-state-and-its-workspace-separate-claims.md` | Give an agent's state and its workspace separate claims, and replace an existing StatefulSet without losing either | accepted; the replacement of every shared-shape StatefulSet superseded in part by ADR-0047, and restored by ADR-0068, which drops the workspace seed; state claim template dropped after a memory move by ADR-0065 |
+| `adr/0045-give-garams-reply-instruction-as-an-operator-instructions-file.md` | Give garam's reply instruction as an operator instructions file, behind a switch until the deployed agent image takes one | accepted; the switch and its off state superseded by ADR-0068 |
+| `adr/0046-suspend-an-agent-from-a-field-a-person-owns-and-release-its-pod-only-on-the-writer-fences-evidence.md` | Suspend an agent from a field a person owns, and release its Pod only on the writer fence's evidence | accepted |
+| `adr/0047-replace-a-shared-claim-statefulset-only-where-the-migration-is-turned-on.md` | Replace a shared-claim StatefulSet only where the migration is turned on, and report which agents still share | superseded by ADR-0068 |
+| `adr/0048-serve-the-agent-execution-routes-from-an-execution-domain-under-garams-contract.md` | Serve the agent's activation and runtime status from an execution domain, under the contract garam owns | accepted |
+| `adr/0049-give-a-managed-agents-adapter-the-control-services-settings-behind-a-switch.md` | Give a managed agent's adapter the control service's settings and its outbox, behind a switch until activation is served | accepted; "Which agents" amended for the outbox by ADR-0060; the switch and `GATEWAY_AGENT` superseded by ADR-0068 |
+| `adr/0050-cut-a-legacy-agent-over-through-console-stages-garam-records-and-release-it-only-on-the-switch.md` | Cut a legacy agent over through console stages garam records, and release it only on the switch | superseded by ADR-0077 |
+| `adr/0051-publish-a-release-from-a-version-tag-on-main-through-a-release-workflow.md` | Publish a release from a version tag on `main` through a release workflow, and every image as one linux/amd64 manifest | accepted; the development image's `dev-` tag superseded by ADR-0067; the repository names superseded by ADR-0078; the version form superseded by ADR-0081; the trigger and the workflow amended by ADR-0095 |
+| `adr/0052-carry-an-agents-embeddings-endpoint-beside-its-model-and-refuse-changing-it-once-set.md` | Carry an agent's embeddings endpoint beside its model, and refuse changing it once set | accepted |
+| `adr/0053-add-the-embedding-and-the-workspace-size-to-the-c2-wire-and-refuse-a-model-its-agent-could-not-start-with.md` | Add the embedding and the workspace size to the C2 wire, and refuse at the control service a model its agent could not start with | accepted |
+| `adr/0054-carry-a-managed-agents-definition-revision-in-its-spec-and-render-it-into-its-config-file.md` | Carry a managed agent's definition revision in its spec, and render it into its config file | accepted |
+| `adr/0055-change-the-control-services-schema-only-by-forward-only-versioned-migrations.md` | Change the control service's schema only by forward-only versioned migrations, keeping every earlier row | accepted; adoption, archiving and the shape refusal superseded by ADR-0069 |
+| `adr/0056-publish-a-deployments-profile-versions-through-a-subcommand-of-the-control-binary.md` | Publish a deployment's profile versions through a subcommand of the control binary, and refuse settings no workload could run with | accepted |
+| `adr/0057-recover-an-agents-credential-through-a-prepared-request-and-stop-an-agent-without-a-replacement.md` | Recover an agent's credential through a request its controller prepares, and stop an agent without a replacement | accepted; the key and certificate request in the prepared request, and the recovered certificate, superseded by ADR-0073; its operation names superseded by ADR-0080 |
+| `adr/0058-refuse-the-first-certificate-of-an-agent-whose-only-creation-the-upgrade-archived-and-name-its-recovery.md` | Refuse the first certificate of an agent whose only creation the upgrade archived, and name its recovery | superseded by ADR-0069; earlier, the recovery route's standing and the message's remedy by ADR 0063 |
+| `adr/0059-place-a-recovered-credential-beside-the-kept-issuer-only-once-it-verifies-against-it.md` | Place a recovered credential beside the issuer kept from the first certificate, only once it verifies against it | superseded by ADR-0073; earlier, the kept chain, outside an answer naming none, by ADR 0062 |
+| `adr/0060-give-every-placed-adapter-its-agents-outbox-on-either-source.md` | Give every placed adapter its agent's outbox on either source, and keep the control settings to the Control source | accepted; the unfenced adapter's outbox superseded by ADR-0077 |
+| `adr/0061-release-a-pod-whose-writers-were-never-created-only-on-the-kubelets-terminal-phase.md` | Release a deleted Pod whose writers were never created only on the kubelet's terminal phase, never on an empty container ID alone | accepted |
+| `adr/0062-write-the-chain-garam-answers-a-recovery-with-and-verify-the-recovered-leaf-against-it.md` | Write the chain garam answers a recovery with, and verify the recovered leaf against it | superseded by ADR-0073 |
+| `adr/0063-keep-an-agent-whose-only-creation-the-upgrade-archived-through-credential-recovery-and-a-configure.md` | Keep an agent whose only creation the upgrade archived through credential recovery and a configure | superseded by ADR-0069 |
+| `adr/0064-give-an-agent-pod-the-grace-period-one-full-step-of-its-drain-needs.md` | Give an agent Pod the grace period one full step of its drain needs | accepted |
+| `adr/0065-move-an-agents-memory-only-through-a-verified-copy-it-accepts-before-it-serves.md` | Move an agent's memory only through a verified copy it accepts before it serves | accepted |
+| `adr/0066-push-development-images-to-garam-dev-and-keep-garam-for-releases.md` | Push development images to repositories under `garam-dev/`, and keep `garam/` for releases | superseded by ADR-0078; earlier, the development tags by ADR-0067 |
+| `adr/0067-tag-a-development-image-with-its-commit-hash-alone-and-refuse-a-push-the-namespaces-forbid.md` | Tag a development image with its commit hash alone, and refuse a push the namespaces forbid | accepted; the refusal by namespace superseded by ADR-0078 |
+| `adr/0068-keep-no-backward-compatibility-path-during-development.md` | Keep no backward-compatibility path during development | accepted; the control service's upgrade path it kept removed by ADR-0069 |
+| `adr/0069-keep-no-upgrade-path-for-the-control-services-store-during-development.md` | Keep no upgrade path for the control service's store during development | accepted |
+| `adr/0070-promote-dev-to-main-by-fast-forward.md` | Promote `dev` to `main` by fast-forward | accepted |
+| `adr/0071-render-garams-issuer-into-a-managed-agents-config-and-let-the-agent-fetch-its-keys.md` | Render garam's issuer into a managed agent's config, and let the agent fetch its keys | accepted |
+| `adr/0072-authenticate-the-manager-and-the-control-service-to-garam-with-their-own-private-keys.md` | Authenticate the manager and the control service to garam with their own private keys, and drop the operator certificate | accepted; decision 5, and the refusal of activation in decision 6, superseded by ADR-0073 |
+| `adr/0073-give-every-agent-garam-tokens-its-assignee-mints-in-place-of-a-certificate.md` | Give every agent garam tokens its assignee mints, in place of a certificate | accepted; the creation contract in decision 1 superseded by ADR-0076 |
+| `adr/0074-report-each-operators-images-and-last-contact-to-a-console-read-of-the-control-service.md` | Report each operator's images and last contact to a console read of the control service | accepted; its operation names superseded by ADR-0080 |
+| `adr/0075-hold-the-manager-and-the-control-service-not-ready-while-their-garam-authentication-has-failed-for-an-hour.md` | Hold the manager and the control service not ready while their garam authentication has failed for an hour | accepted |
+| `adr/0076-create-a-managed-agent-through-garams-agent-enrollment-v1-prepared-then-admitted.md` | Create a managed agent through garam's agent-enrollment.v1, prepared then admitted | accepted; its operation names superseded by ADR-0080 |
+| `adr/0077-build-agents-only-from-the-control-services-feed-and-remove-the-legacy-path-and-the-cut-over.md` | Build agents only from the control service's feed, and remove the legacy path and the cut-over | accepted |
+| `adr/0078-publish-each-image-to-one-repository-and-tell-release-from-development-by-tag.md` | Publish each image to one repository, and tell release from development by tag | accepted; the release version form superseded by ADR-0081 |
+| `adr/0079-run-only-on-our-own-system-and-keep-the-seams-that-allow-a-bring-your-own-operator.md` | Run only on our own system, and keep the seams that allow a bring-your-own operator | accepted; decisions 1 and 2 superseded in part, for the connector chart, by ADR-0087 |
+| `adr/0080-name-garams-resources-and-operations-as-garam-v0-7-0-does.md` | Name garam's resources and operations as garam `v0.7.0` does | accepted |
+| `adr/0081-release-as-0-1-0-dev-n-and-0-1-0-rc-n-until-launch-and-0-1-0-at-launch.md` | Release as `0.1.0-dev.N` and `0.1.0-rc.N` until launch, and `0.1.0` at launch | accepted; the tag form amended by ADR-0095 |
+| `adr/0082-import-garams-gaon-operator-and-keep-it-in-this-repository.md` | Import garam's gaon operator and keep it in this repository | accepted; the gaon operator discontinued and not released by ADR-0086; the module path amended by ADR-0095 |
+| `adr/0083-remove-the-kubernetes-manager.md` | Remove the Kubernetes manager and everything only it uses | superseded by ADR-0086 |
+| `adr/0084-publish-the-gaon-operator-and-the-guest-image-from-the-release-workflow.md` | Publish the gaon operator and the guest image from the release workflow | superseded by ADR-0086 |
+| `adr/0085-ship-a-helm-chart-of-gaon-kinds-for-the-control-service-and-the-gaon-operator.md` | Ship a Helm chart of gaon kinds for the control service and the gaon operator | accepted; the gaon operator it deploys discontinued and not released by ADR-0086 |
+| `adr/0086-restore-the-kubernetes-operator-and-keep-the-gaon-operator-unreleased.md` | Restore the Kubernetes operator and keep the gaon operator unreleased | accepted |
+| `adr/0087-connect-a-users-cluster-through-a-connector-it-installs-that-dials-garam-over-https-long-poll.md` | Connect a user's cluster to garam through a connector it installs, which dials garam over HTTPS long-poll | accepted |
+| `adr/0088-register-a-connector-with-a-one-time-token-and-a-key-it-generates-in-the-cluster.md` | Register a connector with a one-time token and a key it generates in the cluster, and authenticate as a cluster garam records | accepted; the rotation period of decision 6 superseded by ADR-0094 |
+| `adr/0089-sync-declarations-both-ways-and-give-each-object-one-owner.md` | Sync declarations both ways between garam and a connected cluster, and give each object one owner | accepted |
+| `adr/0090-run-the-connector-as-a-binary-beside-the-manager-and-build-the-bot-reconciler-from-the-agent-workload.md` | Run the connector as its own binary beside the manager, and build the Bot reconciler from the Agent workload code | accepted |
+| `adr/0091-hold-only-namespaced-rights-in-a-users-cluster-open-no-inbound-port-and-keep-secrets-in-it.md` | Hold only namespaced rights in a user's cluster, open no inbound port, and keep secrets in the cluster | accepted |
+| `adr/0092-specify-the-garam-connector-boundary-as-the-cluster-connection-interface-with-conformance-suites.md` | Specify the garam-to-connector boundary as the cluster-connection interface, with conformance suites and a reference server | accepted; the interface's location and the convention's adoption amended by ADR-0095 |
+| `adr/0093-connect-every-cluster-aurora-included-by-a-registration-token-and-keys-it-generates-and-renews.md` | Connect every cluster, aurora included, by a registration token given once and keys it generates and renews itself | accepted; the rotation period of decision 3 superseded by ADR-0094 |
+| `adr/0094-let-the-operator-set-how-long-the-connectors-key-signs-before-it-rotates.md` | Let the operator set how long the connector's key signs before it rotates, 30 days unless set | accepted |
+| `adr/0095-the-operator-lives-in-garam-bot-under-operator.md` | The operator lives in garam-bot under operator/ | accepted |
+
+### Templates
+
+A file in `adr/` that records no decision is a template, and is listed here rather than in the table above.
+
+| Template | Covers |
+|---|---|
+| `adr/0000-template.md` | The shape an ADR file takes, for one not yet written |

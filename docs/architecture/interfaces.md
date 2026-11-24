@@ -13,13 +13,17 @@ Governs garam-bot's public interfaces: where they live, how each is versioned an
 - **Interface 1, the declaration spec, is `api/declaration/v1alpha1/`:** Bot, Workspace, WorkspaceClass and BotPool in the group `bot.garam.sh`, all namespaced (ADR 0032).
   - The CustomResourceDefinitions in `crds/` are generated from the Go types by `make generate`, which fails where that moved a committed file.
   - Its two implementations are an API server serving `crds/` and `manifest.Parse`, the file form, which validates against `crds/`'s schemas. `make test` runs the admission suite against both.
-  - `garamsh/garam-bot-operator` installs `crds/` and imports the types.
+  - The operator under `operator/` installs `crds/` and imports the types.
 - **Interface 2, the agent, is `api/agent/v1alpha1/`:** an HTTP protocol that an adapter in the workspace image serves on port 7700, reached through interface 3's `Dial` (ADR 0035).
   - A session runs one harness. Tasks carry the bot's mailbox inputs, and the events are read by long poll. Each tool is an MCP server outside the workspace with a token file, and the model is interface 5's gateway.
   - Its implementations are `agentfake`, the reference, and the claude-code and codex adapters, not built yet. `make test` runs the suite against `agentfake`.
 - **Interface 3, the workspace provider, is `api/workspace/v1alpha1/`:** the Go driver interface `Provider` that a program at an execution place links (ADR 0034). Its specification maps every operation onto naru's Machine API.
   - Its implementations are `workspacefake`, the reference, and the naru Machine, Pod, container and mvmd providers, not built yet. `make test` runs the suite against `workspacefake`, with every capability and with none.
-- **Interfaces 4 and 5 are not written yet.** Interface 4, the control connection protocol, is `garamsh/garam-bot-operator`'s `interfaces/cluster-connection/v1alpha1/` for a cluster, and moves to `api/` with `garamsh/garam-bot#1205`.
+- **Interface 4, the control connection protocol, is `api/cluster-connection/v1alpha1/` for a cluster:** the HTTPS long-poll protocol between garam's connection service and the connector a user's cluster runs (operator ADR 0092). It came with the operator's move into `operator/` (#1205), its contents unchanged.
+  - Its implementations are the reference server in `reference/`, the server suite's own client, and the connector, `operator/cmd/connector`. garam's connection service is not built yet.
+  - Its server and client suites sit behind the build tag `conformance`, so `make test` leaves them out. `make -C operator conformance-server` runs the server suite against the reference server, and `make -C operator conformance-client` the client suite against the connector.
+  - It is the first interface whose requirements reach past the Kubernetes libraries: its reference server and suites require go-jose, one of the signs ADR 0032 names.
+- **Interface 5, the model gateway, is not written yet.**
 
 ## Rationale
 
