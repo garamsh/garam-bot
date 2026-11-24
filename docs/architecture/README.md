@@ -35,6 +35,7 @@ The current code is the workspace and tool infrastructure from the previous sher
 - `structure.md` — the structural rules of the domain shape: what a unit is and is named for, what may reference what, where concrete implementations are constructed, where shared code goes, when a new domain is earned
 - `packages.md` — the package partition: which layout of `stack-go.md` §Directory layout this project is under, the three cuts that produce every package, which way imports run across them, and where a new package goes
 - `runtime.md` — the runtime that runs one Bot: what `garam-bot run` reads, the status contract a manager reads through `garam-bot probe`, and what the runtime image asks of its Pod
+- `bot-system.md` — the whole bot system across its repositories: where a bot is declared and runs, one connector per execution place pulling from garam, the authentication standards and key management, workspaces, agents and external apps, the repository layout, what exists and what is to build, and the auth inventory
 - `interfaces.md` — garam-bot's public interfaces: the `api/` module, one directory per interface version holding its specification, conformance list, schemas and harness, and which interfaces exist
 
 ### Decision log
@@ -74,6 +75,11 @@ The current code is the workspace and tool infrastructure from the previous sher
 - `0033` — a runtime image runs one Bot from a file, and reports that it runs through an exec probe
 - `0034` — the workspace provider is a Go driver interface that an execution place links, and a naru Machine is its first production implementation
 - `0035` — the agent interface is an HTTP protocol that an adapter in the workspace serves, and tools are MCP servers outside it
+- `0036` — a bot is declared anywhere and managed in garam, and each execution place runs one connector that registers once and only pulls
+- `0037` — every party authenticates by an OAuth or OIDC standard, signing keys are split by purpose, and no key is made by hand
+- `0038` — garam brokers external apps through one official app per service, scopes in garam IAM, and short narrowed tokens
+- `0039` — `garam-bot daemon` is the connector of a PC and of a naru host, running several bots, and the PC app shows it
+- `0040` — `cmd/sherlock` goes: its workspace server and MCP server move under `garam-bot`, and `sherlock agent` and the in-house loop are removed
 
 ### Modules
 
