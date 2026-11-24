@@ -137,9 +137,10 @@ conformance-server: ## Run conformance.md's server suite against the reference s
 	trap 'kill $$pid 2>/dev/null; rm -r -- "$${dir:?}"' EXIT; \
 	for _ in $$(seq 100); do [ -s "$$dir/ready" ] && break; sleep 0.1; done; \
 	[ -s "$$dir/ready" ] || { cat "$$dir/server.log" >&2; exit 1; }; \
+	cd $(CONFORMANCE_MODULE) || exit 1; \
 	CONFORMANCE_BASE_URL="$$(cat "$$dir/url")" CONFORMANCE_TRUST_FILE="$$dir/ca.pem" \
 	CONFORMANCE_FIXTURE="$(CONFORMANCE_REFERENCE) --dir $$dir" \
-		(cd $(CONFORMANCE_MODULE) && go test -tags=conformance $(CONFORMANCE_DIR)/server/ -v -count=1 -timeout 20m) 2>&1 | tee "$$dir/log" || status=$$?; \
+		go test -tags=conformance $(CONFORMANCE_DIR)/server/ -v -count=1 -timeout 20m 2>&1 | tee "$$dir/log" || status=$$?; \
 	echo "conformance-server: every test of conformance.md's server suite, against the reference server:" \
 		"$$(grep -c '^    --- PASS' "$$dir/log") passed, $$(grep -c '^    --- FAIL' "$$dir/log") failed," \
 		"$$(grep -c '^    --- SKIP' "$$dir/log") skipped"; \
@@ -157,9 +158,10 @@ CONFORMANCE_CLIENT ?= $(CONFORMANCE_CONNECTOR) --garam-url={base-url} --garam-ro
 conformance-client: setup-envtest ## Run conformance.md's client suite against cmd/connector.
 	go build -o "$(CONFORMANCE_CONNECTOR)" ./cmd/connector
 	@log=$$(mktemp); status=0; \
+	cd $(CONFORMANCE_MODULE) || exit 1; \
 	KUBEBUILDER_ASSETS="$$("$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
 	CONFORMANCE_CLIENT='$(CONFORMANCE_CLIENT)' CONFORMANCE_CLIENT_SECRETS=garam-connector-identity \
-		(cd $(CONFORMANCE_MODULE) && go test -tags=conformance $(CONFORMANCE_DIR)/client/ -v -count=1 -parallel 12 -timeout 20m) 2>&1 | tee "$$log" || status=$$?; \
+		go test -tags=conformance $(CONFORMANCE_DIR)/client/ -v -count=1 -parallel 12 -timeout 20m 2>&1 | tee "$$log" || status=$$?; \
 	echo "conformance-client: every test of conformance.md's client suite, against cmd/connector:" \
 		"$$(grep -c '^    --- PASS' "$$log") passed, $$(grep -c '^    --- FAIL' "$$log") failed," \
 		"$$(grep -c '^    --- SKIP' "$$log") skipped"; \
