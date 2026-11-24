@@ -4,7 +4,7 @@ The control service: agents' execution definitions and their revisions, template
 
 ## Current decisions
 
-- **The control service is a second binary, and its desired state is `internal/definition/`.** It follows `stack-go.md` alone, as `docs/convention/README.md` §Stack-specific splits a binary that is not the manager. Nothing in the manager imports it.
+- **The control service is a second binary, and its desired state is `internal/definition/`.** It follows `stack-go.md` alone, as the repository's `docs/convention/README.md` §Stack-specific splits a binary that is not the manager. Nothing in the manager imports it.
 - **The binary serves health, the console's routes, the controller routes, and the agent routes.** `cmd/control/main.go` opens its store from the connection URL in `CONTROL_DATABASE_URL`, which is an environment variable rather than a flag because it carries a password, and migrates its schema before it serves.
   - **Health.** `/healthz` and `/readyz` are served on `--health-probe-bind-address` (default `:8081`). `/healthz` always answers 200. `/readyz` answers only while the database answers a ping and the service's `garam` authentication has not failed for longer than one hour ([ADR 0075](adr/0075-hold-the-manager-and-the-control-service-not-ready-while-their-garam-authentication-has-failed-for-an-hour.md)), and answers 503 `garam authentication lost` otherwise. Every route proves its caller at `garam`, so a service out of its Service's endpoints for that reason loses no route that could have answered. What counts as a failure, and the bound, are the manager's, in `agent.md`.
   - **API routes.** The console's and the controllers' routes share one listener on `--api-bind-address` (default `:8080`), over TLS 1.3 and nothing else.

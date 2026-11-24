@@ -94,8 +94,8 @@ The control service has no deploy target here. `make docker-build-control CONTRO
 
 ## Rules
 
-Contributing to this repository means following the conventions in it, not general practice.
+This directory is garam-bot's operator, a Go module of its own (`github.com/garamsh/garam-bot/operator`). Contributing to it means following the repository's conventions, not general practice.
 
-- `AGENTS.md` — the contribution contract, and who may change what
-- `docs/convention/README.md` — the index of every rule that governs code, tests, commits, and documents
-- `docs/architecture/README.md` — how the system is shaped now, and the decisions behind it
+- `../AGENTS.md` — the contribution contract, and who may change what
+- `../docs/convention/README.md` — the index of every rule that governs code, tests, commits, and documents, `stack-kubebuilder.md` among them
+- `docs/architecture/README.md` — how the operator is shaped now, and the decisions behind it

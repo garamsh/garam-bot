@@ -1,6 +1,6 @@
 # ADR 0081: Release as 0.1.0-dev.N and 0.1.0-rc.N until launch, and 0.1.0 at launch
 
-> Status: accepted
+> Status: accepted; the tag form amended by ADR-0095
 > Date: 2026-11-13
 
 Append-only: once merged, the body below is not rewritten. A fact later found wrong is corrected in an appended note, not edited out; a revised decision is a new ADR that supersedes this one.

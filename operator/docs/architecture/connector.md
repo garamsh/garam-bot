@@ -21,7 +21,7 @@ Registration and identity are built, in `cmd/connector` and `internal/clusteride
 
 - **Every connection is opened by the connector, outbound, over HTTPS to one garam address.** garam never dials the cluster ([ADR 0087](adr/0087-connect-a-users-cluster-through-a-connector-it-installs-that-dials-garam-over-https-long-poll.md)).
 - **Declarations arrive by long-poll, and reports leave by POST.** garam answers an open poll as soon as a change is written, and otherwise after at most 50 seconds.
-- **The wire is `interfaces/cluster-connection/v1alpha1/`** ([ADR 0092](adr/0092-specify-the-garam-connector-boundary-as-the-cluster-connection-interface-with-conformance-suites.md)): the normative specification, its OpenAPI schemas, and the conformance tests mapped to its requirements. garam implements the server, and an in-memory reference server here is the second implementation.
+- **The wire is the repository's `api/cluster-connection/v1alpha1/`** ([ADR 0092](adr/0092-specify-the-garam-connector-boundary-as-the-cluster-connection-interface-with-conformance-suites.md), ADR 0095): the normative specification, its OpenAPI schemas, and the conformance tests mapped to its requirements. garam implements the server, and an in-memory reference server beside the specification is the second implementation.
 
 ### Registration and identity
 
@@ -108,7 +108,7 @@ These are obligations on `garamsh/garam`, for that repository to decide and buil
 
 | Obligation | From |
 |---|---|
-| Serve `interfaces/cluster-connection/v1alpha1/` and pass its server suite in CI | ADR 0092 |
+| Serve `api/cluster-connection/v1alpha1/` and pass its server suite in CI | ADR 0092 |
 | A Cluster resource, `grn:<org>/iam/cluster/<id>`, with browser routes to create, read, rename, describe and delete it, and to revoke its keys | ADR 0088 |
 | Mint a one-time registration token on creation and on re-registration, under a new garam ADR superseding garam ADR-0117 in part | ADR 0088 |
 | Store what ADR 0088 decision 8 lists, and nothing it excludes | ADR 0088 |

@@ -1,6 +1,6 @@
 # ADR 0092: Specify the garam-to-connector boundary as the cluster-connection interface, with conformance suites and a reference server
 
-> Status: accepted
+> Status: accepted; the interface's location and the convention's adoption amended by ADR-0095
 > Date: 2026-11-24
 
 Append-only: once merged, the body below is not rewritten. A fact later found wrong is corrected in an appended note, not edited out; a revised decision is a new ADR that supersedes this one.
