@@ -4,7 +4,7 @@ Governs garam-bot's public interfaces: where they live, how each is versioned an
 
 ## Current decisions
 
-- **Every component boundary is a versioned public interface with a conformance suite, and admits more than one implementation from its first version** (ADR 0031). There are five: the declaration spec, the agent, the workspace provider, the control connection protocol and the model gateway.
+- **Every component boundary is a versioned public interface with a conformance suite, and admits more than one implementation from its first version** (ADR 0031), as `docs/convention/interfaces.md` requires of every boundary between separately built components. There are five: the declaration spec, the agent, the workspace provider, the control connection protocol and the model gateway.
 - **The interfaces are the Go module `github.com/garamsh/garam-bot/api`,** apart from the root module the binary ships from, so a consumer imports an interface and not garam-bot (ADR 0032). It imports nothing from the root module, and the root module requires a published version of it, as any consumer does.
 - **Each interface version is a directory, `api/<interface>/<version>/`,** holding:
   - `README.md`, the normative specification, with numbered requirements, its compatibility rules and its open questions;
@@ -20,7 +20,8 @@ Governs garam-bot's public interfaces: where they live, how each is versioned an
 
 - ADR 0031: the interface-first principle, and the five interfaces.
 - ADR 0032: why a module of its own, the group `bot.garam.sh`, and the two implementations of interface 1.
+- ADR 0033: the runtime that runs one Bot, a reader of interface 1 that meets none of its reader obligations yet.
 
 ## Open questions
 
-- **Where a conformance suite for readers lives.** Interface 1's suite tests admission. Its reader obligations, a secret reference resolved in its object's namespace and the Running condition, wait for the first reader, garam-bot's runtime that runs one Bot, and are pending cases until then.
+- **Where a conformance suite for readers lives.** Interface 1's suite tests admission. Its reader obligations, a secret reference resolved in its object's namespace and the Running condition among them, are pending cases. garam-bot's runtime that runs one Bot reads a Bot and meets none of them yet (ADR 0033), so the harness arrives with the first reader that acts on one: the runtime once it resolves secrets or attaches workspaces, or garam-bot-operator's Bot reconciler for the Running condition.

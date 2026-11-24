@@ -29,6 +29,7 @@ What makes anything generated is that regenerating it changes nothing. What nobo
 | `git.md` | Branches, commits, PR titles, merging |
 | `style.md` | Naming and pattern consistency in code |
 | `simplicity.md` | Whether to add or to change the shape; when an abstraction earns its place |
+| `interfaces.md` | Boundaries between separately built components: versioned interface, conformance test, implementations, compatibility rules |
 | `review.md` | Review procedure, verdicts, required checks and author responses |
 | `documentation.md` | Authored prose and claim evidence in documents and GitHub artifacts, reviews included |
 
