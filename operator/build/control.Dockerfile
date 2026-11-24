@@ -4,7 +4,7 @@
 # Dependabot moves both lines (`.github/dependabot.yml`, the `/build` entry), rewriting
 # tag and digest together.
 # go.mod's go directive is 1.27.4 (the api module it requires is), so the builder is that release.
-FROM mirror.gcr.io/library/golang:1.27.4-alpine3.24@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS builder
+FROM mirror.gcr.io/library/golang:1.27.4-alpine3.24@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
