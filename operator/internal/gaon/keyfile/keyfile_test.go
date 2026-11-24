@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/keyfile"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/keyfile"
 )
 
 func write(t *testing.T, mode os.FileMode) string {

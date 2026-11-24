@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/tests/gaon/gaonfake"
+	"github.com/garamsh/garam-bot/operator/tests/gaon/gaonfake"
 )
 
 func TestWriteStatus_SetsWhatAReadAnswers(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/garamsh/garam-agent-operator/internal/console"
-	"github.com/garamsh/garam-agent-operator/internal/garammachine"
+	"github.com/garamsh/garam-bot/operator/internal/console"
+	"github.com/garamsh/garam-bot/operator/internal/garammachine"
 )
 
 const introspectionPath = "/operation-authorities/introspection"

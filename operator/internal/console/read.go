@@ -9,7 +9,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // The answers the read routes give, in the field names the console parses

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // binding is what an authority for a configure request to firstAgent would bind.

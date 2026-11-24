@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/keyfile"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/keyfile"
 	"github.com/garamsh/garam/lib/errorx"
 	"github.com/garamsh/garam/lib/platform-sdk-go/machine"
 )

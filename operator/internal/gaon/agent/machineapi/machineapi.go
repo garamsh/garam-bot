@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/agent"
-	"github.com/garamsh/garam-agent-operator/internal/gaon/guest"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/agent"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/guest"
 	"github.com/garamsh/garam/lib/errorx"
 	"github.com/garamsh/garam/lib/grn"
 	"github.com/garamsh/garam/lib/platform-sdk-go/machine"

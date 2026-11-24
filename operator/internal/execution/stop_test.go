@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // stopOrg and stopOperation are what a console stop and start of the agent are bound to.

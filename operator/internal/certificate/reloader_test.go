@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/certificate"
+	"github.com/garamsh/garam-bot/operator/internal/certificate"
 )
 
 // writePair writes a self-signed key pair named commonName into dir, stamped at modified.

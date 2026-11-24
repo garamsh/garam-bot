@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/garamsh/garam-agent-operator/internal/machinetoken"
+	"github.com/garamsh/garam-bot/operator/internal/machinetoken"
 )
 
 // garamContract is the operation-authority contract version garam's browser API speaks here.

@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/machinetoken"
+	"github.com/garamsh/garam-bot/operator/internal/machinetoken"
 )
 
 // tokenEndpoint stands in for garam's /oauth/token, answering the n-th exchange the n-th token of

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // imageColumn is one reported image as stored in operators.images.

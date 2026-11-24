@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
-	"github.com/garamsh/garam-agent-operator/internal/garammachine"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/garammachine"
 )
 
 // Garam admits managed agents on garam's machine listener under agent-enrollment.v1

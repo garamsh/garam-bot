@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
-	"github.com/garamsh/garam-agent-operator/internal/garam"
+	"github.com/garamsh/garam-bot/operator/internal/garam"
 )
 
 // testGaramIssuer is the issuer the specs give the manager: the dev cluster's

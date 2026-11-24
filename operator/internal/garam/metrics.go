@@ -8,7 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	"github.com/garamsh/garam-agent-operator/internal/machinetoken"
+	"github.com/garamsh/garam-bot/operator/internal/machinetoken"
 )
 
 // The runnables a refusal is counted against, which is the value of the

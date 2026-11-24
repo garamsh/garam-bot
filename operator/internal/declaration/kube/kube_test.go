@@ -19,8 +19,8 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/garamsh/garam-agent-operator/internal/declaration"
-	"github.com/garamsh/garam-agent-operator/internal/declaration/kube"
+	"github.com/garamsh/garam-bot/operator/internal/declaration"
+	"github.com/garamsh/garam-bot/operator/internal/declaration/kube"
 )
 
 const (

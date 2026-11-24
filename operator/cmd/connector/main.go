@@ -25,10 +25,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/garamsh/garam-agent-operator/internal/clusteridentity"
-	"github.com/garamsh/garam-agent-operator/internal/clusteridentity/secret"
-	"github.com/garamsh/garam-agent-operator/internal/declaration"
-	kubeobjects "github.com/garamsh/garam-agent-operator/internal/declaration/kube"
+	"github.com/garamsh/garam-bot/operator/internal/clusteridentity"
+	"github.com/garamsh/garam-bot/operator/internal/clusteridentity/secret"
+	"github.com/garamsh/garam-bot/operator/internal/declaration"
+	kubeobjects "github.com/garamsh/garam-bot/operator/internal/declaration/kube"
 )
 
 // version is the connector's version, sent at registration; a release build sets it with -ldflags -X.

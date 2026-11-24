@@ -19,8 +19,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/garamsh/garam-agent-operator/internal/desired"
-	"github.com/garamsh/garam-agent-operator/internal/machinetoken"
+	"github.com/garamsh/garam-bot/operator/internal/desired"
+	"github.com/garamsh/garam-bot/operator/internal/machinetoken"
 )
 
 // pemCertificate, pemECKey and pemPrivateKey are the PEM block types the binary's file flags read.

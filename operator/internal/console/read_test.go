@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/garamsh/garam-agent-operator/internal/console"
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/console"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // otherOrg is an organization beside org, whose names the console's org must never reach.

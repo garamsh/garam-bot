@@ -7,7 +7,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // errorBody is every refusal's answer. Kind is set where a caller has to tell one refusal from

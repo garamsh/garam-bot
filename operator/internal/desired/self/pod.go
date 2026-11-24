@@ -10,7 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/garamsh/garam-agent-operator/internal/desired"
+	"github.com/garamsh/garam-bot/operator/internal/desired"
 )
 
 // container is the name config/manager gives the manager's container.

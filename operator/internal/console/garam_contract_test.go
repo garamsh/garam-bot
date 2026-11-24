@@ -11,10 +11,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/garamsh/garam-agent-operator/internal/console"
-	garamintrospector "github.com/garamsh/garam-agent-operator/internal/console/introspector"
-	"github.com/garamsh/garam-agent-operator/internal/definition"
-	"github.com/garamsh/garam-agent-operator/internal/garammachine"
+	"github.com/garamsh/garam-bot/operator/internal/console"
+	garamintrospector "github.com/garamsh/garam-bot/operator/internal/console/introspector"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/garammachine"
 )
 
 // kindGaramContractUnsupported is the kind a garam answer under a contract this service does not

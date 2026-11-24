@@ -8,7 +8,7 @@ import (
 	"github.com/garamsh/gaon/lib/api"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/guest"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/guest"
 	"github.com/garamsh/garam/lib/errorx"
 	"github.com/garamsh/garam/lib/grn"
 )

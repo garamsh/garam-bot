@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // statusReport is the body of a runtime-status report: the activation, and what the runtime's

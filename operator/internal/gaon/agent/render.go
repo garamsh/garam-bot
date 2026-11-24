@@ -7,7 +7,7 @@ import (
 
 	"github.com/garamsh/gaon/lib/api"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/guest"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/guest"
 	"github.com/garamsh/garam/lib/errorx"
 )
 

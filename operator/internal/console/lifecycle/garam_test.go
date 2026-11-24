@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/console"
-	"github.com/garamsh/garam-agent-operator/internal/console/lifecycle"
-	"github.com/garamsh/garam-agent-operator/internal/definition"
-	"github.com/garamsh/garam-agent-operator/internal/garammachine"
+	"github.com/garamsh/garam-bot/operator/internal/console"
+	"github.com/garamsh/garam-bot/operator/internal/console/lifecycle"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/garammachine"
 )
 
 const agent = "grn:acme/iam/agent/1e9ac1"

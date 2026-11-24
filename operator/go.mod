@@ -1,11 +1,11 @@
-module github.com/garamsh/garam-agent-operator
+module github.com/garamsh/garam-bot/operator
 
 go 1.27.4
 
 require (
 	github.com/distribution/reference v0.6.0
 	github.com/garamsh/gaon/lib/api v0.0.0-20261113042354-2387cebd0b44
-	github.com/garamsh/garam-bot/api v0.0.0-20261124091800-c64ffab99e81
+	github.com/garamsh/garam-bot/api v0.0.0-20261124163039-276626bfd3f2
 	github.com/garamsh/garam/lib/errorx v0.0.0-20261113015820-43d700d30910
 	github.com/garamsh/garam/lib/grn v0.0.0-20261113015820-43d700d30910
 	github.com/garamsh/garam/lib/platform-sdk-go v0.0.0-20261113015820-43d700d30910

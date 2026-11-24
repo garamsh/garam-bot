@@ -19,8 +19,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
-	agentv1alpha1 "github.com/garamsh/garam-agent-operator/api/v1alpha1"
-	"github.com/garamsh/garam-agent-operator/internal/garam"
+	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
+	"github.com/garamsh/garam-bot/operator/internal/garam"
 )
 
 // testPinnedTool is the tool the specs declare a pin for. It is sherlock's one

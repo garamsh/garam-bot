@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // configureRequest is the body of a configure request.

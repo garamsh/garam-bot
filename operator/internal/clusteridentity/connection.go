@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/garamsh/garam-agent-operator/internal/machinetoken"
+	"github.com/garamsh/garam-bot/operator/internal/machinetoken"
 )
 
 // connection is an established identity. The key lives here and in the KeyStore, and nowhere else.

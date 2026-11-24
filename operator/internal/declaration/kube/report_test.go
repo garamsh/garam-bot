@@ -24,9 +24,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/garamsh/garam-agent-operator/interfaces/cluster-connection/v1alpha1/reference"
-	"github.com/garamsh/garam-agent-operator/internal/clusteridentity"
-	"github.com/garamsh/garam-agent-operator/internal/declaration"
+	"github.com/garamsh/garam-bot/api/cluster-connection/v1alpha1/reference"
+	"github.com/garamsh/garam-bot/operator/internal/clusteridentity"
+	"github.com/garamsh/garam-bot/operator/internal/declaration"
 )
 
 const reportPath = "/cluster-connection/v1alpha1/clusters/self/reports"

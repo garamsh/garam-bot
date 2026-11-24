@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // storedOperator is an operator as Memory holds it, under the organization holding it.

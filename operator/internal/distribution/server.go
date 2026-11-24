@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // Config is what the controller routes are served from.

@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/garamsh/garam-agent-operator/internal/declaration"
+	"github.com/garamsh/garam-bot/operator/internal/declaration"
 )
 
 // FieldManager is the one field manager every write is made under (ADR 0089 decision 2).

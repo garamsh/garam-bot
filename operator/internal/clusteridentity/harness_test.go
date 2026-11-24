@@ -24,8 +24,8 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/interfaces/cluster-connection/v1alpha1/reference"
-	"github.com/garamsh/garam-agent-operator/internal/clusteridentity"
+	"github.com/garamsh/garam-bot/api/cluster-connection/v1alpha1/reference"
+	"github.com/garamsh/garam-bot/operator/internal/clusteridentity"
 )
 
 const (

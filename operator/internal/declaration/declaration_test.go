@@ -19,8 +19,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/garamsh/garam-agent-operator/interfaces/cluster-connection/v1alpha1/reference"
-	"github.com/garamsh/garam-agent-operator/internal/declaration"
+	"github.com/garamsh/garam-bot/api/cluster-connection/v1alpha1/reference"
+	"github.com/garamsh/garam-bot/operator/internal/declaration"
 )
 
 func ref(namespace, name string) declaration.Ref {

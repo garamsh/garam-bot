@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/execution"
+	"github.com/garamsh/garam-bot/operator/internal/execution"
 )
 
 // foreignContract is a contract the agent routes do not take; keyContract, keyLevel and keyPort are

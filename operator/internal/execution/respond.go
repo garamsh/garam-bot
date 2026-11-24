@@ -7,7 +7,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // contractHeader carries the contract's value on every request and answer.

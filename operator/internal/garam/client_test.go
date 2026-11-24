@@ -9,7 +9,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/garamsh/garam-agent-operator/internal/garam"
+	"github.com/garamsh/garam-bot/operator/internal/garam"
 )
 
 // sampleAgent is an agent GRN in the shape garam mints them.

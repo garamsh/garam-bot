@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/garamsh/garam-agent-operator/internal/desired"
+	"github.com/garamsh/garam-bot/operator/internal/desired"
 )
 
 // managerStore is the manager's recovery store in memory, for one agent and no other.

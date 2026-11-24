@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/loop"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/loop"
 )
 
 // service answers each Reconcile from a script, then cancels the loop.

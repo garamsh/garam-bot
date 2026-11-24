@@ -12,10 +12,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	agentv1alpha1 "github.com/garamsh/garam-agent-operator/api/v1alpha1"
-	"github.com/garamsh/garam-agent-operator/internal/agentname"
-	"github.com/garamsh/garam-agent-operator/internal/desired"
-	"github.com/garamsh/garam-agent-operator/internal/secretref"
+	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
+	"github.com/garamsh/garam-bot/operator/internal/agentname"
+	"github.com/garamsh/garam-bot/operator/internal/desired"
+	"github.com/garamsh/garam-bot/operator/internal/secretref"
 )
 
 // fieldOwnerName is the field manager every write the renderer makes to an Agent is

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/agent"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/agent"
 	"github.com/garamsh/garam/lib/errorx"
 	"github.com/garamsh/garam/lib/grn"
 )
@@ -131,7 +131,7 @@ func (c *Client) ReportRendered(ctx context.Context, g grn.GRN, revision string)
 }
 
 // wirePlacement is the body of a placement registration, as
-// garamsh/garam-agent-operator docs/architecture/control.md pins it.
+// operator/docs/architecture/control.md pins it.
 // `previous` is always null: this operator registers an agent's first
 // placement only (ADR 0154).
 type wirePlacement struct {

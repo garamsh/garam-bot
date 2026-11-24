@@ -10,7 +10,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	agentv1alpha1 "github.com/garamsh/garam-agent-operator/api/v1alpha1"
+	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
 )
 
 // person is the field manager a person's edits to an Agent are made under.

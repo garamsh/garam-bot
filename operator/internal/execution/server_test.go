@@ -22,9 +22,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
-	"github.com/garamsh/garam-agent-operator/internal/definition/repository"
-	"github.com/garamsh/garam-agent-operator/internal/execution"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition/repository"
+	"github.com/garamsh/garam-bot/operator/internal/execution"
 )
 
 // The refusal kinds agent-execution.v2 lists, as these tests expect them.

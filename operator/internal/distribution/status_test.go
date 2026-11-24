@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/distribution"
+	"github.com/garamsh/garam-bot/operator/internal/distribution"
 )
 
 func TestStatus_IgnoresARegression(t *testing.T) {

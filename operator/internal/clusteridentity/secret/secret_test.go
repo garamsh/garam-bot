@@ -18,8 +18,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
 
-	"github.com/garamsh/garam-agent-operator/internal/clusteridentity"
-	"github.com/garamsh/garam-agent-operator/internal/clusteridentity/secret"
+	"github.com/garamsh/garam-bot/operator/internal/clusteridentity"
+	"github.com/garamsh/garam-bot/operator/internal/clusteridentity/secret"
 )
 
 // namespace and name are where every test keeps its Secret.

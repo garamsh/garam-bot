@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation"
 
-	"github.com/garamsh/garam-agent-operator/internal/secretref"
+	"github.com/garamsh/garam-bot/operator/internal/secretref"
 )
 
 // GRN is the agent's garam resource name, which garam mints at registration.

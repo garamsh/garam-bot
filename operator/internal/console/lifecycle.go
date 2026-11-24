@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // OperationRecover is the operation an authority binds to open an agent's credential recovery, and

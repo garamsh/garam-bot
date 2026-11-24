@@ -8,7 +8,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	agentv1alpha1 "github.com/garamsh/garam-agent-operator/api/v1alpha1"
+	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
 )
 
 // agentTypeDescriptor carries every name the Pod builder writes that belongs to

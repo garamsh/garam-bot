@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/config"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/config"
 )
 
 var full = map[string]string{

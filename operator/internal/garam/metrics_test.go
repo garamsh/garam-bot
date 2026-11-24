@@ -10,8 +10,8 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	"github.com/garamsh/garam-agent-operator/internal/garam"
-	"github.com/garamsh/garam-agent-operator/internal/machinetoken"
+	"github.com/garamsh/garam-bot/operator/internal/garam"
+	"github.com/garamsh/garam-bot/operator/internal/machinetoken"
 )
 
 const (

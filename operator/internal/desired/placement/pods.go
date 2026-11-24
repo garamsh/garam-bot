@@ -12,9 +12,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	agentv1alpha1 "github.com/garamsh/garam-agent-operator/api/v1alpha1"
-	"github.com/garamsh/garam-agent-operator/internal/agentname"
-	"github.com/garamsh/garam-agent-operator/internal/desired"
+	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
+	"github.com/garamsh/garam-bot/operator/internal/agentname"
+	"github.com/garamsh/garam-bot/operator/internal/desired"
 )
 
 // Pods implements desired.PlacementStore in one namespace, the one the manager

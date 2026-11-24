@@ -11,8 +11,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/garamsh/garam-agent-operator/internal/desired"
-	"github.com/garamsh/garam-agent-operator/internal/desired/self"
+	"github.com/garamsh/garam-bot/operator/internal/desired"
+	"github.com/garamsh/garam-bot/operator/internal/desired/self"
 )
 
 const (

@@ -5,7 +5,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/garamsh/garam-agent-operator/test/utils"
+	"github.com/garamsh/garam-bot/operator/test/utils"
 )
 
 // ownedCluster is the kind cluster the run in these cases created.

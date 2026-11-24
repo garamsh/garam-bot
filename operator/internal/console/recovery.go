@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // The kinds a recovery refusal of this service's own is answered under, beside garam's.

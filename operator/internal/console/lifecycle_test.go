@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/console"
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/console"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // lifecycle is the test double for garam's recovery and deactivation: it records each call, and

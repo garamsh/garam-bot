@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/execution"
+	"github.com/garamsh/garam-bot/operator/internal/execution"
 )
 
 const requestID = "737a3319-e377-8fab-ba8c-fe01762adb62"

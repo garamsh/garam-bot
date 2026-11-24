@@ -6,7 +6,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // publishRequest is the body of a publish request, as the console's publish form sends it

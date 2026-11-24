@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	agentv1alpha1 "github.com/garamsh/garam-agent-operator/api/v1alpha1"
+	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
 )
 
 // syncedCondition is the Synced condition an Agent of that name carries, and

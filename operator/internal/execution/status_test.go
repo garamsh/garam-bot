@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
-	"github.com/garamsh/garam-agent-operator/internal/execution"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/execution"
 )
 
 // statusBody is the runtime's report of gen at revision in state, under activationID.

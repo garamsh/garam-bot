@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/execution"
-	executiongaram "github.com/garamsh/garam-agent-operator/internal/execution/garam"
-	"github.com/garamsh/garam-agent-operator/internal/garammachine"
+	"github.com/garamsh/garam-bot/operator/internal/execution"
+	executiongaram "github.com/garamsh/garam-bot/operator/internal/execution/garam"
+	"github.com/garamsh/garam-bot/operator/internal/garammachine"
 )
 
 const (

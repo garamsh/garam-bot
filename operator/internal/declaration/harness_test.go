@@ -26,9 +26,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/garamsh/garam-agent-operator/interfaces/cluster-connection/v1alpha1/reference"
-	"github.com/garamsh/garam-agent-operator/internal/clusteridentity"
-	"github.com/garamsh/garam-agent-operator/internal/declaration"
+	"github.com/garamsh/garam-bot/api/cluster-connection/v1alpha1/reference"
+	"github.com/garamsh/garam-bot/operator/internal/clusteridentity"
+	"github.com/garamsh/garam-bot/operator/internal/declaration"
 )
 
 const (

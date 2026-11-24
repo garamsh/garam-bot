@@ -10,13 +10,13 @@ import (
 
 	"github.com/garamsh/gaon/lib/api"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/agent"
-	"github.com/garamsh/garam-agent-operator/internal/gaon/agent/controlapi"
-	"github.com/garamsh/garam-agent-operator/internal/gaon/agent/machineapi"
-	"github.com/garamsh/garam-agent-operator/internal/gaon/config"
-	"github.com/garamsh/garam-agent-operator/internal/gaon/health"
-	"github.com/garamsh/garam-agent-operator/internal/gaon/keyfile"
-	"github.com/garamsh/garam-agent-operator/internal/gaon/token"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/agent"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/agent/controlapi"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/agent/machineapi"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/config"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/health"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/keyfile"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/token"
 	"github.com/garamsh/garam/lib/errorx"
 )
 

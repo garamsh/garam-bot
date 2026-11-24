@@ -9,7 +9,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // maxWait bounds how long one request for the desired feed waits for the position to move.

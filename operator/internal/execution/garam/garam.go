@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/garamsh/garam-agent-operator/internal/execution"
-	"github.com/garamsh/garam-agent-operator/internal/garammachine"
+	"github.com/garamsh/garam-bot/operator/internal/execution"
+	"github.com/garamsh/garam-bot/operator/internal/garammachine"
 )
 
 // Garam asks garam's machine listener what the agent routes decide on (garam@afde8b8,

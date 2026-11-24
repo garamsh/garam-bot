@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/health"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/health"
 )
 
 func status(h http.Handler, method, path string) int {

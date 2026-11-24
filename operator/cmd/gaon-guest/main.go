@@ -10,7 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/guest"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/guest"
 )
 
 func main() {

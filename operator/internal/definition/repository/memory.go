@@ -7,7 +7,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // Memory is a definition.Repository held in process, for tests and development.

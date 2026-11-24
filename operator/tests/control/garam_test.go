@@ -19,8 +19,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/desired"
-	"github.com/garamsh/garam-agent-operator/internal/machinetoken"
+	"github.com/garamsh/garam-bot/operator/internal/desired"
+	"github.com/garamsh/garam-bot/operator/internal/machinetoken"
 )
 
 // garam is the real garam the suite brought up, with one agent garam created for the test and

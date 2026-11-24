@@ -24,16 +24,16 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	agentv1alpha1 "github.com/garamsh/garam-agent-operator/api/v1alpha1"
-	"github.com/garamsh/garam-agent-operator/internal/controller"
-	"github.com/garamsh/garam-agent-operator/internal/desired"
-	"github.com/garamsh/garam-agent-operator/internal/desired/credential"
-	"github.com/garamsh/garam-agent-operator/internal/desired/placement"
-	"github.com/garamsh/garam-agent-operator/internal/desired/renderer"
-	"github.com/garamsh/garam-agent-operator/internal/desired/self"
-	"github.com/garamsh/garam-agent-operator/internal/garam"
-	"github.com/garamsh/garam-agent-operator/internal/garam/constructor"
-	"github.com/garamsh/garam-agent-operator/internal/machinetoken"
+	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
+	"github.com/garamsh/garam-bot/operator/internal/controller"
+	"github.com/garamsh/garam-bot/operator/internal/desired"
+	"github.com/garamsh/garam-bot/operator/internal/desired/credential"
+	"github.com/garamsh/garam-bot/operator/internal/desired/placement"
+	"github.com/garamsh/garam-bot/operator/internal/desired/renderer"
+	"github.com/garamsh/garam-bot/operator/internal/desired/self"
+	"github.com/garamsh/garam-bot/operator/internal/garam"
+	"github.com/garamsh/garam-bot/operator/internal/garam/constructor"
+	"github.com/garamsh/garam-bot/operator/internal/machinetoken"
 	// +kubebuilder:scaffold:imports
 )
 

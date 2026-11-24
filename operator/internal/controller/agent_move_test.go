@@ -15,7 +15,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	agentv1alpha1 "github.com/garamsh/garam-agent-operator/api/v1alpha1"
+	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
 )
 
 // exitedState is an agent container that exited with code.

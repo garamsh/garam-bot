@@ -13,10 +13,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/agent"
-	"github.com/garamsh/garam-agent-operator/internal/gaon/config"
-	"github.com/garamsh/garam-agent-operator/internal/gaon/health"
-	"github.com/garamsh/garam-agent-operator/internal/gaon/loop"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/agent"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/config"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/health"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/loop"
 	"github.com/garamsh/garam/lib/errorx"
 )
 

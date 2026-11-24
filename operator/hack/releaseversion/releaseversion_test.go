@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/hack/releaseversion"
+	"github.com/garamsh/garam-bot/operator/hack/releaseversion"
 )
 
 var accepted = []string{

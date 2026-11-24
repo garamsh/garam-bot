@@ -14,7 +14,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/garamsh/garam-agent-operator/internal/garam"
+	"github.com/garamsh/garam-bot/operator/internal/garam"
 )
 
 // mintedAt is the test's clock when the stub mints a token.

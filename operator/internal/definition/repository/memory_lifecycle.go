@@ -5,7 +5,7 @@ import (
 	"context"
 	"slices"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 func (m *Memory) OpenRecovery(_ context.Context, r definition.Recovery) (definition.Recovery, bool, error) {

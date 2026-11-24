@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/secretref"
+	"github.com/garamsh/garam-bot/operator/internal/secretref"
 )
 
 // unseparated is a reference with no "/", which names a Secret and no key.

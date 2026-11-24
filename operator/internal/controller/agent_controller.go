@@ -21,8 +21,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	agentv1alpha1 "github.com/garamsh/garam-agent-operator/api/v1alpha1"
-	"github.com/garamsh/garam-agent-operator/internal/agentname"
+	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
+	"github.com/garamsh/garam-bot/operator/internal/agentname"
 )
 
 // AgentReconciler reconciles a Agent object

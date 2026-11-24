@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/garamsh/garam-agent-operator/test/utils"
+	"github.com/garamsh/garam-bot/operator/test/utils"
 )
 
 // agentImage is what the Agent under test runs. It is not sherlock's agent,

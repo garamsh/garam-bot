@@ -9,7 +9,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/garamsh/garam-agent-operator/hack/releaseversion"
+	"github.com/garamsh/garam-bot/operator/hack/releaseversion"
 )
 
 func main() {

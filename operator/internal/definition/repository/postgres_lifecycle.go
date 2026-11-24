@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 func (p *Postgres) OpenRecovery(ctx context.Context, r definition.Recovery) (definition.Recovery, bool, error) {

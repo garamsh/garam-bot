@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	agentv1alpha1 "github.com/garamsh/garam-agent-operator/api/v1alpha1"
+	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
 )
 
 const agentNamespace = "default"

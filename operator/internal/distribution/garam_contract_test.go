@@ -11,9 +11,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/garamsh/garam-agent-operator/internal/distribution"
-	garamprover "github.com/garamsh/garam-agent-operator/internal/distribution/prover"
-	"github.com/garamsh/garam-agent-operator/internal/garammachine"
+	"github.com/garamsh/garam-bot/operator/internal/distribution"
+	garamprover "github.com/garamsh/garam-bot/operator/internal/distribution/prover"
+	"github.com/garamsh/garam-bot/operator/internal/garammachine"
 )
 
 // kindGaramContractUnsupported is the kind a garam answer under a contract this service does not

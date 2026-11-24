@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/distribution"
-	"github.com/garamsh/garam-agent-operator/internal/distribution/prover"
-	"github.com/garamsh/garam-agent-operator/internal/garammachine"
+	"github.com/garamsh/garam-bot/operator/internal/distribution"
+	"github.com/garamsh/garam-bot/operator/internal/distribution/prover"
+	"github.com/garamsh/garam-bot/operator/internal/garammachine"
 )
 
 // token is a controller's audience token as garam answers one.

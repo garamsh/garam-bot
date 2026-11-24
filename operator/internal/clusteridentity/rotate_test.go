@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/clusteridentity"
+	"github.com/garamsh/garam-bot/operator/internal/clusteridentity"
 )
 
 // rotationSent is a rotation request as the server was sent it.

@@ -28,7 +28,7 @@ import (
 
 	"github.com/garamsh/gaon/lib/api"
 
-	"github.com/garamsh/garam-agent-operator/tests/gaon/gaonfake"
+	"github.com/garamsh/garam-bot/operator/tests/gaon/gaonfake"
 )
 
 func main() {

@@ -21,8 +21,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/yaml"
 
-	"github.com/garamsh/garam-agent-operator/internal/declaration"
-	"github.com/garamsh/garam-agent-operator/internal/declaration/kube"
+	"github.com/garamsh/garam-bot/operator/internal/declaration"
+	"github.com/garamsh/garam-bot/operator/internal/declaration/kube"
 )
 
 // The adapter's writes are server-side apply, JSON patches under preconditions and managed fields,

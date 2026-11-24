@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/agent"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/agent"
 )
 
 // Options are what Run is given.

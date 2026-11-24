@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // maxBodyBytes bounds a request body; the authority binds the digest of all of it.

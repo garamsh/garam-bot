@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
 )
 
 // contactInterval is the least time between two writes of one controller's last contact. The

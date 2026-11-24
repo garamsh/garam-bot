@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/garamsh/garam-agent-operator/internal/distribution"
-	"github.com/garamsh/garam-agent-operator/internal/garammachine"
+	"github.com/garamsh/garam-bot/operator/internal/distribution"
+	"github.com/garamsh/garam-bot/operator/internal/garammachine"
 )
 
 // Garam proves controllers on garam's machine listener, through introspectController under

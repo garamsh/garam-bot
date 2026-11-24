@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/garamsh/garam-agent-operator/internal/gaon/cli"
+	"github.com/garamsh/garam-bot/operator/internal/gaon/cli"
 )
 
 func main() {

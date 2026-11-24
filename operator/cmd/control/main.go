@@ -21,19 +21,19 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/garamsh/garam-agent-operator/internal/certificate"
-	"github.com/garamsh/garam-agent-operator/internal/console"
-	"github.com/garamsh/garam-agent-operator/internal/console/introspector"
-	"github.com/garamsh/garam-agent-operator/internal/console/lifecycle"
-	"github.com/garamsh/garam-agent-operator/internal/definition"
-	"github.com/garamsh/garam-agent-operator/internal/definition/registrar"
-	"github.com/garamsh/garam-agent-operator/internal/definition/repository"
-	"github.com/garamsh/garam-agent-operator/internal/distribution"
-	"github.com/garamsh/garam-agent-operator/internal/distribution/prover"
-	"github.com/garamsh/garam-agent-operator/internal/execution"
-	executiongaram "github.com/garamsh/garam-agent-operator/internal/execution/garam"
-	"github.com/garamsh/garam-agent-operator/internal/garammachine"
-	"github.com/garamsh/garam-agent-operator/internal/machinetoken"
+	"github.com/garamsh/garam-bot/operator/internal/certificate"
+	"github.com/garamsh/garam-bot/operator/internal/console"
+	"github.com/garamsh/garam-bot/operator/internal/console/introspector"
+	"github.com/garamsh/garam-bot/operator/internal/console/lifecycle"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition/registrar"
+	"github.com/garamsh/garam-bot/operator/internal/definition/repository"
+	"github.com/garamsh/garam-bot/operator/internal/distribution"
+	"github.com/garamsh/garam-bot/operator/internal/distribution/prover"
+	"github.com/garamsh/garam-bot/operator/internal/execution"
+	executiongaram "github.com/garamsh/garam-bot/operator/internal/execution/garam"
+	"github.com/garamsh/garam-bot/operator/internal/garammachine"
+	"github.com/garamsh/garam-bot/operator/internal/machinetoken"
 )
 
 // databaseURLVariable names the environment variable holding the store's connection URL,

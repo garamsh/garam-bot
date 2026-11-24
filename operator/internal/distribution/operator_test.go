@@ -15,9 +15,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/internal/definition"
-	"github.com/garamsh/garam-agent-operator/internal/definition/repository"
-	"github.com/garamsh/garam-agent-operator/internal/distribution"
+	"github.com/garamsh/garam-bot/operator/internal/definition"
+	"github.com/garamsh/garam-bot/operator/internal/definition/repository"
+	"github.com/garamsh/garam-bot/operator/internal/distribution"
 )
 
 // clock is the time the routes read, moved only by the test.
