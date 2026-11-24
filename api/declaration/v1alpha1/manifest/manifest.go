@@ -8,12 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	goyaml "go.yaml.in/yaml/v2"
+	apivalidation "k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/kube-openapi/pkg/validation/strfmt"
 	"k8s.io/kube-openapi/pkg/validation/validate"
 	sigsjson "sigs.k8s.io/json"
@@ -34,8 +34,9 @@ var ErrInvalid = errors.New("invalid declaration")
 
 // Parse reads data, one YAML or JSON document holding one object of a declared kind, and returns
 // the object with the schema's defaults applied. It refuses what the API server serving the
-// CustomResourceDefinitions in v1alpha1.CRDs refuses under strict field validation. A status the
-// document carries is dropped, as the API server drops it from a create.
+// CustomResourceDefinitions in v1alpha1.CRDs refuses on a create under strict field validation. A
+// status the document carries, for a kind that has one, is checked for unknown fields and then
+// dropped, as the API server drops it from a create.
 func Parse(data []byte) (Object, error) {
 	if count, err := documents(data); err != nil || count != 1 {
 		return nil, fmt.Errorf("%w: the file is not one YAML or JSON document", ErrInvalid)
@@ -50,14 +51,16 @@ func Parse(data []byte) (Object, error) {
 	}
 	kind, _ := object["kind"].(string)
 	apiVersion, _ := object["apiVersion"].(string)
-	schema, typed := kindSchemas[kind], newObject(kind)
-	if apiVersion != v1alpha1.GroupVersion.String() || schema == nil || typed == nil {
+	schema := kindSchemas[kind]
+	if apiVersion != v1alpha1.GroupVersion.String() || schema == nil || newObject(kind) == nil {
 		return nil, fmt.Errorf("%w: %s %s is not a kind of %s", ErrInvalid, apiVersion, kind, v1alpha1.GroupVersion)
 	}
-	delete(object, "status")
-	if err := checkName(object); err != nil {
+	// The server decodes the whole document strictly before it drops the status, so an unknown
+	// field anywhere, a status on a kind with none among them, refuses the object.
+	if _, err := decodeStrict(document, kind); err != nil {
 		return nil, err
 	}
+	delete(object, "status")
 
 	applyDefaults(schema, object)
 	problems := validate.NewSchemaValidator(schema, nil, "", strfmt.Default).Validate(object).Errors
@@ -71,7 +74,20 @@ func Parse(data []byte) (Object, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
-	strict, err := sigsjson.UnmarshalStrict(defaulted, typed)
+	typed, err := decodeStrict(defaulted, kind)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkMetadata(typed); err != nil {
+		return nil, err
+	}
+
+	return typed, nil
+}
+
+func decodeStrict(document []byte, kind string) (Object, error) {
+	typed := newObject(kind)
+	strict, err := sigsjson.UnmarshalStrict(document, typed)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
@@ -97,18 +113,17 @@ func newObject(kind string) Object {
 	}
 }
 
-// checkName refuses an object without a name, or with a name or namespace the API server refuses.
-func checkName(object map[string]any) error {
-	metadata, _ := object["metadata"].(map[string]any)
-	name, _ := metadata["name"].(string)
-	if problems := validation.IsDNS1123Subdomain(name); len(problems) > 0 {
-		return fmt.Errorf("%w: metadata.name %q: %s", ErrInvalid, name, strings.Join(problems, "; "))
+// checkMetadata refuses metadata the API server refuses on a create: an invalid name, namespace,
+// label, annotation or finalizer, and a resourceVersion, which only the server sets. A file needs no
+// namespace, so one is checked only where it is set.
+func checkMetadata(object Object) error {
+	problems := apivalidation.ValidateObjectMetaAccessor(object, object.GetNamespace() != "",
+		apivalidation.NameIsDNSSubdomain, field.NewPath("metadata"))
+	if object.GetResourceVersion() != "" {
+		problems = append(problems, field.Forbidden(field.NewPath("metadata", "resourceVersion"), "may not be set on a create"))
 	}
-	if namespace, present := metadata["namespace"]; present {
-		value, _ := namespace.(string)
-		if problems := validation.IsDNS1123Label(value); len(problems) > 0 {
-			return fmt.Errorf("%w: metadata.namespace %q: %s", ErrInvalid, value, strings.Join(problems, "; "))
-		}
+	if len(problems) > 0 {
+		return fmt.Errorf("%w: %w", ErrInvalid, problems.ToAggregate())
 	}
 
 	return nil

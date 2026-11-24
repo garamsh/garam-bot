@@ -13,9 +13,9 @@ import (
 // Admitter is an implementation under test.
 type Admitter interface {
 	// Admit admits manifest, one object of a declared kind as a YAML document, into namespace, and
-	// returns the object's spec as admitted, defaults applied, as JSON. It returns an error when it
-	// refuses the object.
-	Admit(ctx context.Context, namespace string, manifest []byte) (spec []byte, err error)
+	// returns the object as admitted, defaults applied, as JSON. It returns an error when it refuses
+	// the object.
+	Admit(ctx context.Context, namespace string, manifest []byte) (object []byte, err error)
 }
 
 // Namespace is the namespace the suite admits every object into.
@@ -29,16 +29,35 @@ func Run(t *testing.T, admitter Admitter) {
 			if c.Pending != "" {
 				t.Skip("pending: " + c.Pending)
 			}
-			spec, err := admitter.Admit(t.Context(), Namespace, []byte(c.Manifest))
+			object, err := admitter.Admit(t.Context(), Namespace, []byte(c.Manifest))
 			switch {
 			case c.Admit && err != nil:
 				t.Fatalf("refused an object the spec admits: %v", err)
 			case !c.Admit && err == nil:
-				t.Fatalf("admitted an object the spec refuses; admitted spec %s", spec)
-			case c.Admit && c.WantSpec != "":
-				assertSameJSON(t, c.WantSpec, spec)
+				t.Fatalf("admitted an object the spec refuses; admitted %s", object)
+			case c.Admit:
+				assertAdmitted(t, c, object)
 			}
 		})
+	}
+}
+
+// assertAdmitted holds every admitted object to SCH-6, a status the declaration carried is not
+// taken, and a case with WantSpec to the spec it names.
+func assertAdmitted(t *testing.T, c Case, object []byte) {
+	t.Helper()
+	var admitted struct {
+		Spec   json.RawMessage `json:"spec"`
+		Status map[string]any  `json:"status"`
+	}
+	if err := json.Unmarshal(object, &admitted); err != nil {
+		t.Fatalf("the admitted object is not JSON: %v: %s", err, object)
+	}
+	if len(admitted.Status) > 0 {
+		t.Fatalf("SCH-6: the admitted object kept the declaration's status %v", admitted.Status)
+	}
+	if c.WantSpec != "" {
+		assertSameJSON(t, c.WantSpec, admitted.Spec)
 	}
 }
 

@@ -9,7 +9,12 @@ import (
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:resource:scope=Namespaced,categories=garam
+// +kubebuilder:printcolumn:name="Harness",type=string,JSONPath=`.spec.agent.harness`
+// +kubebuilder:printcolumn:name="Placement",type=string,JSONPath=`.spec.placement`
+// +kubebuilder:printcolumn:name="Running",type=string,JSONPath=`.status.conditions[?(@.type=="Running")].status`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:metadata:annotations="bot.garam.sh/spec-release=0.1.0"
 type Bot struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -20,6 +25,8 @@ type Bot struct {
 }
 
 // BotSpec is the declared state of a Bot.
+//
+// +kubebuilder:validation:XValidation:rule="!has(self.pool) || !has(self.placement) || self.placement != 'Dedicated'",message="a Dedicated bot names no pool"
 type BotSpec struct {
 	Persona Persona `json:"persona"`
 	Agent   Agent   `json:"agent"`
@@ -142,13 +149,12 @@ const (
 
 // Permissions are what the bot may do, enforced where the bot acts.
 type Permissions struct {
-	// Tools names the tools the bot may call.
+	// Tools are the tools the bot may call, each named once.
 	// +optional
-	// +listType=set
+	// +listType=map
+	// +listMapKey=name
 	// +kubebuilder:validation:MaxItems=64
-	// +kubebuilder:validation:items:MaxLength=63
-	// +kubebuilder:validation:items:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
-	Tools []string `json:"tools,omitempty"`
+	Tools []ToolPermission `json:"tools,omitempty"`
 
 	// Secrets names the Secret keys the bot may use, in the bot's namespace.
 	// +optional
@@ -156,13 +162,28 @@ type Permissions struct {
 	// +kubebuilder:validation:MaxItems=64
 	Secrets []SecretKeyRef `json:"secrets,omitempty"`
 
-	// Egress names the hosts the bot may reach.
+	// Egress are the hosts the bot may reach, each named once.
 	// +optional
-	// +listType=set
+	// +listType=map
+	// +listMapKey=host
 	// +kubebuilder:validation:MaxItems=64
-	// +kubebuilder:validation:items:MaxLength=253
-	// +kubebuilder:validation:items:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
-	Egress []string `json:"egress,omitempty"`
+	Egress []EgressPermission `json:"egress,omitempty"`
+}
+
+// ToolPermission is one tool the bot may call.
+type ToolPermission struct {
+	// Name is the tool's name.
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	Name string `json:"name"`
+}
+
+// EgressPermission is one host the bot may reach.
+type EgressPermission struct {
+	// Host is a DNS name whose last label begins with a letter, so it is never an IP address.
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)*[a-z]([-a-z0-9]*[a-z0-9])?$`
+	Host string `json:"host"`
 }
 
 // ConditionRunning is the Bot condition that is True while the bot's process runs.

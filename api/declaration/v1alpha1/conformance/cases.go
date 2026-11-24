@@ -36,6 +36,11 @@ func secrets(ref string) string {
 	return bot("  permissions: {secrets: [\"" + ref + "\"]}\n")
 }
 
+// metadata returns the minimal Bot with fields, a YAML flow-mapping body, added to its metadata.
+func metadata(fields string) string {
+	return strings.Replace(bot(""), "{name: mira}", "{name: mira, "+fields+"}", 1)
+}
+
 // workspaceClass returns a WorkspaceClass named small whose spec is spec, a YAML flow mapping.
 func workspaceClass(spec string) string {
 	return header + "kind: WorkspaceClass\nmetadata: {name: small}\nspec: " + spec + "\n"
@@ -49,10 +54,10 @@ func Cases() []Case {
   - {name: main, ref: {name: neocity-main, access: SharedRead}}
   - {name: scratch, template: {class: small, lifetime: Session}}
   permissions:
-    tools: [git, shell]
+    tools: [{name: git}, {name: shell}]
     secrets: [deploy-key/ssh]
-    egress: [github.com]
-  placement: Dedicated
+    egress: [{host: github.com}, {host: api.github.com}]
+  placement: Shared
   pool: game-team
 `), "{role: Game Lead}", `{role: Game Lead, instructions: "Lead the game team."}`, 1)},
 		{Requirement: "SCH-1", Name: "a Workspace is admitted", Admit: true,
@@ -84,25 +89,50 @@ func Cases() []Case {
 			Manifest: bot("  workspaces: [{name: main}]\n")},
 		{Requirement: "SCH-4", Name: "two attachments of one name are refused",
 			Manifest: bot("  workspaces: [{name: main, ref: {name: a}}, {name: main, ref: {name: b}}]\n")},
-		{Requirement: "SCH-4", Name: "a tool named twice is refused", Manifest: bot("  permissions: {tools: [git, git]}\n")},
+		{Requirement: "SCH-4", Name: "a tool named twice is refused", Manifest: bot("  permissions: {tools: [{name: git}, {name: git}]}\n")},
+		{Requirement: "SCH-4", Name: "a host named twice is refused",
+			Manifest: bot("  permissions: {egress: [{host: github.com}, {host: github.com}]}\n")},
+		{Requirement: "SCH-4", Name: "an egress host that is an IP address is refused",
+			Manifest: bot("  permissions: {egress: [{host: 10.0.0.1}]}\n")},
+		{Requirement: "SCH-4", Name: "a Dedicated bot naming a pool is refused",
+			Manifest: bot("  placement: Dedicated\n  pool: game-team\n")},
+		{Requirement: "SCH-4", Name: "a Dedicated bot without a pool is admitted", Admit: true,
+			Manifest: bot("  placement: Dedicated\n")},
 		{Requirement: "SCH-4", Name: "a template lifetime outside its enum is refused",
 			Manifest: bot("  workspaces: [{name: main, template: {class: small, lifetime: Forever}}]\n")},
 		{Requirement: "SCH-4", Name: "a BotPool of zero bots per pod is refused",
 			Manifest: header + "kind: BotPool\nmetadata: {name: game-team}\nspec: {maxBotsPerPod: 0}\n"},
 		{Requirement: "SCH-4", Name: "a WorkspaceClass that sleeps after zero is refused",
 			Manifest: workspaceClass("{provider: mvmd, resources: {cpu: 2, memory: 4Gi, disk: 20Gi}, idle: {sleepAfter: 0s}}")},
+		{Requirement: "SCH-4", Name: "a negative resource is refused",
+			Manifest: workspaceClass("{provider: mvmd, resources: {cpu: \"-2\", memory: 4Gi, disk: 20Gi}}")},
+		{Requirement: "SCH-4", Name: "a zero resource is refused",
+			Manifest: workspaceClass("{provider: mvmd, resources: {cpu: 2, memory: \"0\", disk: 20Gi}}")},
 		{Requirement: "SCH-4", Name: "a resource that is not a quantity is refused",
 			Manifest: workspaceClass("{provider: mvmd, resources: {cpu: two, memory: 4Gi, disk: 20Gi}}")},
 		{Requirement: "SCH-4", Name: "an object whose name is not a DNS subdomain is refused",
 			Manifest: strings.Replace(bot(""), "{name: mira}", "{name: Mira}", 1)},
+		{Requirement: "SCH-4", Name: "a label value with a space is refused", Manifest: metadata("labels: {team: \"a b\"}")},
+		{Requirement: "SCH-4", Name: "an invalid label key is refused", Manifest: metadata("labels: {\"-x/\": a}")},
+		{Requirement: "SCH-4", Name: "an invalid annotation key is refused", Manifest: metadata("annotations: {\"-x/\": a}")},
+		{Requirement: "SCH-4", Name: "an invalid finalizer is refused", Manifest: metadata("finalizers: [\"bad finalizer\"]")},
+		{Requirement: "SCH-4", Name: "a resourceVersion on a create is refused", Manifest: metadata("resourceVersion: \"7\"")},
+		{Requirement: "SCH-4", Name: "valid labels, annotations and finalizers are admitted", Admit: true,
+			Manifest: metadata("labels: {team: game}, annotations: {example.com/note: x}, finalizers: [example.com/keep]")},
 
 		{Requirement: "SCH-5", Name: "placement defaults to Shared and access to Exclusive", Admit: true,
 			Manifest: bot("  workspaces: [{name: main, ref: {name: neocity-main}}]\n"),
 			WantSpec: `{"persona":{"role":"Game Lead"},"agent":{"harness":"claude-code"},` +
 				`"workspaces":[{"name":"main","ref":{"name":"neocity-main","access":"Exclusive"}}],"placement":"Shared"}`},
 
-		{Requirement: "SCH-6", Name: "a status in the declaration does not refuse it", Admit: true,
+		{Requirement: "SCH-6", Name: "a status in the declaration is admitted and not taken", Admit: true,
 			Manifest: bot("") + "status: {observedGeneration: 7}\n"},
+		{Requirement: "SCH-6", Name: "a status with an unknown field is refused",
+			Manifest: bot("") + "status: {junk: 1}\n"},
+		{Requirement: "SCH-6", Name: "a status on a WorkspaceClass, which has none, is refused",
+			Manifest: workspaceClass("{provider: mvmd, resources: {cpu: 2, memory: 4Gi, disk: 20Gi}}") + "status: {x: 1}\n"},
+		{Requirement: "SCH-6", Name: "a status on a BotPool, which has none, is refused",
+			Manifest: header + "kind: BotPool\nmetadata: {name: game-team}\nspec: {maxBotsPerPod: 5}\nstatus: {x: 1}\n"},
 
 		{Requirement: "IMG-1", Name: "a Bot naming an image is refused",
 			Manifest: strings.Replace(bot(""), "{harness: claude-code}", "{harness: claude-code, image: example.com/agent:1}", 1)},
@@ -122,6 +152,11 @@ func Cases() []Case {
 		{Requirement: "SEC-1", Name: "a key over 253 characters is refused",
 			Manifest: secrets("deploy-key/" + strings.Repeat("k", 254))},
 		{Requirement: "SEC-2", Name: "a reference resolves in the object's namespace",
+			Pending: "a reader suite; the first reader is garam-bot's runtime, which runs one Bot"},
+
+		{Requirement: "WS-1", Name: "a second Exclusive claim on a Workspace does not attach it",
+			Pending: "a reader suite; the first reader is garam-bot's runtime, which runs one Bot"},
+		{Requirement: "VER-2", Name: "a reader does not act on an enum value it does not know",
 			Pending: "a reader suite; the first reader is garam-bot's runtime, which runs one Bot"},
 
 		{Requirement: "OWN-4", Name: "a malformed ownership marker does not refuse the object", Admit: true,

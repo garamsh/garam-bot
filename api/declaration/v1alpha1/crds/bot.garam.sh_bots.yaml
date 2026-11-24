@@ -3,18 +3,34 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    bot.garam.sh/spec-release: 0.1.0
     controller-gen.kubebuilder.io/version: v0.21.0
   name: bots.bot.garam.sh
 spec:
   group: bot.garam.sh
   names:
+    categories:
+    - garam
     kind: Bot
     listKind: BotList
     plural: bots
     singular: bot
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.agent.harness
+      name: Harness
+      type: string
+    - jsonPath: .spec.placement
+      name: Placement
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Running")].status
+      name: Running
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: |-
@@ -58,14 +74,25 @@ spec:
                   bot acts.
                 properties:
                   egress:
-                    description: Egress names the hosts the bot may reach.
+                    description: Egress are the hosts the bot may reach, each named
+                      once.
                     items:
-                      maxLength: 253
-                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                      type: string
+                      description: EgressPermission is one host the bot may reach.
+                      properties:
+                        host:
+                          description: Host is a DNS name whose last label begins
+                            with a letter, so it is never an IP address.
+                          maxLength: 253
+                          pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)*[a-z]([-a-z0-9]*[a-z0-9])?$
+                          type: string
+                      required:
+                      - host
+                      type: object
                     maxItems: 64
                     type: array
-                    x-kubernetes-list-type: set
+                    x-kubernetes-list-map-keys:
+                    - host
+                    x-kubernetes-list-type: map
                   secrets:
                     description: Secrets names the Secret keys the bot may use, in
                       the bot's namespace.
@@ -89,14 +116,24 @@ spec:
                     type: array
                     x-kubernetes-list-type: set
                   tools:
-                    description: Tools names the tools the bot may call.
+                    description: Tools are the tools the bot may call, each named
+                      once.
                     items:
-                      maxLength: 63
-                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
-                      type: string
+                      description: ToolPermission is one tool the bot may call.
+                      properties:
+                        name:
+                          description: Name is the tool's name.
+                          maxLength: 63
+                          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                          type: string
+                      required:
+                      - name
+                      type: object
                     maxItems: 64
                     type: array
-                    x-kubernetes-list-type: set
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
                 type: object
               persona:
                 description: Persona is who the bot is.
@@ -199,6 +236,10 @@ spec:
             - agent
             - persona
             type: object
+            x-kubernetes-validations:
+            - message: a Dedicated bot names no pool
+              rule: '!has(self.pool) || !has(self.placement) || self.placement !=
+                ''Dedicated'''
           status:
             description: BotStatus is the observed state of a Bot, written by what
               runs it.

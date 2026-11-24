@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kube-openapi/pkg/validation/spec"
 )
 
@@ -30,6 +31,24 @@ var rules = map[string]func(self any) bool{
 		ref, _ := self.(string)
 
 		return !strings.HasSuffix(ref, "/.") && !strings.HasSuffix(ref, "/..")
+	},
+	"!has(self.pool) || !has(self.placement) || self.placement != 'Dedicated'": func(self any) bool {
+		object, _ := self.(map[string]any)
+		_, pool := object["pool"]
+		placement, _ := object["placement"].(string)
+
+		return !pool || placement != "Dedicated"
+	},
+	"quantity(string(self.cpu)).isGreaterThan(quantity('0')) && quantity(string(self.memory)).isGreaterThan(quantity('0')) && quantity(string(self.disk)).isGreaterThan(quantity('0'))": func(self any) bool {
+		object, _ := self.(map[string]any)
+		for _, name := range []string{"cpu", "memory", "disk"} {
+			value, err := resource.ParseQuantity(fmt.Sprint(object[name]))
+			if err != nil || value.Sign() <= 0 {
+				return false
+			}
+		}
+
+		return true
 	},
 	"duration(self.sleepAfter) > duration('0s')": func(self any) bool {
 		object, _ := self.(map[string]any)

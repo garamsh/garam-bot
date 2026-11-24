@@ -316,7 +316,7 @@ toolchain-image:
 	@test "$(words $(toolchain_image))" = 1 || { echo "$(TOOLCHAIN_DOCKERFILE): want exactly one 'FROM <image> AS build' line, read [$(toolchain_image)]"; exit 1; }
 	@echo "$(toolchain_image)"
 
-ci: lint format test build
+ci: lint format generate test build
 
 proto:
 	buf lint
@@ -328,7 +328,9 @@ proto:
 
 # Regenerates the interface packages' deep-copy methods and
 # CustomResourceDefinitions from their Go types, then fails where that moved a
-# generated file, scoped and read from status as proto is. controller-gen is
+# generated file, scoped and read from status as proto is. It is a stage of
+# `make ci`, so a marker edited without regenerating fails the run rather than
+# leaving the definitions behind the Go types. controller-gen is
 # pinned by its module version under the checksum database, and moves with the
 # Kubernetes libraries api/go.mod requires.
 CONTROLLER_GEN = sigs.k8s.io/controller-tools/cmd/controller-gen@v0.21.0

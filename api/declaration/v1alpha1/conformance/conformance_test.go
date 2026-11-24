@@ -27,26 +27,17 @@ func (fileForm) Admit(_ context.Context, _ string, data []byte) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	encoded, err := json.Marshal(object)
-	if err != nil {
-		return nil, err
-	}
-	var fields struct {
-		Spec json.RawMessage `json:"spec"`
-	}
-	if err := json.Unmarshal(encoded, &fields); err != nil {
-		return nil, err
-	}
 
-	return fields.Spec, nil
+	return json.Marshal(object)
 }
 
 func TestFileForm(t *testing.T) {
 	conformance.Run(t, fileForm{})
 }
 
-// apiServer admits a manifest by a dry-run create under strict field validation, against an API
-// server serving the CustomResourceDefinitions.
+// apiServer admits a manifest by a create under strict field validation, against an API server
+// serving the CustomResourceDefinitions, and deletes what it created. A dry-run create is not used:
+// it skips the storage layer, which is what refuses a resourceVersion on a create.
 type apiServer struct {
 	client client.Client
 }
@@ -57,15 +48,26 @@ func (a apiServer) Admit(ctx context.Context, namespace string, data []byte) ([]
 		return nil, err
 	}
 	object.SetNamespace(namespace)
-	if err := a.client.Create(ctx, object, client.DryRunAll, client.FieldValidation(metav1.FieldValidationStrict)); err != nil {
+	if err := a.client.Create(ctx, object, client.FieldValidation(metav1.FieldValidationStrict)); err != nil {
 		return nil, err
 	}
-	spec, found, err := unstructured.NestedFieldNoCopy(object.Object, "spec")
-	if err != nil || !found {
-		return nil, fmt.Errorf("the admitted object has no spec: %v", err)
+	admitted, err := json.Marshal(object.Object)
+	if err != nil {
+		return nil, err
+	}
+	// Each case reuses a name, so the object goes before the next case creates its own, its
+	// finalizers cleared first so the delete completes at once.
+	if len(object.GetFinalizers()) > 0 {
+		object.SetFinalizers(nil)
+		if err := a.client.Update(ctx, object); err != nil {
+			return nil, fmt.Errorf("clear the admitted object's finalizers: %w", err)
+		}
+	}
+	if err := a.client.Delete(ctx, object); err != nil {
+		return nil, fmt.Errorf("delete the admitted object: %w", err)
 	}
 
-	return json.Marshal(spec)
+	return admitted, nil
 }
 
 // TestAPIServer needs KUBEBUILDER_ASSETS, the API server and etcd binaries; `make test` sets it.

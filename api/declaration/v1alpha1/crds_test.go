@@ -14,6 +14,9 @@ import (
 )
 
 type definition struct {
+	Metadata struct {
+		Annotations map[string]string `json:"annotations"`
+	} `json:"metadata"`
 	Spec struct {
 		Group string `json:"group"`
 		Names struct {
@@ -56,6 +59,12 @@ func TestCRDs_SCH1_DefineTheFourKindsNamespacedInOneGroupVersion(t *testing.T) {
 	}
 	slices.Sort(kinds)
 	assert.Equal(t, []string{"Bot", "BotPool", "Workspace", "WorkspaceClass"}, kinds)
+}
+
+func TestCRDs_VER1_EachNamesTheSpecRelease(t *testing.T) {
+	for _, d := range definitions(t) {
+		assert.Equal(t, v1alpha1.SpecRelease, d.Metadata.Annotations[v1alpha1.AnnotationSpecRelease], d.Spec.Names.Kind)
+	}
 }
 
 // imageProperty matches a property name that names an image.

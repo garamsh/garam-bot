@@ -3,18 +3,28 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    bot.garam.sh/spec-release: 0.1.0
     controller-gen.kubebuilder.io/version: v0.21.0
   name: botpools.bot.garam.sh
 spec:
   group: bot.garam.sh
   names:
+    categories:
+    - garam
     kind: BotPool
     listKind: BotPoolList
     plural: botpools
     singular: botpool
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.maxBotsPerPod
+      name: Max bots per pod
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: |-
@@ -55,3 +65,4 @@ spec:
         type: object
     served: true
     storage: true
+    subresources: {}

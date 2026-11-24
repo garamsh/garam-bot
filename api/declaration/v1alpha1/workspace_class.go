@@ -9,7 +9,10 @@ import (
 // resources each gets, and when an idle one sleeps.
 //
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:resource:scope=Namespaced,categories=garam
+// +kubebuilder:printcolumn:name="Provider",type=string,JSONPath=`.spec.provider`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:metadata:annotations="bot.garam.sh/spec-release=0.1.0"
 type WorkspaceClass struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -31,7 +34,9 @@ type WorkspaceClassSpec struct {
 	Idle *Idle `json:"idle,omitempty"`
 }
 
-// WorkspaceResources are the resources one workspace of the class gets.
+// WorkspaceResources are the resources one workspace of the class gets, each more than zero.
+//
+// +kubebuilder:validation:XValidation:rule="quantity(string(self.cpu)).isGreaterThan(quantity('0')) && quantity(string(self.memory)).isGreaterThan(quantity('0')) && quantity(string(self.disk)).isGreaterThan(quantity('0'))",message="cpu, memory and disk are each more than zero"
 type WorkspaceResources struct {
 	CPU    resource.Quantity `json:"cpu"`
 	Memory resource.Quantity `json:"memory"`

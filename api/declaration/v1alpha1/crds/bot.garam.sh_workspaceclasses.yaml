@@ -3,18 +3,28 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    bot.garam.sh/spec-release: 0.1.0
     controller-gen.kubebuilder.io/version: v0.21.0
   name: workspaceclasses.bot.garam.sh
 spec:
   group: bot.garam.sh
   names:
+    categories:
+    - garam
     kind: WorkspaceClass
     listKind: WorkspaceClassList
     plural: workspaceclasses
     singular: workspaceclass
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.provider
+      name: Provider
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: |-
@@ -63,7 +73,7 @@ spec:
                 type: string
               resources:
                 description: WorkspaceResources are the resources one workspace of
-                  the class gets.
+                  the class gets, each more than zero.
                 properties:
                   cpu:
                     anyOf:
@@ -88,6 +98,11 @@ spec:
                 - disk
                 - memory
                 type: object
+                x-kubernetes-validations:
+                - message: cpu, memory and disk are each more than zero
+                  rule: quantity(string(self.cpu)).isGreaterThan(quantity('0')) &&
+                    quantity(string(self.memory)).isGreaterThan(quantity('0')) &&
+                    quantity(string(self.disk)).isGreaterThan(quantity('0'))
             required:
             - provider
             - resources
@@ -97,3 +112,4 @@ spec:
         type: object
     served: true
     storage: true
+    subresources: {}
