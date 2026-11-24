@@ -17,6 +17,13 @@ on:
 
 permissions: {}
 
+# A newer push to the same pull request supersedes the run in progress, so
+# only the latest head is checked. The release workflows keep none, for the
+# reason operator-release.yml gives.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     working-directory: operator
@@ -25,7 +32,7 @@ jobs:
   checks:
     permissions:
       contents: read
-    name: Run on Ubuntu
+    name: operator checks
     runs-on: ubuntu-24.04
     steps:
       # Dependabot moves the action pins below, rewriting the version comment with
@@ -33,12 +40,12 @@ jobs:
       # and only while the version is the last word on the line. `make verify-pins`
       # fails when either stops holding.
       - name: Clone the code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: operator/go.mod
 
