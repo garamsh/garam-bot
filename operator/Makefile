@@ -77,7 +77,7 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 # - KUBECTL_KUBERC=true
 # CertManager is installed by default; skip with:
 # - CERT_MANAGER_INSTALL_SKIP=true
-KIND_CLUSTER ?= garam-agent-operator-test-e2e
+KIND_CLUSTER ?= garam-bot-operator-test-e2e
 
 # The kubeconfig this run owns, and the destination of every command the suite
 # makes: `go test` below carries it, and kubectl, kustomize and the sub-makes
@@ -332,14 +332,6 @@ verify-tidy: ## Fail when go.mod or go.sum is not what `go mod tidy` writes, nam
 verify-build-context: ## Fail when .dockerignore leaves out a file Go source embeds, which an image build would then miss.
 	go run ./hack/buildcontext
 
-# Renders every chart under deploy/charts with the pinned helm and validates
-# each rendered object against gaon's API types at the commit go.mod pins
-# (ADR 0085). The program prints what it covered, since `go run` of a passing
-# check says nothing else; a count of zero fails it.
-.PHONY: chart-check
-chart-check: helm ## Render deploy/charts, validate every object against gaon's API types, and check the refused values still fail.
-	go run ./hack/chartcheck -helm "$(HELM)"
-
 # The single name for the whole check set. CI invokes this target, not the
 # commands inside it. `lint` runs before `fmt` so unformatted code fails the
 # check instead of being rewritten and passing. `verify-tidy` runs first: it is
@@ -348,18 +340,15 @@ chart-check: helm ## Render deploy/charts, validate every object against gaon's 
 # it is the one step that needs the network, and a contributor who cannot reach
 # github.com cannot push what the rest of the set just cleared either.
 .PHONY: ci
-ci: verify-tidy lint-config lint fmt test build verify-build-context chart-check verify-pins ## Run the whole check set — module tidiness, lint, format, test, build, the image build context, the charts.
+ci: verify-tidy lint-config lint fmt test build verify-build-context verify-pins ## Run the whole check set — module tidiness, lint, format, test, build, the image build context, the action pins.
 
 ##@ Build
 
 .PHONY: build
-build: manifests generate fmt vet ## Build the manager, control, connector, gaon operator, guest supervisor and render binaries.
+build: manifests generate fmt vet ## Build the manager, control and connector binaries.
 	go build -o bin/manager cmd/main.go
 	go build -o bin/control ./cmd/control
 	go build -o bin/connector ./cmd/connector
-	go build -o bin/gaon-operator ./cmd/gaon-operator
-	go build -o bin/gaon-guest ./cmd/gaon-guest
-	go build -o bin/gaon-render ./cmd/gaon-render
 
 # Departs from the scaffold, and a regeneration restores the scaffold's form: the
 # manager refuses to start without an image for its init containers, so run takes
@@ -412,57 +401,6 @@ build-images: ## Build the manager's and the control service's images to publish
 	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -t garam-bot/operator-manager:$(REVISION) .
 	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -f build/control.Dockerfile -t garam-bot/operator-control:$(REVISION) .
 
-# The gaon operator's image and the composed guest image of a gaon MicroVM
-# (ADR 0082), built as build-images builds the two above: one linux/amd64
-# manifest each, tagged locally garam-agent-operator/gaon-operator:<REVISION> and
-# garam-bot/operator-guest:<REVISION>, and pushed by nothing here. They are
-# not in build-images because the guest image's three source images are pinned by
-# digest in build/guest.Dockerfile and live in a private registry: building it
-# needs a login that can pull them, as `make garam-e2e` needs one for garam's
-# test image.
-.PHONY: operator-image
-operator-image: ## Build the gaon operator's image, one linux/amd64 manifest, and push nothing.
-	@test -n "$(REVISION)" || { echo "operator-image: REVISION is empty; pass one: make operator-image REVISION=<commit>"; exit 1; }
-	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg IMAGE_REVISION="$(REVISION)" --build-arg IMAGE_VERSION="$(REVISION)" -f build/operator.Dockerfile -t garam-agent-operator/gaon-operator:$(REVISION) .
-
-.PHONY: guest-image
-guest-image: ## Build the composed guest image, one linux/amd64 manifest, and push nothing. Needs a login that pulls its three pinned source images.
-	@test -n "$(REVISION)" || { echo "guest-image: REVISION is empty; pass one: make guest-image REVISION=<commit>"; exit 1; }
-	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -f build/guest.Dockerfile -t garam-bot/operator-guest:$(REVISION) .
-
-# What only the built images can break; neither is part of ci, because each
-# needs a Docker daemon, and guest-run a login for the pinned source images.
-.PHONY: operator-image-check
-operator-image-check: operator-image ## Check the gaon operator's image runs as a numeric non-root account, ships no shell and names its missing settings.
-	GAON_OPERATOR_IMAGE=garam-agent-operator/gaon-operator:$(REVISION) sh tests/gaon/operator-image.sh
-
-.PHONY: guest-run
-guest-run: guest-image ## Run the composed guest image as one container and check the supervisor's start order, readiness port and drain.
-	sh tests/gaon/guest-image.sh garam-bot/operator-guest:$(REVISION)
-
-# The gaon operator against a real garam, at GARAM_REVISION and run from garam-e2e's
-# files, and a real control service built from this tree, with tests/gaon/gaonstandin
-# for gaon's API. It needs a Docker daemon (one PostgreSQL container), openssl, jq,
-# curl, python3 and the Go toolchain, prints each check, and exits non-zero where an
-# answer is not the one it names. Name the compose project with PAIR_RUN_PROJECT.
-# Not part of ci.
-.PHONY: pair-run
-pair-run: garam-e2e ## Run the gaon operator against garam and the control service, with a stand-in for gaon's API.
-	GARAM_DIR="$(GARAM_DIR)" sh tests/pairrun/pair-run.sh
-
-# The same run against gaon's own built services in place of the stand-in, with
-# authorization on. GAON_REPO names a gaon checkout, which is cloned and not
-# changed, and GAON_COMMIT the commit built from it; the commit moves with the
-# github.com/garamsh/gaon/lib/api pin in go.mod, to the same commit of gaon, in the
-# same pull request. It needs the module cache to hold gaon's etcd and mvmd's
-# runtime API (tests/pairrun/gaon-build.sh). Not part of ci.
-GAON_COMMIT ?= 2387cebd0b44b322b7da2ff485144a7456a97c6f
-
-.PHONY: pair-run-gaon
-pair-run-gaon: garam-e2e ## Run the same pair run against gaon's own built services. Needs GAON_REPO=<gaon checkout>.
-	@test -n "$(GAON_REPO)" || { echo "pair-run-gaon: GAON_REPO names the gaon checkout to clone" >&2; exit 1; }
-	GARAM_DIR="$(GARAM_DIR)" PAIR_RUN_GAON=gaon GAON_REPO="$(GAON_REPO)" GAON_COMMIT="$(GAON_COMMIT)" sh tests/pairrun/pair-run.sh
-
 # Refuses IMAGE_REF where ADR 0078's tag rule forbids its push: under
 # garam-bot/operator-<image>, a release version tag (0.1.0-dev.N, 0.1.0-rc.N or 0.1.0, ADR 0081)
 # outside operator-release.yml's run for that version, and any tag but those or the 12-hex commit
@@ -498,12 +436,12 @@ PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	$(MAKE) verify-image-ref IMAGE_REF='$(IMG)'
-	- $(CONTAINER_TOOL) buildx create --name garam-agent-operator-builder
-	$(CONTAINER_TOOL) buildx use garam-agent-operator-builder
+	- $(CONTAINER_TOOL) buildx create --name garam-bot-operator-builder
+	$(CONTAINER_TOOL) buildx use garam-bot-operator-builder
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --build-arg REVISION=$$(git rev-parse HEAD) --tag ${IMG} -f Dockerfile.cross . || { rm Dockerfile.cross; exit 1; }
-	- $(CONTAINER_TOOL) buildx rm garam-agent-operator-builder
+	- $(CONTAINER_TOOL) buildx rm garam-bot-operator-builder
 	rm Dockerfile.cross
 
 # `kustomize edit set image` writes to the kustomization it runs in, and
@@ -712,20 +650,6 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 		$(GOLANGCI_LINT) custom --destination $(LOCALBIN) --name golangci-lint-custom && \
 		mv -f $(LOCALBIN)/golangci-lint-custom $(GOLANGCI_LINT); \
 	} || true
-
-HELM = $(LOCALBIN)/helm
-
-# The PM moves this pin. Helm is only the template engine of deploy/charts
-# (ADR 0085): the chart's output is gaon objects, so the version matters only
-# for the template language, not for any cluster. It is not a Go dependency of
-# this module, and no bot proposes a bump, so it moves when a Helm release or
-# a chart-check failure requires it.
-HELM_VERSION ?= v4.3.1
-
-.PHONY: helm
-helm: $(HELM) ## Download helm locally if necessary.
-$(HELM): $(LOCALBIN)
-	$(call go-install-tool,$(HELM),helm.sh/helm/v4/cmd/helm,$(HELM_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary

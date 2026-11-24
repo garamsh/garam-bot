@@ -16,7 +16,7 @@ import (
 
 var (
 	// managerImage is the manager image to be built and loaded for testing.
-	managerImage = "example.com/garam-agent-operator:v0.0.1"
+	managerImage = "example.com/garam-bot-operator:v0.0.1"
 	// shouldCleanupCertManager tracks whether CertManager was installed by this suite.
 	shouldCleanupCertManager = false
 )
@@ -35,7 +35,7 @@ func TestE2E(t *testing.T) {
 	if err := utils.CheckKindContext(); err != nil {
 		t.Fatalf("refusing to run against a cluster this run does not own: %v", err)
 	}
-	_, _ = fmt.Fprintf(GinkgoWriter, "Starting garam-agent-operator e2e test suite\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Starting garam-bot-operator e2e test suite\n")
 	RunSpecs(t, "e2e suite")
 }
 
@@ -110,7 +110,7 @@ func deployOperator() {
 
 // deploymentName is the manager's Deployment, as config/default's name prefix
 // makes it.
-const deploymentName = "garam-agent-operator-controller-manager"
+const deploymentName = "garam-bot-operator-controller-manager"
 
 // undeployOperator removes what deployOperator installed.
 func undeployOperator() {

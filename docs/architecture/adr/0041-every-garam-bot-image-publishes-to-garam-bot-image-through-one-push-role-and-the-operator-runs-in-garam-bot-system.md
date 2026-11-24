@@ -11,16 +11,16 @@
 
 ## Decision
 
-1. **Every image this repository publishes goes to `garam-bot/<image>`:** `garam-bot/runtime`, `garam-bot/agent`, `garam-bot/workspace` and `garam-bot/tools` for the root module, and `garam-bot/operator-manager`, `garam-bot/operator-control` and `garam-bot/operator-guest` for the operator. ADR 0020's rules for a repository, one per image, immutable, a tag naming one commit, hold for each.
+1. **Every image this repository publishes goes to `garam-bot/<image>`:** `garam-bot/runtime`, `garam-bot/agent`, `garam-bot/workspace` and `garam-bot/tools` for the root module, and `garam-bot/operator-manager` and `garam-bot/operator-control` for the operator. `garam-bot/operator-guest` was named for the gaon guest image, which operator ADR 0096 removes. ADR 0020's rules for a repository, one per image, immutable, a tag naming one commit, hold for each.
 2. **Both release workflows push as `arn:aws:iam::486152169996:role/github-actions-garam-bot-push`,** which trusts `repo:garamsh@307152666/garam-bot@1311139677:ref:refs/tags/v*` and `.../ref:refs/tags/operator/v*`. `release.yml` publishes on a `v*` tag, and `operator-release.yml` on an `operator/v*` tag (operator ADR 0095).
 3. **The operator's e2e pulls garam's test image as `arn:aws:iam::486152169996:role/github-actions-garam-bot-pull`,** which trusts the environment `promotion-e2e` of this repository.
-4. **The operator's kustomize deployment runs in the namespace `garam-bot-system`.** Its object names keep the `garam-agent-operator-` prefix, and the Secret `garam-credential` keeps its name.
+4. **The operator's kustomize deployment runs in the namespace `garam-bot-system`.** Its object names take the prefix `garam-bot-operator-`, and its labels the name `garam-bot-operator`, as garamsh/aurora's Argo applications name it. The Secret `garam-credential` keeps its name.
 
 This amends ADR 0020's repository names and operator ADR 0078's, ADR 0084's and ADR 0095 decision 3's repository and role names.
 
 ## Consequences
 
-- The images already published stay in `sherlock/*` and `garam-agent-operator/*`, which nothing here pushes to any more. A pin of one of them, such as the guest image's base images in `operator/build/guest.Dockerfile`, keeps naming that repository until it is moved to an image a release publishes here.
+- The images already published stay in `sherlock/*` and `garam-agent-operator/*`, which nothing here pushes to any more.
 - No release has pushed to the new repositories yet. The first `v*` tag and the first `operator/v*` tag after this lands are what show that the role and the repositories admit a push.
 - The old roles' subjects for this repository are garamsh/aurora's to drop once garam-bot-operator is archived.
 - `garam-bot/tools` is named for completeness: no workflow publishes a tools image (ADR 0021).

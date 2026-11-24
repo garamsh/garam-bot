@@ -1,5 +1,0 @@
-garam:
-  root:
-    secret: garam-root
-    configMap: garam-root
-    key: root.pem

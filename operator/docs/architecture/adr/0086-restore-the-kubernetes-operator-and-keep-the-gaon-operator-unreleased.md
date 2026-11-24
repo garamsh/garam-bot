@@ -1,6 +1,6 @@
 # ADR 0086: Restore the Kubernetes operator and keep the gaon operator unreleased
 
-> Status: accepted
+> Status: accepted; whether the gaon operator is deleted settled by ADR-0096
 > Date: 2026-11-13
 
 Append-only: once merged, the body below is not rewritten. A fact later found wrong is corrected in an appended note, not edited out; a revised decision is a new ADR that supersedes this one.

@@ -1,4 +1,4 @@
-# garam-agent-operator
+# garam-bot-operator
 
 Runs `sherlock` agents in a Kubernetes cluster for our own platform: a control service holds each agent's desired definition, and a manager reconciles it into a workload.
 

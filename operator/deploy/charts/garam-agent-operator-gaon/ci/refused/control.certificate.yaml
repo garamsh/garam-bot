@@ -1,4 +1,0 @@
-control:
-  certificate:
-    secret: ""
-    key: tls.crt
