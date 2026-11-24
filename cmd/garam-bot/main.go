@@ -51,7 +51,14 @@ func newRunCommand() *cobra.Command {
 			ctx, stop := signal.NotifyContext(command.Context(), syscall.SIGTERM, syscall.SIGINT)
 			defer stop()
 
-			err := bot.NewService(options).Run(ctx)
+			// Not cobra's required flag: its refusal would exit before the termination message is
+			// written, and a container started with no --bot-file would report no reason.
+			var err error
+			if options.BotFile == "" {
+				err = fmt.Errorf("%w: --bot-file not given", bot.ErrBotInvalid)
+			} else {
+				err = bot.NewService(options).Run(ctx)
+			}
 			if err == nil {
 				return nil
 			}

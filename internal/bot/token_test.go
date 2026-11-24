@@ -33,9 +33,25 @@ func TestReadTokenFile_RefusesAnAbsentOrEmptyFile(t *testing.T) {
 	empty := filepath.Join(directory, "empty")
 	writeFile(t, empty, " \n")
 
-	for name, path := range map[string]string{"absent": filepath.Join(directory, "absent"), "empty": empty} {
-		t.Run(name, func(t *testing.T) {
-			_, err := bot.ReadTokenFile(path, start)
+	token := filepath.Join(directory, "token")
+	writeFile(t, token, " a-token\n")
+
+	for _, tc := range []struct {
+		name, path string
+		refused    bool
+	}{
+		{name: "the control: a token", path: token},
+		{name: "absent", path: filepath.Join(directory, "absent"), refused: true},
+		{name: "empty", path: empty, refused: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			file, err := bot.ReadTokenFile(tc.path, start)
+			if !tc.refused {
+				require.NoError(t, err)
+				assert.Equal(t, "a-token", file.Token())
+
+				return
+			}
 			require.ErrorIs(t, err, bot.ErrTokenUnreadable)
 		})
 	}

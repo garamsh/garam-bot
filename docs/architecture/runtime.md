@@ -6,7 +6,7 @@ Governs the runtime that runs one Bot: what `garam-bot run` reads, the status co
 
 ### What it reads
 
-- **One Bot, from `--bot-file`,** in interface 1's file form, read once at start with `manifest.Parse` (ADR 0033). A file that is absent, unreadable, not one admissible object or not a Bot fails the start with `BotInvalid`. The Bot's `metadata.namespace` and `metadata.generation`, where the file carries them, are what the status reports.
+- **One Bot, from `--bot-file`,** in interface 1's file form, read once at start with `manifest.Parse` (ADR 0033). A flag not given, or a file that is absent, unreadable, not one admissible object or not a Bot fails the start with `BotInvalid`. The Bot's `metadata.namespace` and `metadata.generation`, where the file carries them, are what the status reports.
 - **The bot's garam token, from `--token-file`, when given.**
   - **At start.** It is read once, and a file that is unreadable or empty after trimming fails the start with `TokenUnreadable`.
   - **While running.** It is read again every `--token-interval`, 10 seconds by default, so a token the kubelet swaps into a Secret volume is held within that interval. A read that fails keeps the last token and marks it stale, and the bot goes on running.
@@ -22,12 +22,12 @@ Governs the runtime that runs one Bot: what `garam-bot run` reads, the status co
   - `bot`: namespace, name and generation;
   - `token`: when it was last read and whether it is `stale`. It is absent for a bot with no token.
 - **`garam-bot probe`** exits 0 only while the file says `Running` and its heartbeat is at most 30 seconds old. Otherwise it exits 1 and prints why. The Pod declares it as the container's readiness probe and liveness probe, so the kubelet reports the answer on the Pod, and nothing dials the container.
-- **A failed start** exits 1 and writes `<Reason>: <message>` to `--termination-log`, `/dev/termination-log` by default, which the kubelet reports as the container's termination message. `Reason` is `BotInvalid`, `TokenUnreadable` or `Failed`.
+- **A failed start** exits 1 and writes `<Reason>: <message>` to `--termination-log`, `/dev/termination-log` by default, which the kubelet reports as the container's termination message. `Reason` is `BotInvalid`, `TokenUnreadable` or `Failed`, the last for a start the other two do not name, such as a `--token-interval` that is not positive.
 - **How a manager reads it.** A Bot's `Running` condition (interface 1 STA-1) is `True` while the container is ready and `False` otherwise. While the container is not ready, the condition's reason is the termination message's reason where the container last terminated, and `Starting` otherwise. Writing the condition is the manager's.
 
 ### What the image asks of the Pod
 
-- **User.** It runs as uid and gid 65532 (`build/runtime.Dockerfile`) with no capability, so the Pod can assert `runAsNonRoot`, drop every capability, forbid privilege escalation and use the RuntimeDefault seccomp profile, which is what PodSecurity `restricted` asks.
+- **User.** It runs as uid and gid 65532 (`build/runtime.Dockerfile`), named by number in the image so the kubelet can verify it, with no capability. So the Pod can assert `runAsNonRoot` without a `runAsUser`, drop every capability, forbid privilege escalation and use the RuntimeDefault seccomp profile, which is what PodSecurity `restricted` asks.
 - **Status directory.** `/run/garam-bot` is writable by that user in the image. A Pod with a read-only root filesystem mounts an `emptyDir` there.
 - **Files.** The Bot file and the token file are mounted read-only, and the token file is readable by uid 65532 or the Pod's group.
 - **Image.** It is `garam-bot-runtime:<revision>` from `make build-images`, published to `garam-bot/runtime` and referenced by digest (`deployment.md` §Images and tags).

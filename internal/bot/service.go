@@ -49,6 +49,14 @@ func NewService(options Options) Service {
 
 func (s *service) Run(ctx context.Context) error {
 	o := s.options
+	// time.NewTicker panics on a period that is not positive, so one is refused before anything is
+	// read or written.
+	if o.HeartbeatInterval <= 0 {
+		return fmt.Errorf("heartbeat interval %s: want a positive duration", o.HeartbeatInterval)
+	}
+	if o.TokenInterval <= 0 {
+		return fmt.Errorf("token interval %s: want a positive duration", o.TokenInterval)
+	}
 	bot, err := readBot(o.BotFile)
 	if err != nil {
 		return err

@@ -28,6 +28,9 @@ COPY --from=build /out/garam-bot /garam-bot
 # read-only root filesystem mounts an emptyDir here instead.
 COPY --from=build --chown=65532:65532 /out/status /run/garam-bot
 
-USER nonroot
+# Numeric, so the kubelet can check runAsNonRoot against it: it cannot resolve
+# a user name from the image and refuses the container. `make build-images`
+# checks the built image's Config.User for this.
+USER 65532:65532
 ENTRYPOINT ["/garam-bot"]
 CMD ["run"]

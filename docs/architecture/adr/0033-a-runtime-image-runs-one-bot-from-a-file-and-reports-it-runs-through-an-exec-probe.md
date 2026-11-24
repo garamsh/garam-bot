@@ -23,13 +23,14 @@
    - **The probe.** `garam-bot probe` exits 0 only while the state is `Running` and the heartbeat is at most 30 seconds old.
    - **How the Pod uses it.** The Pod declares the probe as its readiness and liveness probe, so the kubelet reports it on the Pod and no network path to the container is needed.
    - **A failed start** exits 1 and writes `<Reason>: <message>` to `--termination-log`, the container's termination message. The reasons are `BotInvalid`, `TokenUnreadable` and `Failed`.
-3. **The runtime image is `build/runtime.Dockerfile`.** It is distroless static, running as nonroot (65532:65532), with the binary at `/garam-bot` and `/run/garam-bot` writable by that user. It is built by `make build-images` as `garam-bot-runtime:<revision>`, and published by the release workflow to the ECR repository `garam-bot/runtime`, whose digest it records.
+   - **Not the states #1199 proposed.** It proposed `Starting`, `Running` and `TokenUnreadable` as states of the runtime. The file holds only what the process itself knows: before the file is written there is no process to report `Starting`, so the manager derives it from a container not yet ready, and a token that becomes unreadable leaves the bot running, so it is the `stale` mark and not a state.
+3. **The runtime image is `build/runtime.Dockerfile`.** It is distroless static, running as the numeric user 65532:65532, so a Pod that asserts `runAsNonRoot` needs no `runAsUser`, with the binary at `/garam-bot` and `/run/garam-bot` writable by that user. It is built by `make build-images` as `garam-bot-runtime:<revision>`, and published by the release workflow to the ECR repository `garam-bot/runtime`, whose digest it records.
 
 ## Consequences
 
 - garam-bot-operator's Bot reconciler mounts the Bot file and the token file, mounts a writable volume at the status file's directory, and declares `garam-bot probe` as the container's probes. It maps the container's readiness to `Running`, and the termination message's reason to the condition's reason.
 - A stale token does not make a bot stop running. The status file reports it, and a later contract may surface it as its own condition.
-- Publishing waits for the ECR repository `garam-bot/runtime` and the release role's push grant on it, which garamsh/aurora holds. No release tag is pushed before then: the runtime image is pushed last, so its refusal would leave the version part-published, which no re-push repairs.
+- Publishing needs the ECR repository `garam-bot/runtime` and the release role's push grant on it, which garamsh/aurora holds. The release workflow reads each repository before any push and pushes the runtime image first. A missing repository or a refused read then stops the run before anything is published, and a refused push stops it before the `sherlock` repositories take the version, which no re-push repairs (`deployment.md` §Images and tags).
 - Several bots in one process, and the work a bot does, wait for interfaces 2 to 4.
 
 ## Signs the decision was wrong

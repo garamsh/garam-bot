@@ -128,28 +128,55 @@ func TestRun_ReadsAReplacedTokenAndReportsAnUnreadableOneStale(t *testing.T) {
 }
 
 func TestRun_RefusesToStartOnAnInvalidBotOrToken(t *testing.T) {
+	valid := func(t *testing.T, f files) {
+		writeFile(t, f.bot, mira)
+		writeFile(t, f.token, "first-token")
+	}
 	for _, tc := range []struct {
 		name  string
 		setup func(t *testing.T, f files)
-		want  error
+		edit  func(o *bot.Options)
+		// want is the reason the start fails with, and empty for the control, which starts.
+		want bot.Reason
 	}{
-		{name: "no bot file", setup: func(*testing.T, files) {}, want: bot.ErrBotInvalid},
-		{name: "a bot file that is not a Bot", want: bot.ErrBotInvalid, setup: func(t *testing.T, f files) {
+		{name: "the control: a Bot and its token start", setup: valid},
+		{name: "no bot file", setup: func(*testing.T, files) {}, want: bot.ReasonBotInvalid},
+		{name: "a bot file that is not a Bot", want: bot.ReasonBotInvalid, setup: func(t *testing.T, f files) {
 			writeFile(t, f.bot, "apiVersion: bot.garam.sh/v1alpha1\nkind: BotPool\nmetadata: {name: p}\nspec: {maxBotsPerPod: 5}\n")
 		}},
-		{name: "a Bot the spec refuses", want: bot.ErrBotInvalid, setup: func(t *testing.T, f files) {
+		{name: "a Bot the spec refuses", want: bot.ReasonBotInvalid, setup: func(t *testing.T, f files) {
 			writeFile(t, f.bot, mira+"  image: example.com/agent:1\n")
 		}},
-		{name: "an absent token file", want: bot.ErrTokenUnreadable, setup: func(t *testing.T, f files) {
+		{name: "an absent token file", want: bot.ReasonTokenUnreadable, setup: func(t *testing.T, f files) {
 			writeFile(t, f.bot, mira)
+		}},
+		{name: "a token interval of zero", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
+			o.TokenInterval = 0
+		}},
+		{name: "a negative heartbeat interval", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
+			o.HeartbeatInterval = -time.Second
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFiles(t)
 			tc.setup(t, f)
-			err := bot.NewService(options(f)).Run(t.Context())
-			require.ErrorIs(t, err, tc.want)
+			o := options(f)
+			if tc.edit != nil {
+				tc.edit(&o)
+			}
+			// Ended before Run starts, so a start that succeeds returns at once.
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			err := bot.NewService(o).Run(ctx)
 			_, statErr := os.Stat(f.status)
+			if tc.want == "" {
+				require.NoError(t, err)
+				assert.NoError(t, statErr, "a start writes the status")
+
+				return
+			}
+			require.Error(t, err)
+			assert.Equal(t, tc.want, bot.ReasonOf(err))
 			assert.ErrorIs(t, statErr, os.ErrNotExist, "a failed start writes no status")
 		})
 	}

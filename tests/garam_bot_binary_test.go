@@ -74,17 +74,49 @@ func TestGaramBot_RunsABotThatProbePasses(t *testing.T) {
 
 func TestGaramBot_AFailedStartWritesItsReasonAsTheTerminationMessage(t *testing.T) {
 	binary := buildGaramBotBinary(t)
-	directory := t.TempDir()
-	botFile, terminationLog := filepath.Join(directory, "bot.yaml"), filepath.Join(directory, "termination-log")
-	require.NoError(t, os.WriteFile(botFile, []byte(strings.Replace(garamBotMira, "Bot\n", "Agent\n", 1)), 0o600))
+	for _, tc := range []struct {
+		name string
+		// bot is the Bot file's content, and botFlag false leaves --bot-file out.
+		bot     string
+		botFlag bool
+		// want is the termination message's prefix, and empty for the control, which starts.
+		want string
+	}{
+		{name: "the control: a Bot starts and writes no message", bot: garamBotMira, botFlag: true},
+		{name: "a file that is not a Bot", bot: strings.Replace(garamBotMira, "Bot\n", "Agent\n", 1), botFlag: true,
+			want: "BotInvalid: "},
+		{name: "no --bot-file", want: "BotInvalid: bot file invalid: --bot-file not given"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			directory := t.TempDir()
+			botFile, terminationLog := filepath.Join(directory, "bot.yaml"), filepath.Join(directory, "termination-log")
+			statusFile := filepath.Join(directory, "status.json")
+			require.NoError(t, os.WriteFile(botFile, []byte(tc.bot), 0o600))
+			args := []string{"run", "--status-file", statusFile, "--termination-log", terminationLog}
+			if tc.botFlag {
+				args = append(args, "--bot-file", botFile)
+			}
+			run := exec.Command(binary, args...)
 
-	run := exec.Command(binary, "run", "--bot-file", botFile,
-		"--status-file", filepath.Join(directory, "status.json"), "--termination-log", terminationLog)
-	err := run.Run()
-	var exit *exec.ExitError
-	require.ErrorAs(t, err, &exit)
-	assert.Equal(t, 1, exit.ExitCode())
-	message, err := os.ReadFile(terminationLog)
-	require.NoError(t, err)
-	assert.True(t, strings.HasPrefix(string(message), "BotInvalid: "), "termination message %q", message)
+			if tc.want == "" {
+				require.NoError(t, run.Start())
+				t.Cleanup(func() { _ = run.Process.Kill() })
+				require.Eventually(t, func() bool { _, err := probe(binary, statusFile); return err == nil },
+					10*time.Second, 50*time.Millisecond)
+				require.NoError(t, run.Process.Signal(syscall.SIGTERM))
+				require.NoError(t, run.Wait())
+				_, err := os.Stat(terminationLog)
+				assert.ErrorIs(t, err, os.ErrNotExist, "a start that ran writes no termination message")
+
+				return
+			}
+			err := run.Run()
+			var exit *exec.ExitError
+			require.ErrorAs(t, err, &exit)
+			assert.Equal(t, 1, exit.ExitCode())
+			message, err := os.ReadFile(terminationLog)
+			require.NoError(t, err)
+			assert.True(t, strings.HasPrefix(string(message), tc.want), "termination message %q", message)
+		})
+	}
 }

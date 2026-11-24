@@ -32,5 +32,5 @@ The tests of `README.md`'s requirements: what each one is, and how a new impleme
 | VER-1 | `TestCRDs_VER1_EachNamesTheSpecRelease` |
 | VER-2 | `Run`: `VER-2/a reader does not act on an enum value it does not know`, pending a reader suite |
 | IMG-1 | `Run`: `IMG-1/*`. `TestCRDs_IMG1_NoPropertyNamesAnImage` |
-| STA-1 | `Run`: `STA-1/Running is True while the bot's process runs`, pending a runner suite: the runtime's status contract is `docs/architecture/runtime.md`, and the manager that writes the condition from it is garam-bot-operator's Bot reconciler |
+| STA-1 | `Run`: `STA-1/Running is True while the bot's process runs`, pending a runner suite: garam-bot's runtime reports whether its process runs through the status contract in `docs/architecture/runtime.md` of `garamsh/garam-bot`, a probe the Pod declares, and the manager that writes the condition from it is garam-bot-operator's Bot reconciler |
 | FILE-1 | `TestParse_FILE1_AdmitsOneJSONDocument`, `TestParse_FILE1_RefusesAFileThatIsNotOneDocument` |

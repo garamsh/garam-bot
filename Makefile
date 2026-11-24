@@ -296,6 +296,7 @@ build-images:
 	$(BUILD_ENV) docker build -f $(AGENT_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t sherlock-agent:$(REVISION) .
 	$(BUILD_ENV) docker build -f $(WORKSPACE_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t sherlock-workspace:$(REVISION) .
 	$(BUILD_ENV) docker build -f $(RUNTIME_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t garam-bot-runtime:$(REVISION) .
+	@user=$$(docker image inspect --format '{{.Config.User}}' garam-bot-runtime:$(REVISION)) && printf '%s' "$$user" | grep -Eq '^[0-9]+(:[0-9]+)?$$' || { echo "garam-bot-runtime:$(REVISION): Config.User is [$$user], want a numeric uid or uid:gid, which the kubelet can check runAsNonRoot against"; exit 1; }
 
 # The toolchain image the privileged CI job runs in, read out of the
 # Dockerfile that owns the pin rather than restated in the workflow (#633).
