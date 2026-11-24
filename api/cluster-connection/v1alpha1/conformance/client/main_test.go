@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/yaml"
 
-	"github.com/garamsh/garam-agent-operator/interfaces/cluster-connection/v1alpha1/conformance/internal/suite"
+	"github.com/garamsh/garam-bot/api/cluster-connection/v1alpha1/conformance/internal/suite"
 )
 
 const prefix = "client/"

@@ -12,7 +12,7 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as RFC 2119 defines them. 
   | Side | Production | Reference |
   |---|---|---|
   | Server | garam's connection service, in `garamsh/garam` | An in-memory server, in `reference/` beside this file |
-  | Client | The connector, `cmd/connector` in `garamsh/garam-bot-operator` | The server suite's own client, in `conformance/internal/wire/` beside this file |
+  | Client | The connector, `operator/cmd/connector` in this repository | The server suite's own client, in `conformance/internal/wire/` beside this file |
 
   The reference server, the connector and the server suite's own client are built. garam's connection service is not.
 

@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/interfaces/cluster-connection/v1alpha1/conformance/internal/wire"
+	"github.com/garamsh/garam-bot/api/cluster-connection/v1alpha1/conformance/internal/wire"
 )
 
 // rotation changes a rotation request's claims before they are signed.

@@ -45,8 +45,8 @@ A test whose placeholder the command line does not name is reported pending, by 
 
 The suites are built under `conformance/` beside this file, as Go tests behind the build tag `conformance`. Each runs every test below under its name, and reports a test it cannot reach as pending, by name, after its results, never as passed.
 
-- **Server suite:** `CONFORMANCE_BASE_URL`, `CONFORMANCE_TRUST_FILE` and `CONFORMANCE_FIXTURE` (the fixture command, split on white space) name the server under test. `go test -tags=conformance ./conformance/server/` runs it. `make conformance-server` runs it against the reference server.
-- **Client suite:** `KUBEBUILDER_ASSETS` names envtest's binaries. `go test -tags=conformance ./conformance/client/` runs it, its tests in parallel. `make conformance-client` runs it against `cmd/connector`.
+- **Server suite:** `CONFORMANCE_BASE_URL`, `CONFORMANCE_TRUST_FILE` and `CONFORMANCE_FIXTURE` (the fixture command, split on white space) name the server under test. `go test -tags=conformance ./conformance/server/` runs it. `make -C operator conformance-server`, from the repository root, runs it against the reference server.
+- **Client suite:** `KUBEBUILDER_ASSETS` names envtest's binaries. `go test -tags=conformance ./conformance/client/` runs it, its tests in parallel. `make -C operator conformance-client`, from the repository root, runs it against `operator/cmd/connector`.
 
 ## Server suite
 

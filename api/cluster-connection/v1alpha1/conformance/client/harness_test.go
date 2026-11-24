@@ -30,8 +30,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	"github.com/garamsh/garam-agent-operator/interfaces/cluster-connection/v1alpha1/conformance/internal/suite"
-	"github.com/garamsh/garam-agent-operator/interfaces/cluster-connection/v1alpha1/reference"
+	"github.com/garamsh/garam-bot/api/cluster-connection/v1alpha1/conformance/internal/suite"
+	"github.com/garamsh/garam-bot/api/cluster-connection/v1alpha1/reference"
 )
 
 // The routes of README.md, relative to the base URL, and the reference server's tokenUrl.

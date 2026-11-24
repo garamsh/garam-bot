@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-agent-operator/interfaces/cluster-connection/v1alpha1/reference"
+	"github.com/garamsh/garam-bot/api/cluster-connection/v1alpha1/reference"
 )
 
 func generatesKeySendsPublicHalf(t *testing.T) {

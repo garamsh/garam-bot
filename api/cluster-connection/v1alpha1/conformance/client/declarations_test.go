@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/garamsh/garam-agent-operator/interfaces/cluster-connection/v1alpha1/reference"
+	"github.com/garamsh/garam-bot/api/cluster-connection/v1alpha1/reference"
 )
 
 // marked requires o to be garam-owned, marked as the record's object for id at generation.
