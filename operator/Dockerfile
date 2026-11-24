@@ -33,7 +33,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o ma
 # target platform still selects the base.
 # Dependabot moves it (`.github/dependabot.yml`): the tag carries no version, so every
 # move is a republished digest under `nonroot`. A newer scaffold leaves this line alone.
-FROM gcr.io/distroless/static:nonroot@sha256:f7f8f729987ad0fdf6b05eeeae94b26e6a0f613bdf46feea7fc40f7bd72953e6
+FROM gcr.io/distroless/static:nonroot@sha256:8ce6dd87e9823c5b48dcfb2c8604714ccb351ce59607327bcc4957448da279b5
 # The Makefile's docker targets pass the commit checked out; nothing checks it against the tree.
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="garam-bot-operator" \
