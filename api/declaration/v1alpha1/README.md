@@ -93,13 +93,13 @@ The file form is one object in one file, as YAML or JSON, with the same schema a
 
 - **A release of `v1alpha1` may add** an optional field, a kind, a value to an enum, or a reader obligation that every conforming reader already meets. Each leaves every object admitted before admitted, with the same meaning.
 - **A new version is required** to remove or rename a field or a kind, make an optional field required, tighten a constraint, change a default, or change what a field means.
-- **VER-1. Releases are numbered and visible.** Each release of `v1alpha1` has a number, `SpecRelease` in this package, from `0.1.0`. Each CustomResourceDefinition MUST carry it as the annotation `bot.garam.sh/spec-release`, and the `api/` module is tagged `api/v<SpecRelease>` at that release.
+- **VER-1. Releases are numbered per version and visible.** Each release of `v1alpha1` has a number, `SpecRelease` in this package, from `0.1.0`. Each CustomResourceDefinition MUST carry it under a key of this version's own, `bot.garam.sh/spec-release.v1alpha1`, so a definition that also serves a later version carries that version's release under its own key beside it. The `api/` module's tag, `api/vX.Y.Z`, is the module's own semver: every release of any version package in it moves the tag, and the tag equals no one version's release.
 - **Skew between a writer and what a cluster installed.** The group and version string is the same across releases, so it does not tell a writer which release a cluster serves:
   - A writer MUST apply under strict field validation (`fieldValidation=Strict`), so a field the installed release does not name is refused rather than pruned. Pruned, a field that restricts a bot would leave it running with more than was declared.
-  - A writer MUST NOT write a field newer than the `bot.garam.sh/spec-release` the target cluster's definitions carry.
+  - A writer MUST NOT write a field newer than the `bot.garam.sh/spec-release.<version>` the target cluster's definitions carry for the version it writes.
 - **VER-2.** A reader MUST NOT act on an object carrying an enum value it does not know, as if it carried a value it does know. This is what makes adding an enum value a compatible release.
 - **The next version.** No program serving these kinds runs a conversion webhook (`garamsh/garam-bot-operator` ADR 0091), so a definition serving two versions uses `conversion: None`, which converts nothing but `apiVersion`.
-  - **`v1beta1` beside `v1alpha1`.** `v1beta1` is served beside `v1alpha1` only while every `v1alpha1` object is also a valid `v1beta1` object with the same meaning: additive changes only.
+  - **`v1beta1` beside `v1alpha1`.** `v1beta1` is served beside `v1alpha1` only while every `v1alpha1` object is also a valid `v1beta1` object with the same meaning: additive changes only. A writer on the older version MUST change an object by patch (server-side apply or a merge patch), never by replacing it: a replace prunes the fields only the newer version names.
   - **A change that needs conversion** (a rename, a type change, a tightened constraint) is a drop and rewrite:
     1. the new version is served beside the old, and becomes the storage version;
     2. writers rewrite every object to it;

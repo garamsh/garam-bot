@@ -118,6 +118,32 @@ func checkLists(schema *spec.Schema, value any, path string) []error {
 	return problems
 }
 
+// unknownFields names each field in value that schema does not, at any depth. It checks names
+// alone: a value of the wrong type is not its concern.
+func unknownFields(schema *spec.Schema, value any, path string) []error {
+	var problems []error
+	switch value := value.(type) {
+	case map[string]any:
+		for name, child := range value {
+			property, named := schema.Properties[name]
+			if !named {
+				problems = append(problems, fmt.Errorf("unknown field %q", join(path, name)))
+
+				continue
+			}
+			problems = append(problems, unknownFields(&property, child, join(path, name))...)
+		}
+	case []any:
+		if schema.Items != nil && schema.Items.Schema != nil {
+			for i, item := range value {
+				problems = append(problems, unknownFields(schema.Items.Schema, item, path+"["+strconv.Itoa(i)+"]")...)
+			}
+		}
+	}
+
+	return problems
+}
+
 func sameKeys(a, b any, keys []any) bool {
 	left, _ := a.(map[string]any)
 	right, _ := b.(map[string]any)

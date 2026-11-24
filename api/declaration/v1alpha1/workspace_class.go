@@ -12,7 +12,7 @@ import (
 // +kubebuilder:resource:scope=Namespaced,categories=garam
 // +kubebuilder:printcolumn:name="Provider",type=string,JSONPath=`.spec.provider`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
-// +kubebuilder:metadata:annotations="bot.garam.sh/spec-release=0.1.0"
+// +kubebuilder:metadata:annotations="bot.garam.sh/spec-release.v1alpha1=0.1.0"
 type WorkspaceClass struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

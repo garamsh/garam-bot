@@ -127,8 +127,12 @@ func Cases() []Case {
 
 		{Requirement: "SCH-6", Name: "a status in the declaration is admitted and not taken", Admit: true,
 			Manifest: bot("") + "status: {observedGeneration: 7}\n"},
+		{Requirement: "SCH-6", Name: "a status whose fields are named but mistyped is admitted and not taken", Admit: true,
+			Manifest: bot("") + "status: {observedGeneration: \"x\", conditions: [{type: Running, status: 7}]}\n"},
 		{Requirement: "SCH-6", Name: "a status with an unknown field is refused",
 			Manifest: bot("") + "status: {junk: 1}\n"},
+		{Requirement: "SCH-6", Name: "a condition with an unknown field is refused",
+			Manifest: bot("") + "status: {conditions: [{type: Running, junk: 1}]}\n"},
 		{Requirement: "SCH-6", Name: "a status on a WorkspaceClass, which has none, is refused",
 			Manifest: workspaceClass("{provider: mvmd, resources: {cpu: 2, memory: 4Gi, disk: 20Gi}}") + "status: {x: 1}\n"},
 		{Requirement: "SCH-6", Name: "a status on a BotPool, which has none, is refused",

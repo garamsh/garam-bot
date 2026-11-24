@@ -14,7 +14,7 @@ import (
 // +kubebuilder:printcolumn:name="Placement",type=string,JSONPath=`.spec.placement`
 // +kubebuilder:printcolumn:name="Running",type=string,JSONPath=`.status.conditions[?(@.type=="Running")].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
-// +kubebuilder:metadata:annotations="bot.garam.sh/spec-release=0.1.0"
+// +kubebuilder:metadata:annotations="bot.garam.sh/spec-release.v1alpha1=0.1.0"
 type Bot struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

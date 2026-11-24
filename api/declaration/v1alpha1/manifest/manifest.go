@@ -55,12 +55,19 @@ func Parse(data []byte) (Object, error) {
 	if apiVersion != v1alpha1.GroupVersion.String() || schema == nil || newObject(kind) == nil {
 		return nil, fmt.Errorf("%w: %s %s is not a kind of %s", ErrInvalid, apiVersion, kind, v1alpha1.GroupVersion)
 	}
-	// The server decodes the whole document strictly before it drops the status, so an unknown
-	// field anywhere, a status on a kind with none among them, refuses the object.
-	if _, err := decodeStrict(document, kind); err != nil {
-		return nil, err
+	// The server's strict decode refuses a status field its schema does not name, a status on a kind
+	// with none among them, and then drops the status unvalidated. So the status is checked for
+	// field names alone; the rest of the document is decoded strictly below.
+	if status, present := object["status"]; present {
+		statusSchema, declared := schema.Properties["status"]
+		if !declared {
+			return nil, fmt.Errorf("%w: unknown field \"status\"", ErrInvalid)
+		}
+		if unknown := unknownFields(&statusSchema, status, "status"); len(unknown) > 0 {
+			return nil, fmt.Errorf("%w: %w", ErrInvalid, errors.Join(unknown...))
+		}
+		delete(object, "status")
 	}
-	delete(object, "status")
 
 	applyDefaults(schema, object)
 	problems := validate.NewSchemaValidator(schema, nil, "", strfmt.Default).Validate(object).Errors
