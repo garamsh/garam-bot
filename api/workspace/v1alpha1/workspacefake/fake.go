@@ -11,7 +11,6 @@ import (
 	"io"
 	"maps"
 	"net"
-	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -36,8 +35,9 @@ type workspace struct {
 }
 
 type snapshot struct {
-	of    v1alpha1.Name
-	files map[string][]byte
+	of        v1alpha1.Name
+	diskBytes uint64
+	files     map[string][]byte
 }
 
 var _ v1alpha1.Provider = (*Provider)(nil)
@@ -85,6 +85,9 @@ func (p *Provider) Create(_ context.Context, name v1alpha1.Name, spec v1alpha1.S
 		s, ok := p.snapshots[spec.FromSnapshot]
 		if !ok {
 			return v1alpha1.Workspace{}, false, fmt.Errorf("%w: %s", v1alpha1.ErrSnapshotNotFound, spec.FromSnapshot)
+		}
+		if s.diskBytes != spec.Resources.DiskBytes {
+			return v1alpha1.Workspace{}, false, fmt.Errorf("%w: the snapshot holds %d bytes, the spec asks %d", v1alpha1.ErrInvalid, s.diskBytes, spec.Resources.DiskBytes)
 		}
 		files = maps.Clone(s.files)
 	}
@@ -177,7 +180,7 @@ func (p *Provider) Exec(_ context.Context, name v1alpha1.Name, req v1alpha1.Exec
 
 // ReadFile returns the file at file.
 func (p *Provider) ReadFile(_ context.Context, name v1alpha1.Name, file string) ([]byte, error) {
-	if err := checkPath(file); err != nil {
+	if err := v1alpha1.CheckPath(file); err != nil {
 		return nil, err
 	}
 	p.mu.Lock()
@@ -196,7 +199,7 @@ func (p *Provider) ReadFile(_ context.Context, name v1alpha1.Name, file string) 
 
 // WriteFile replaces the file at file.
 func (p *Provider) WriteFile(_ context.Context, name v1alpha1.Name, file string, content []byte) error {
-	if err := checkPath(file); err != nil {
+	if err := v1alpha1.CheckPath(file); err != nil {
 		return err
 	}
 	p.mu.Lock()
@@ -251,7 +254,7 @@ func (p *Provider) Snapshot(_ context.Context, name, of v1alpha1.Name) (v1alpha1
 	if err != nil {
 		return v1alpha1.Snapshot{}, false, err
 	}
-	s := &snapshot{of: of, files: maps.Clone(w.files)}
+	s := &snapshot{of: of, diskBytes: w.spec.Resources.DiskBytes, files: maps.Clone(w.files)}
 	maps.DeleteFunc(s.files, func(file string, _ []byte) bool { return !inData(file) })
 	p.snapshots[name] = s
 
@@ -300,12 +303,18 @@ func (p *Provider) running(name v1alpha1.Name) (*workspace, error) {
 	return w, nil
 }
 
+// answer is the workspace as a read answers it, each Env value redacted.
 func (w *workspace) answer(name v1alpha1.Name) v1alpha1.Workspace {
-	return v1alpha1.Workspace{Name: name, Spec: clone(w.spec), Status: v1alpha1.Status{Phase: w.phase}}
+	spec := clone(w.spec)
+	for k := range spec.Env {
+		spec.Env[k] = v1alpha1.Redacted
+	}
+
+	return v1alpha1.Workspace{Name: name, Spec: spec, Status: v1alpha1.Status{Phase: w.phase}}
 }
 
 func (s *snapshot) answer(name v1alpha1.Name) v1alpha1.Snapshot {
-	return v1alpha1.Snapshot{Name: name, Workspace: s.of, Phase: v1alpha1.SnapshotReady}
+	return v1alpha1.Snapshot{Name: name, Workspace: s.of, DiskBytes: s.diskBytes, Phase: v1alpha1.SnapshotReady}
 }
 
 func clone(spec v1alpha1.Spec) v1alpha1.Spec {
@@ -314,14 +323,6 @@ func clone(spec v1alpha1.Spec) v1alpha1.Spec {
 	spec.Egress = slices.Clone(spec.Egress)
 
 	return spec
-}
-
-func checkPath(file string) error {
-	if !path.IsAbs(file) || path.Clean(file) != file {
-		return fmt.Errorf("%w: path %q is not absolute and clean", v1alpha1.ErrInvalid, file)
-	}
-
-	return nil
 }
 
 func inData(file string) bool {

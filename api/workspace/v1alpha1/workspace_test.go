@@ -15,7 +15,7 @@ const digest = "registry.example/w@sha256:0123456789abcdef0123456789abcdef012345
 func valid() v1alpha1.Spec {
 	return v1alpha1.Spec{
 		Image:     digest,
-		Resources: v1alpha1.Resources{MilliCPU: 1000, MemoryBytes: 1 << 30, DiskBytes: 1 << 30},
+		Resources: v1alpha1.Resources{CPU: 1, MemoryBytes: 1 << 30, DiskBytes: 1 << 30},
 		Ports:     []uint16{7700},
 		Egress:    []v1alpha1.EgressRule{{Prefix: netip.MustParsePrefix("10.0.0.0/8"), Protocol: v1alpha1.ProtocolTCP, Ports: []v1alpha1.PortRange{{First: 443, Last: 443}}}},
 	}
@@ -36,7 +36,7 @@ func TestSpecCheck_SPEC1(t *testing.T) {
 	require.NoError(t, valid().Check()) // control
 	for name, change := range map[string]func(*v1alpha1.Spec){
 		"an image by tag":           func(s *v1alpha1.Spec) { s.Image = "registry.example/w:latest" },
-		"no cpu":                    func(s *v1alpha1.Spec) { s.Resources.MilliCPU = 0 },
+		"no cpu":                    func(s *v1alpha1.Spec) { s.Resources.CPU = 0 },
 		"no memory":                 func(s *v1alpha1.Spec) { s.Resources.MemoryBytes = 0 },
 		"no disk":                   func(s *v1alpha1.Spec) { s.Resources.DiskBytes = 0 },
 		"port 0":                    func(s *v1alpha1.Spec) { s.Ports = []uint16{0} },
@@ -45,6 +45,10 @@ func TestSpecCheck_SPEC1(t *testing.T) {
 			s.Egress = []v1alpha1.EgressRule{{Protocol: v1alpha1.ProtocolTCP}}
 		},
 		"an egress protocol of icmp": func(s *v1alpha1.Spec) { s.Egress[0].Protocol = "icmp" },
+		"a prefix not canonical":     func(s *v1alpha1.Spec) { s.Egress[0].Prefix = netip.MustParsePrefix("10.0.0.1/8") },
+		"a repeated port":            func(s *v1alpha1.Spec) { s.Ports = []uint16{7700, 7700} },
+		"an empty env name":          func(s *v1alpha1.Spec) { s.Env = map[string]string{"": "v"} },
+		"an env name holding =":      func(s *v1alpha1.Spec) { s.Env = map[string]string{"A=B": "v"} },
 		"an egress range reversed":   func(s *v1alpha1.Spec) { s.Egress[0].Ports = []v1alpha1.PortRange{{First: 9, Last: 8}} },
 	} {
 		spec := valid()
@@ -66,5 +70,14 @@ func TestSameSpec_LIFE1(t *testing.T) {
 		spec := valid()
 		change(&spec)
 		assert.False(t, v1alpha1.SameSpec(valid(), spec), name)
+	}
+}
+
+func TestCheckPath_FILE1(t *testing.T) {
+	for _, ok := range []string{"/workspace/a", "/run/garam-bot/agent/token", "/procfs"} {
+		assert.NoError(t, v1alpha1.CheckPath(ok), ok)
+	}
+	for _, bad := range []string{"", "a", "/a/../b", "/a/", "/", "/proc", "/proc/1", "/sys/x", "/dev/null"} {
+		assert.ErrorIs(t, v1alpha1.CheckPath(bad), v1alpha1.ErrInvalid, bad)
 	}
 }

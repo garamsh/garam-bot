@@ -19,9 +19,9 @@ const file = v1alpha1.DataPath + "/conformance.txt"
 func Cases() []Case {
 	return []Case{
 		{Requirement: "NAME-1", Name: "a name that is not a DNS label is refused", run: nameRefused},
-		{Requirement: "SPEC-1", Name: "an image without a digest is refused", run: specRefused},
+		{Requirement: "SPEC-1", Name: "a spec that breaks a rule is refused", run: specRefused},
 		{Requirement: "LIFE-1", Name: "create is idempotent by name and refuses another spec", run: createIdempotent},
-		{Requirement: "LIFE-2", Name: "a created workspace runs and is listed", run: createdRuns},
+		{Requirement: "LIFE-2", Name: "a created workspace runs, is listed, and is read without its env values", run: createdRuns},
 		{Requirement: "LIFE-3", Name: "stop and start are idempotent and reach their phase", run: stopStart},
 		{Requirement: "LIFE-4", Name: "delete is idempotent and the name is freed", run: deleteFrees},
 		{Requirement: "LIFE-5", Name: "a name the caller does not have is not found", run: unknownName},
@@ -29,16 +29,19 @@ func Cases() []Case {
 		{Requirement: "DATA-1", Name: "the data volume survives a stop and a start", run: dataSurvives},
 		{Requirement: "EXEC-1", Name: "exec returns the exit code and the output whole", run: execResult},
 		{Requirement: "FILE-1", Name: "a written file reads back whole", run: fileRoundTrip},
+		{Requirement: "FILE-1", Name: "a path that is not absolute and clean, or is a system directory, is refused", run: fileRefused},
 		{Requirement: "FILE-2", Name: "a read of a missing file is file not found", run: fileMissing},
 		{Requirement: "ISO-1", Name: "one workspace does not see another's files", run: isolated},
 		{Requirement: "DIAL-1", Name: "dial reaches a spec port and refuses another", run: dial},
 		{Requirement: "NET-1", Name: "egress rules are refused without the egress capability", run: egressRefused},
+		{Requirement: "NET-1", Name: "egress rules are taken with the egress capability", run: egressTaken},
 		{
 			Requirement: "NET-1", Name: "a workspace sends nothing its egress rules do not allow",
 			Pending: "needs a conformance image that reports what it can reach; the reference implementation sends nothing",
 		},
 		{Requirement: "SNAP-1", Name: "snapshot is idempotent by name and refuses another workspace's", run: snapshotIdempotent},
 		{Requirement: "SNAP-2", Name: "a restore holds the snapshot's data and outlives its source", run: restore},
+		{Requirement: "SNAP-2", Name: "a restore of another disk size is refused", run: restoreMismatch},
 		{Requirement: "SNAP-3", Name: "snapshot is refused without the snapshot capability", run: snapshotRefused},
 		{
 			Requirement: "VER-2", Name: "a caller reads a phase it does not know as unknown",
@@ -54,11 +57,24 @@ func nameRefused(t *testing.T, e *env) {
 }
 
 func specRefused(t *testing.T, e *env) {
-	spec := e.spec()
-	spec.Image = "registry.example/conformance:latest"
-	_, _, err := e.Provider.Create(t.Context(), e.name(t), spec)
-	wantErr(t, "Create with a tag", err, v1alpha1.ErrInvalid)
-	e.running(t, e.spec()) // control: the image as given is taken
+	for name, change := range map[string]func(*v1alpha1.Spec){
+		"an image by tag":       func(s *v1alpha1.Spec) { s.Image = "registry.example/conformance:latest" },
+		"no cpu":                func(s *v1alpha1.Spec) { s.Resources.CPU = 0 },
+		"no memory":             func(s *v1alpha1.Spec) { s.Resources.MemoryBytes = 0 },
+		"no disk":               func(s *v1alpha1.Spec) { s.Resources.DiskBytes = 0 },
+		"port 0":                func(s *v1alpha1.Spec) { s.Ports = []uint16{0} },
+		"a repeated port":       func(s *v1alpha1.Spec) { s.Ports = []uint16{EchoPort, EchoPort} },
+		"an env name holding =": func(s *v1alpha1.Spec) { s.Env = map[string]string{"A=B": "c"} },
+		"a prefix not in canonical form": func(s *v1alpha1.Spec) {
+			s.Egress = []v1alpha1.EgressRule{{Prefix: netip.MustParsePrefix("192.0.2.1/24"), Protocol: v1alpha1.ProtocolTCP}}
+		},
+	} {
+		spec := e.spec()
+		change(&spec)
+		_, _, err := e.Provider.Create(t.Context(), e.name(t), spec)
+		wantErr(t, "Create with "+name, err, v1alpha1.ErrInvalid)
+	}
+	e.running(t, e.spec()) // control: the spec as given is taken
 }
 
 func createIdempotent(t *testing.T, e *env) {
@@ -75,7 +91,14 @@ func createIdempotent(t *testing.T, e *env) {
 }
 
 func createdRuns(t *testing.T, e *env) {
-	name := e.running(t, e.spec())
+	spec := e.spec()
+	spec.Env = map[string]string{"CONFORMANCE": "value"}
+	name := e.running(t, spec)
+	got, err := e.Provider.Get(t.Context(), name)
+	wantNoErr(t, "Get", err)
+	if v := got.Spec.Env["CONFORMANCE"]; v != v1alpha1.Redacted {
+		t.Fatalf("Get answered the env value %q, want %q", v, v1alpha1.Redacted)
+	}
 	list, err := e.Provider.List(t.Context())
 	wantNoErr(t, "List", err)
 	if !slices.ContainsFunc(list, func(w v1alpha1.Workspace) bool { return w.Name == name }) {
@@ -195,6 +218,16 @@ func fileRoundTrip(t *testing.T, e *env) {
 	}
 }
 
+func fileRefused(t *testing.T, e *env) {
+	name := e.running(t, e.spec())
+	for _, p := range []string{"workspace/relative.txt", v1alpha1.DataPath + "/../etc/x", "/", "/proc/self/environ", "/sys/x", "/dev/x"} {
+		wantErr(t, "WriteFile("+p+")", e.Provider.WriteFile(t.Context(), name, p, []byte("x")), v1alpha1.ErrInvalid)
+		_, err := e.Provider.ReadFile(t.Context(), name, p)
+		wantErr(t, "ReadFile("+p+")", err, v1alpha1.ErrInvalid)
+	}
+	wantNoErr(t, "WriteFile under the data volume", e.Provider.WriteFile(t.Context(), name, file, []byte("x"))) // control
+}
+
 func fileMissing(t *testing.T, e *env) {
 	name := e.running(t, e.spec())
 	_, err := e.Provider.ReadFile(t.Context(), name, v1alpha1.DataPath+"/absent.txt")
@@ -237,6 +270,15 @@ func egressRefused(t *testing.T, e *env) {
 	_, _, err := e.Provider.Create(t.Context(), e.name(t), spec)
 	wantErr(t, "Create with an egress rule", err, v1alpha1.ErrUnsupported)
 	e.running(t, e.spec()) // control: the spec without the rule is taken
+}
+
+func egressTaken(t *testing.T, e *env) {
+	if !e.caps.Egress {
+		t.Skip("the implementation offers no egress rules")
+	}
+	spec := e.spec()
+	spec.Egress = []v1alpha1.EgressRule{{Prefix: netip.MustParsePrefix("192.0.2.0/24"), Protocol: v1alpha1.ProtocolTCP, Ports: []v1alpha1.PortRange{{First: 443, Last: 443}}}}
+	e.running(t, spec)
 }
 
 func snapshotIdempotent(t *testing.T, e *env) {
@@ -288,6 +330,23 @@ func restore(t *testing.T, e *env) {
 	spec.FromSnapshot = e.name(t)
 	_, _, err = e.Provider.Create(t.Context(), e.name(t), spec)
 	wantErr(t, "Create from a missing snapshot", err, v1alpha1.ErrSnapshotNotFound)
+}
+
+func restoreMismatch(t *testing.T, e *env) {
+	if !e.caps.Snapshot {
+		t.Skip("the implementation offers no snapshot")
+	}
+	source := e.running(t, e.spec())
+	snap := e.name(t)
+	_, _, err := e.Provider.Snapshot(t.Context(), snap, source)
+	wantNoErr(t, "Snapshot", err)
+	spec := e.spec()
+	spec.FromSnapshot = snap
+	spec.Resources.DiskBytes *= 2
+	_, _, err = e.Provider.Create(t.Context(), e.name(t), spec)
+	wantErr(t, "Create from the snapshot with twice the disk", err, v1alpha1.ErrInvalid)
+	spec.Resources.DiskBytes /= 2
+	e.running(t, spec) // control: the snapshot's own size is taken
 }
 
 func snapshotRefused(t *testing.T, e *env) {

@@ -15,13 +15,16 @@
 1. **Interface 3 is the Go interface `Provider` in `api/workspace/v1alpha1/`,** a driver API that the caller links. Each implementation reaches its backend over that backend's own interface. Its operations are create, get, list, start, stop, delete, exec, read and write a file, dial a port, and snapshot, as `api/workspace/v1alpha1/README.md` states them. Attach is `Dial`: the caller reaches the agent's adapter in the workspace through a connection the provider carries.
 2. **A workspace's state is one data volume at `/workspace`.** Only what is under it is promised to survive a stop, a move or a restore, and a snapshot holds it and no memory, as naru's Machine snapshot does.
 3. **A workspace sends nothing out but what its egress rules allow,** and a provider that cannot enforce rules refuses them rather than run the workspace wider.
-4. **The reference implementation is `workspacefake`, in memory, and the first production implementation is the naru Machine provider.** The specification maps every operation, phase and error onto `machines/v1alpha1`. The Pod, container and mvmd providers follow, each its own issue.
+4. **The reference implementation is `workspacefake`, in memory, and the first production implementation is the naru Machine provider.** The specification maps every operation, phase and error onto `machines/v1alpha1`. A spec's fields reach the Machine API as written, so naru's create comparison is the interface's, and the provider follows naru's event log for status rather than polling. The Pod, container and mvmd providers follow, each its own issue.
+5. **`Dial` carries a connection and does not authenticate it.** On naru it goes through naru-proxy, which naru#378 builds and which serves a service to whoever reaches it, so the listener behind a port authenticates every connection itself (interface 2's AUTH-1).
 
 ## Consequences
 
 - The connector and the PC daemon link the same providers, and a WorkspaceClass's `spec.provider` names one.
 - An implementation outside this repository is a Go package. A provider in another language needs a wire of its own, which this version does not define.
-- The interface is no larger than the Machine API: exec and file calls are whole, and status is read by `Get`. Streams and events are additions.
+- The interface is no larger than the Machine API: exec and file calls are whole, and the caller reads status by `Get`, which an implementation answers from its backend's events. Streams and a caller's watch are additions.
+- `Dial` on naru waits on naru-proxy, and until naru adds a route open to the caller alone, a Machine's port is guarded by the adapter's hourly token only.
+- A workspace reaches the place's own services by egress, so on a naru host they run off the host, which drops connections from a Machine to its own addresses.
 - The Machine API's aliases, shapes and GPUs stay unused until a workspace needs them.
 
 ## Signs the decision was wrong

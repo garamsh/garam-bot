@@ -49,7 +49,8 @@ The first two implementations the suite runs against are `agentfake` and the cla
 ## Authentication
 
 - **AUTH-1.** Every request MUST carry `Authorization: Bearer <token>`, where the token is the content of `TokenPath`, `/run/garam-bot/agent/token`, in the workspace, surrounding white space removed. The adapter MUST read the file at each request and MUST answer a request without that token with 401 `unauthorized`.
-- The caller makes the token, at least 128 bits from a cryptographically secure source, writes it with interface 3's `WriteFile` before it first reaches the adapter, and replaces it when it replaces the workspace. It is the workspace's own and grants nothing outside it: it is not a garam credential.
+- The caller makes the token, at least 128 bits from a cryptographically secure source, and writes it with interface 3's `WriteFile` before it first reaches the adapter. It replaces it at least every hour, as it does the other tokens (CRED-1), so a token read out of the workspace is worth an hour at most. It is the workspace's own and grants nothing outside it: it is not a garam credential.
+- The token, not the connection, is the bar. A provider may serve the adapter's port to more than the caller: naru-proxy serves a Machine's services to whoever reaches it (interface 3's DIAL-1).
 
 ## Sessions
 
@@ -69,18 +70,19 @@ The first two implementations the suite runs against are `agentfake` and the cla
 
 ## Model and tools
 
-- **MODEL-1.** The harness MUST send its model requests only to `model.baseUrl`, interface 5's model gateway, carrying the token in `model.tokenFile` read again for each request. The adapter MUST NOT give the harness any other model credential, and the harness's login, a subscription's among them, is not used.
+- **MODEL-1.** The harness MUST send its model requests only to `model.baseUrl`, interface 5's model gateway, carrying the token in `model.tokenFile` read again for each request. The adapter MUST NOT give the harness any other model credential, and the harness's login, a subscription's among them, is not used. Model calls are billed by API through the gateway only, and an organization may bring its own provider key, which the gateway holds and the workspace never sees (the decision of 2026-11-24 recorded at `garamsh/discussions` discussion 6, comment 19858505).
+- **The model gateway and the tool servers are reached by the workspace's egress.** Their URLs are addresses the workspace's egress rules allow (interface 3's NET-1), so the place runs them where its workspaces can reach them.
 - **TOOL-1.** The harness's tools are the MCP servers of `tools`, over MCP's Streamable HTTP transport, and the harness's own tools inside the workspace (its file edits and its shell). The adapter MUST NOT configure an MCP server the session does not name. Each request to a server carries the token in its `tokenFile`, read again for each request.
 - **One Tool interface, three ways of authenticating, all outside the workspace.** Every tool reaches the harness as one MCP server URL with a token file, whatever it is. What the tool itself authenticates with is decided at the execution place, where the bot's process, or a proxy of its own, holds it and adds it to each call:
-  - `garam`: a short-lived token garam issues for the bot and the tool, narrowed to the bot's scope (the bot system design, `garamsh/garam-bot#1204`);
+  - `garam`: a short-lived token garam issues for the bot and the tool, narrowed to the bot's scope (`docs/architecture/bot-system.md` §External apps, garam-bot#1208);
   - `secretRef`: a secret the declaration names by reference (interface 1's SEC-1), read at the place;
   - `federated`: a token exchanged at the tool's own issuer for the bot's.
 
-  A tool is not a resource of its own: there is no Connection kind.
+  A tool is not a resource of its own: there is no Connection kind here or in garam. An organization's installation of garam's app for a service, and each bot's grant to use it, are garam IAM's (`docs/architecture/bot-system.md` §External apps).
 
 ## Credentials in the workspace
 
-- **CRED-1.** No secret enters a workspace. The caller MUST NOT write any credential into it but the tokens this protocol names: the adapter's token, the model token and the tool tokens. Each of the last two MUST be short-lived, at most an hour, and the caller rewrites it before it expires. The bot's own token is an RFC 8693 exchange made at the place (the bot system design, `garamsh/garam-bot#1204`), and stays there.
+- **CRED-1.** No secret enters a workspace. The caller MUST NOT write any credential into it but the tokens this protocol names: the adapter's token, the model token and the tool tokens. Each MUST live at most an hour, and the caller rewrites it before it expires. The bot's own token is an RFC 8693 exchange made at the place (`docs/architecture/bot-system.md` §Authentication, garam-bot#1208), and stays there.
 
 ## Versioning and compatibility
 
@@ -93,7 +95,7 @@ The first two implementations the suite runs against are `agentfake` and the cla
 
 ## Open questions
 
-- **The terms of service of wrapping each harness.** Whether driving Claude Code or Codex from an adapter, for a bot that is not a person, is within each product's terms is not checked. Each adapter's issue checks it before the adapter ships.
+- **The terms of service of wrapping each harness.** Billing is decided: by API through the gateway, with no subscription login (comment 19858505). Whether driving Claude Code or Codex from an adapter with an API key, for a bot that is not a person, is within each product's terms is not checked. Each adapter's issue checks it before the adapter ships.
 - **Density.** How many workspaces, and so how many harnesses, an execution place runs at once is not measured. The PC daemon's and the cluster's targets wait for a measurement.
 - **Several sessions in one adapter.** This version holds one. A workspace shared by bots (interface 1's `SharedRead`) does not need more, since each bot has its own workspace for its harness.
 - **Events past a session.** The events live as long as the session. A bound on how many it keeps, with 410 for a cursor before it, is an addition.

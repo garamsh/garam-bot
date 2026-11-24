@@ -4,10 +4,30 @@ import (
 	"fmt"
 	"maps"
 	"net/netip"
+	"path"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 )
+
+// Redacted is what a read answers in place of an Env value, which it never returns (LIFE-2).
+const Redacted = "<set>"
+
+// CheckPath returns ErrInvalid for a guest path a file call refuses: one that is not absolute and
+// clean, is "/", or is under /proc, /sys or /dev (FILE-1).
+func CheckPath(p string) error {
+	if !path.IsAbs(p) || path.Clean(p) != p || p == "/" {
+		return fmt.Errorf("%w: path %q is not absolute and clean, or is /", ErrInvalid, p)
+	}
+	for _, d := range []string{"/proc", "/sys", "/dev"} {
+		if p == d || strings.HasPrefix(p, d+"/") {
+			return fmt.Errorf("%w: path %q is under %s", ErrInvalid, p, d)
+		}
+	}
+
+	return nil
+}
 
 // Name names a workspace or a snapshot: a DNS label, chosen by the caller (NAME-1).
 type Name string
@@ -30,7 +50,8 @@ type Spec struct {
 	// execution place's configuration, never a declaration's.
 	Image     string
 	Resources Resources
-	// Env is the environment of the image's entrypoint and of every Exec. It holds no secret.
+	// Env is the environment of the image's entrypoint and of every Exec. It holds no secret, and a
+	// read answers each value as Redacted (LIFE-2).
 	Env map[string]string
 	// Ports are the workspace's ports Dial may reach.
 	Ports []uint16
@@ -42,7 +63,8 @@ type Spec struct {
 
 // Resources are what one workspace gets, each more than zero.
 type Resources struct {
-	MilliCPU uint32
+	// CPU is whole CPUs. A caller rounds a WorkspaceClass's quantity up to it.
+	CPU uint32
 	// MemoryBytes is the workspace's memory.
 	MemoryBytes uint64
 	// DiskBytes is the size of the data volume at DataPath.
@@ -78,12 +100,19 @@ func (s Spec) Check() error {
 	switch {
 	case !imagePattern.MatchString(s.Image):
 		return fmt.Errorf("%w: image %q is not repository@sha256:<digest>", ErrInvalid, s.Image)
-	case s.Resources.MilliCPU == 0 || s.Resources.MemoryBytes == 0 || s.Resources.DiskBytes == 0:
+	case s.Resources.CPU == 0 || s.Resources.MemoryBytes == 0 || s.Resources.DiskBytes == 0:
 		return fmt.Errorf("%w: cpu, memory and disk are each more than zero", ErrInvalid)
 	case slices.Contains(s.Ports, 0):
 		return fmt.Errorf("%w: port 0", ErrInvalid)
+	case len(slices.Compact(slices.Sorted(slices.Values(s.Ports)))) != len(s.Ports):
+		return fmt.Errorf("%w: a port is repeated", ErrInvalid)
 	case s.FromSnapshot != "" && !labelPattern.MatchString(string(s.FromSnapshot)):
 		return fmt.Errorf("%w: snapshot name %q is not a DNS label", ErrInvalid, s.FromSnapshot)
+	}
+	for name := range s.Env {
+		if name == "" || strings.Contains(name, "=") {
+			return fmt.Errorf("%w: env name %q is empty or holds \"=\"", ErrInvalid, name)
+		}
 	}
 	for _, r := range s.Egress {
 		if err := r.check(); err != nil {
@@ -95,8 +124,8 @@ func (s Spec) Check() error {
 }
 
 func (r EgressRule) check() error {
-	if !r.Prefix.IsValid() {
-		return fmt.Errorf("%w: egress prefix is not a prefix", ErrInvalid)
+	if !r.Prefix.IsValid() || r.Prefix.Masked() != r.Prefix {
+		return fmt.Errorf("%w: egress prefix %s is not a prefix in canonical form", ErrInvalid, r.Prefix)
 	}
 	if r.Protocol != ProtocolTCP && r.Protocol != ProtocolUDP {
 		return fmt.Errorf("%w: egress protocol %q", ErrInvalid, r.Protocol)
@@ -111,7 +140,9 @@ func (r EgressRule) check() error {
 }
 
 // SameSpec reports whether a and b ask for the same workspace, the comparison Create's
-// idempotency makes (LIFE-1). The order of Ports and of Egress counts, as written.
+// idempotency makes (LIFE-1). The order of Ports and of Egress counts, as written. Every field it
+// compares reaches the backend unchanged, so a backend that compares what it was given, as naru's
+// Machine API does, makes the same comparison.
 func SameSpec(a, b Spec) bool {
 	return a.Image == b.Image &&
 		a.Resources == b.Resources &&
@@ -189,6 +220,8 @@ type Snapshot struct {
 	Name Name
 	// Workspace is the name of the workspace it was taken of.
 	Workspace Name
+	// DiskBytes is the size of the data volume it holds, which a restore's spec must equal (SNAP-2).
+	DiskBytes uint64
 	Phase     SnapshotPhase
 	Reason    string
 }

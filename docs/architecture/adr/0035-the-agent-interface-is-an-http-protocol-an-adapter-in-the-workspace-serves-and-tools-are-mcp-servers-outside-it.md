@@ -13,8 +13,8 @@
 ## Decision
 
 1. **Interface 2 is an HTTP protocol, `agent/v1alpha1`, that an adapter in the workspace image serves on port 7700,** reached by the bot's process through interface 3's `Dial`. Its types are the Go types in `api/agent/v1alpha1/`. A session runs one harness, a task carries inputs from the bot's mailbox, and the events (messages, tool calls, results and one `taskDone` per task) are read by long poll.
-2. **The adapter takes a request only with the workspace's own token,** a file the bot's process writes into the workspace, which grants nothing outside it.
-3. **Every tool is an MCP server outside the workspace, with a token file.** The tool's own credential, whichever of garam, secretRef or federated it is, is held and added at the execution place, never in the workspace. The model is interface 5's gateway, with a token file read again for each request.
+2. **The adapter takes a request only with the workspace's own token,** a file the bot's process writes into the workspace and replaces at least every hour, which grants nothing outside it. The token, not the connection, is the bar, since a provider may serve the port to more than its caller.
+3. **Every tool is an MCP server outside the workspace, with a token file.** The tool's own credential, whichever of garam, secretRef or federated it is, is held and added at the execution place, never in the workspace. The model is interface 5's gateway, with a token file read again for each request, billed by API with no subscription login, and an organization may bring its own key (comment 19858505). The workspace reaches both by its egress rules.
 4. **The bot's memory is kept by the bot's process from the events,** not by the harness.
 5. **The reference implementation is `agentfake`; the first production implementations are the claude-code and codex adapters.**
 
