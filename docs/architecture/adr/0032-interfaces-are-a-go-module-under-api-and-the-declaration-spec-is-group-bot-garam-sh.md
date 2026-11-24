@@ -23,7 +23,7 @@
 - The Makefile's Go entry points run in both modules, and `make test` fetches the API server and etcd binaries the conformance suite runs against.
 - A CEL rule added to a definition needs its Go counterpart in `manifest/` in the same change. A test fails without one.
 - The kinds sit in a group of their own, so a cluster serving `agent.garam.sh` and `bot.garam.sh` holds two groups. `garamsh/garam-bot-operator` decides how its single-group layout serves them.
-- Dependabot's Go modules entry covers only the root module until `.github/dependabot.yml` names `api/`.
+- Dependabot's Go modules entry names both directories, `/` and `/api`, so each module's requirements have a mover.
 
 ## Signs the decision was wrong
 
