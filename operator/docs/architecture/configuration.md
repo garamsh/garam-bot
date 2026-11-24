@@ -53,12 +53,12 @@ How this project's binaries are configured, and which repository owns each value
 | `--identity-secret` | The Secret in the release namespace holding the cluster's key and record. It must exist: the chart creates it empty, and the connector never creates it | `garam-connector-identity` |
 | `--rotation-period` | How long the cluster's key signs before the connector rotates it. 0 or less is refused at start (ADR 0094) | `720h` |
 
-### The control service, the gaon operator and the gaon chart
+### The control service
 
-The Kubernetes operator above is the one this project releases. The control service is configured as follows, and the gaon operator, which is discontinued and not released (ADR 0086), only as far as its chart renders it.
+The Kubernetes operator above is the one this project releases. The control service is configured as follows.
 
 - **The control service is configured by flags and one environment variable, and by nothing else.** `cmd/control/main.go` declares every flag and its default. No file, ConfigMap or other environment variable carries a value a deployer chooses. The one environment variable is `CONTROL_DATABASE_URL`, the store's connection URL, which is a variable rather than a flag because it carries a password. The service refuses to start without it, and so does `control publish-profile` (`control.md`).
-- **This repository sets none of those values.** `deploy/charts/garam-agent-operator-gaon` is a chart of gaon kinds (ADR 0085) in which every value a deployment chooses is required and empty. A flag left unset runs at the default `cmd/control/main.go` declares.
+- **This repository sets none of those values.** No chart or manifest here renders the control service since the gaon chart went ([ADR 0096](adr/0096-remove-the-gaon-operator-its-guest-image-and-its-chart.md)). A flag left unset runs at the default `cmd/control/main.go` declares.
 
 | Flag | What it names | Default |
 |---|---|---|
@@ -71,26 +71,6 @@ The Kubernetes operator above is the one this project releases. The control serv
 | `--console-origin` | A browser origin the console calls from; repeated for each. None set answers no CORS at all | none |
 
 - **No secret value is a flag.** The database URL is the one value that carries a secret and it is an environment variable. The operator's private key is read from the file the flag names, never from the flag.
-- **The gaon operator is configured by environment variables its `internal/gaon/config` reads**, and the table of them is in `gaon-operator.md`. This repository sets none of those values either.
-- **A reference to an image the gaon chart runs, or starts, is `<repository>@sha256:<digest>`, with no tag.** gaon starts no other form, and the chart refuses a tag. This narrows the form `delivery.md` states for a gaon deployment: the tag stays beside the digest in the registry and in a record of the release, not in the value a gaon object carries.
-
-### Which repository owns each value of the gaon chart
-
-The chart's `values.yaml` lists every value with its meaning. Every value is required except `control.consoleOrigins`, `operator.guest.*` and a resource's `limits`, and a missing one fails the render with a message that opens with its name.
-
-| Value | Owner |
-|---|---|
-| `image.control`, `image.operator`, `image.guest` (the guest is the operator's `AGENT_IMAGE`) | This repository publishes `image.control` (ADR 0033). It builds `image.operator` and `image.guest` with `make operator-image` and `make guest-image` and publishes neither, and the gaon operator is not released (ADR 0086). The deployment's repository, `garamsh/aurora`, records the digest it deploys |
-| `garam.machineUrl`, `garam.tokenUrl`, and the file `garam.root` names | garam serves them; aurora supplies the address and places the root |
-| `database.url` (the Secret and its key, the value is `CONTROL_DATABASE_URL`) | aurora creates the Secret and names it |
-| `control.operatorKey`, `control.operatorClientId`, `control.operatorTokenUrl`, `operator.key`, `operator.grn`, `operator.controlGrn` | garam issues the keys and GRNs (ADR 0072); aurora places the files and names the Secrets |
-| `control.certificate`, `control.key`, `control.consoleOrigins`, `operator.controlRoot` | aurora |
-| `operator.gaon.url`, `operator.gaon.ca`, `operator.gaon.certificate`, `operator.gaon.key` | gaon's administrator issues the operator's client certificate; aurora names its Secret |
-| `namePrefix`, `dnsZone`, `resources.*`, `operator.agent.cpu`, `operator.agent.memory` | aurora; this repository publishes no figure for either program |
-| `operator.guest.machineUrl`, `operator.guest.controlUrl` | Optional: left unset, the operator defaults them (§gaon-operator.md) |
-| The flags and environment variables, the paths files are written to, the ports, each Deployment's user, the probes | This repository, in the chart's templates |
-
-The operator's `ClusterRole` and its binding to the client certificate's CN are gaon's administrator's, not rendered here (ADR 0085).
 
 ## Rationale
 
@@ -108,7 +88,7 @@ That none of these images is per agent type is [ADR 0029](adr/0029-route-every-a
 
 That the image an agent's workspace runs is a third is [ADR 0023](adr/0023-run-an-agents-workspace-as-a-second-container-this-operator-names.md), on the same test and with one difference worth reading: the image it names exists. Read from ECR on 2026-09-06, `garam/gagent-workspace:0.1.0` resolves to `sha256:ce3256dcd5ac46ceaa9d5e445da69998728b123f86bca92b4001185cfa0e6a7e`, which is an OCI image manifest and not an index — so the rule above applies in its second form, and the architecture an overlay setting it pins is `linux/amd64`.
 
-That the gaon chart holds no value of a deployment's is [ADR 0085](adr/0085-ship-a-helm-chart-of-gaon-kinds-for-the-control-service-and-the-gaon-operator.md), and that it describes a program this project does not release is [ADR 0086](adr/0086-restore-the-kubernetes-operator-and-keep-the-gaon-operator-unreleased.md).
+That the gaon operator, its guest image and the gaon chart are gone is [ADR 0096](adr/0096-remove-the-gaon-operator-its-guest-image-and-its-chart.md), which supersedes [ADR 0085](adr/0085-ship-a-helm-chart-of-gaon-kinds-for-the-control-service-and-the-gaon-operator.md) and settles what [ADR 0086](adr/0086-restore-the-kubernetes-operator-and-keep-the-gaon-operator-unreleased.md) left open.
 
 ## Open questions
 

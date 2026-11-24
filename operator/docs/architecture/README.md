@@ -40,7 +40,6 @@ Before a delta between this file and the template is called stale, read it again
 | `configuration.md` | How this project's binaries are configured, and which repository owns each value |
 | `connector.md` | How a user's own cluster connects to garam: the connector chart and its two programs, registration and identity, declarations synced both ways, rights in the cluster, and what garam owes |
 | `control.md` | The control service: definitions and revisions, templates, profiles, creation and configure requests, recoveries and stops, what each controller reports of itself, their store, the console API that changes and reads them, and the controller API that releases them |
-| `gaon-operator.md` | The operator that runs each managed agent as one MicroVM on a gaon cluster, imported from garam, discontinued and not released (ADR 0086): its reconciler, wire clients, guest image, and what is not built |
 | `delivery.md` | The images this project publishes, the reference a deployment uses, and where its output lands in a cluster |
 | `structure.md` | What a unit of this code is, what may reference what, and when a new unit is earned |
 | `integration.md` | How a change reaches `dev` and then `main`, and which checks run at each step |
@@ -130,11 +129,11 @@ Before a delta between this file and the template is called stale, read it again
 | `adr/0079-run-only-on-our-own-system-and-keep-the-seams-that-allow-a-bring-your-own-operator.md` | Run only on our own system, and keep the seams that allow a bring-your-own operator | accepted; decisions 1 and 2 superseded in part, for the connector chart, by ADR-0087 |
 | `adr/0080-name-garams-resources-and-operations-as-garam-v0-7-0-does.md` | Name garam's resources and operations as garam `v0.7.0` does | accepted |
 | `adr/0081-release-as-0-1-0-dev-n-and-0-1-0-rc-n-until-launch-and-0-1-0-at-launch.md` | Release as `0.1.0-dev.N` and `0.1.0-rc.N` until launch, and `0.1.0` at launch | accepted; the tag form amended by ADR-0095 |
-| `adr/0082-import-garams-gaon-operator-and-keep-it-in-this-repository.md` | Import garam's gaon operator and keep it in this repository | accepted; the gaon operator discontinued and not released by ADR-0086; the module path amended by ADR-0095 |
+| `adr/0082-import-garams-gaon-operator-and-keep-it-in-this-repository.md` | Import garam's gaon operator and keep it in this repository | superseded by ADR-0096; the gaon operator discontinued and not released by ADR-0086; the module path amended by ADR-0095 |
 | `adr/0083-remove-the-kubernetes-manager.md` | Remove the Kubernetes manager and everything only it uses | superseded by ADR-0086 |
 | `adr/0084-publish-the-gaon-operator-and-the-guest-image-from-the-release-workflow.md` | Publish the gaon operator and the guest image from the release workflow | superseded by ADR-0086; the repository names amended by garam-bot ADR 0041 |
-| `adr/0085-ship-a-helm-chart-of-gaon-kinds-for-the-control-service-and-the-gaon-operator.md` | Ship a Helm chart of gaon kinds for the control service and the gaon operator | accepted; the gaon operator it deploys discontinued and not released by ADR-0086 |
-| `adr/0086-restore-the-kubernetes-operator-and-keep-the-gaon-operator-unreleased.md` | Restore the Kubernetes operator and keep the gaon operator unreleased | accepted |
+| `adr/0085-ship-a-helm-chart-of-gaon-kinds-for-the-control-service-and-the-gaon-operator.md` | Ship a Helm chart of gaon kinds for the control service and the gaon operator | superseded by ADR-0096; the gaon operator it deploys discontinued and not released by ADR-0086 |
+| `adr/0086-restore-the-kubernetes-operator-and-keep-the-gaon-operator-unreleased.md` | Restore the Kubernetes operator and keep the gaon operator unreleased | accepted; whether the gaon operator is deleted settled by ADR-0096 |
 | `adr/0087-connect-a-users-cluster-through-a-connector-it-installs-that-dials-garam-over-https-long-poll.md` | Connect a user's cluster to garam through a connector it installs, which dials garam over HTTPS long-poll | accepted |
 | `adr/0088-register-a-connector-with-a-one-time-token-and-a-key-it-generates-in-the-cluster.md` | Register a connector with a one-time token and a key it generates in the cluster, and authenticate as a cluster garam records | accepted; the rotation period of decision 6 superseded by ADR-0094 |
 | `adr/0089-sync-declarations-both-ways-and-give-each-object-one-owner.md` | Sync declarations both ways between garam and a connected cluster, and give each object one owner | accepted |
@@ -144,6 +143,7 @@ Before a delta between this file and the template is called stale, read it again
 | `adr/0093-connect-every-cluster-aurora-included-by-a-registration-token-and-keys-it-generates-and-renews.md` | Connect every cluster, aurora included, by a registration token given once and keys it generates and renews itself | accepted; the rotation period of decision 3 superseded by ADR-0094 |
 | `adr/0094-let-the-operator-set-how-long-the-connectors-key-signs-before-it-rotates.md` | Let the operator set how long the connector's key signs before it rotates, 30 days unless set | accepted |
 | `adr/0095-the-operator-lives-in-garam-bot-under-operator.md` | The operator lives in garam-bot under operator/ | accepted; the push role of decision 3 amended by garam-bot ADR 0041 |
+| `adr/0096-remove-the-gaon-operator-its-guest-image-and-its-chart.md` | Remove the gaon operator, its guest image and its chart | accepted |
 
 ### Templates
 
