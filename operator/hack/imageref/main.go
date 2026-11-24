@@ -1,12 +1,12 @@
 // Command imageref refuses an image reference ADR 0078's tag rule forbids a push of (#401). Under
-// garam-agent-operator/ the tag decides: a release version (0.1.0-dev.N, 0.1.0-rc.N or 0.1.0, ADR 0081)
+// garam-bot/operator-<image> the tag decides: a release version (0.1.0-dev.N, 0.1.0-rc.N or 0.1.0, ADR 0081)
 // only in the repository's .github/workflows/operator-release.yml run for the git tag operator/v<version>,
 // or the 12-hex commit hash alone. Every Makefile target that pushes, and operator-release.yml before
 // its push, runs it on the reference.
 //
 // It stops mistakes, not a determined pusher: GITHUB_WORKFLOW_REF is set by the Actions runner, and a
 // local shell that exports it by hand passes. What stops the rest is IAM: which principals may write
-// to garam-agent-operator/ is garamsh/aurora's.
+// to garam-bot/ is garamsh/aurora's.
 //
 // The reference is parsed with github.com/distribution/reference, the parser the docker CLI applies,
 // rather than a second reading of its syntax.
@@ -25,8 +25,10 @@ import (
 )
 
 const (
-	// publishingRepository holds both images, release and development alike (ADR 0078).
-	publishingRepository = "garam-agent-operator/"
+	// publishingRepository is the prefix of the operator's image repositories, each holding its release and
+	// development images alike (ADR 0078, garam-bot ADR 0041). garam-bot's other images under garam-bot/
+	// follow the root's release rule, not this one.
+	publishingRepository = "garam-bot/operator-"
 	// releaseWorkflow is GITHUB_WORKFLOW_REF's value in a release run, up to the tag's version.
 	releaseWorkflow = "garamsh/garam-bot/.github/workflows/operator-release.yml@refs/tags/operator/v"
 )

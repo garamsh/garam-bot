@@ -17,7 +17,7 @@ import (
 )
 
 // namespace where the project is deployed in
-const namespace = "garam-agent-operator-system"
+const namespace = "garam-bot-system"
 
 // serviceAccountName created for the project
 const serviceAccountName = "garam-agent-operator-controller-manager"

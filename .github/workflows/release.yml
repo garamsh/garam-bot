@@ -6,10 +6,12 @@ name: release
 #
 # The trigger is the release tag and nothing else: no branch, no pull request.
 # A tag filter is a glob and cannot spell `vX.Y.Z`, so `v*` is as narrow as the
-# trigger itself goes. It is also exactly the ref the push role admits — its
-# trust policy matches the subject
-# `repo:garamsh@307152666/garam-bot@1311139677:ref:refs/tags/v*` — so a run on any
-# other ref receives no credential even if something else starts one. What `v*`
+# trigger itself goes. The push role, github-actions-garam-bot-push (ADR 0041),
+# matches the subject
+# `repo:garamsh@307152666/garam-bot@1311139677:ref:refs/tags/v*` and the
+# operator's `.../ref:refs/tags/operator/v*` and nothing else, so a run on a
+# branch or a pull request receives no credential even if something else starts
+# one. What `v*`
 # admits and the scheme does not is refused by the first step below, before any
 # AWS call: every repository pushed to here is IMMUTABLE and a wrong name is
 # permanent.
@@ -44,12 +46,12 @@ jobs:
     # local name is the one `make build-images` writes, tagged with the
     # revision, and the repository is the one it is pushed to. The three steps
     # below read this one list, so an image cannot be pushed and left unread.
-    # The order is the push order, least proven repository first: a grant
-    # that is missing on garam-bot/runtime then stops the run before the two
-    # sherlock repositories, whose pushes earlier releases have shown, take
-    # the version.
+    # The order is the push order. All three repositories are new under
+    # github-actions-garam-bot-push (garamsh/aurora#866), so none has a push
+    # an earlier release has shown; the read-back below each push is what
+    # shows it.
     env:
-      IMAGES: garam-bot-runtime=garam-bot/runtime sherlock-agent=sherlock/agent sherlock-workspace=sherlock/workspace
+      IMAGES: garam-bot-runtime=garam-bot/runtime sherlock-agent=garam-bot/agent sherlock-workspace=garam-bot/workspace
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -113,7 +115,7 @@ jobs:
       # workflow is able to push anything.
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: arn:aws:iam::486152169996:role/github-actions-sherlock
+          role-to-assume: arn:aws:iam::486152169996:role/github-actions-garam-bot-push
           aws-region: ap-northeast-2
 
       - id: ecr

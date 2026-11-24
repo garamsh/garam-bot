@@ -392,7 +392,7 @@ docker-build-control: ## Build docker image with the control service.
 # The two images this project publishes, built for publishing and pushed by nothing
 # here (delivery.md, ADR 0051): the manager's from Dockerfile and the control
 # service's from build/control.Dockerfile, each one linux/amd64 manifest, tagged
-# locally garam-agent-operator/manager:<REVISION> and garam-agent-operator/control:<REVISION>
+# locally garam-bot/operator-manager:<REVISION> and garam-bot/operator-control:<REVISION>
 # and labelled with REVISION. The release workflow and the manual procedure for a
 # development image both build through this target, then tag and push what it built.
 #
@@ -409,13 +409,13 @@ IMAGE_PLATFORM = linux/amd64
 .PHONY: build-images
 build-images: ## Build the manager's and the control service's images to publish, one linux/amd64 manifest each, and push nothing.
 	@test -n "$(REVISION)" || { echo "build-images: REVISION is empty; pass one: make build-images REVISION=<commit>"; exit 1; }
-	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -t garam-agent-operator/manager:$(REVISION) .
-	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -f build/control.Dockerfile -t garam-agent-operator/control:$(REVISION) .
+	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -t garam-bot/operator-manager:$(REVISION) .
+	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -f build/control.Dockerfile -t garam-bot/operator-control:$(REVISION) .
 
 # The gaon operator's image and the composed guest image of a gaon MicroVM
 # (ADR 0082), built as build-images builds the two above: one linux/amd64
 # manifest each, tagged locally garam-agent-operator/gaon-operator:<REVISION> and
-# garam-agent-operator/gaon-guest:<REVISION>, and pushed by nothing here. They are
+# garam-bot/operator-guest:<REVISION>, and pushed by nothing here. They are
 # not in build-images because the guest image's three source images are pinned by
 # digest in build/guest.Dockerfile and live in a private registry: building it
 # needs a login that can pull them, as `make garam-e2e` needs one for garam's
@@ -428,7 +428,7 @@ operator-image: ## Build the gaon operator's image, one linux/amd64 manifest, an
 .PHONY: guest-image
 guest-image: ## Build the composed guest image, one linux/amd64 manifest, and push nothing. Needs a login that pulls its three pinned source images.
 	@test -n "$(REVISION)" || { echo "guest-image: REVISION is empty; pass one: make guest-image REVISION=<commit>"; exit 1; }
-	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -f build/guest.Dockerfile -t garam-agent-operator/gaon-guest:$(REVISION) .
+	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -f build/guest.Dockerfile -t garam-bot/operator-guest:$(REVISION) .
 
 # What only the built images can break; neither is part of ci, because each
 # needs a Docker daemon, and guest-run a login for the pinned source images.
@@ -438,7 +438,7 @@ operator-image-check: operator-image ## Check the gaon operator's image runs as 
 
 .PHONY: guest-run
 guest-run: guest-image ## Run the composed guest image as one container and check the supervisor's start order, readiness port and drain.
-	sh tests/gaon/guest-image.sh garam-agent-operator/gaon-guest:$(REVISION)
+	sh tests/gaon/guest-image.sh garam-bot/operator-guest:$(REVISION)
 
 # The gaon operator against a real garam, at GARAM_REVISION and run from garam-e2e's
 # files, and a real control service built from this tree, with tests/gaon/gaonstandin
@@ -464,13 +464,13 @@ pair-run-gaon: garam-e2e ## Run the same pair run against gaon's own built servi
 	GARAM_DIR="$(GARAM_DIR)" PAIR_RUN_GAON=gaon GAON_REPO="$(GAON_REPO)" GAON_COMMIT="$(GAON_COMMIT)" sh tests/pairrun/pair-run.sh
 
 # Refuses IMAGE_REF where ADR 0078's tag rule forbids its push: under
-# garam-agent-operator/, a release version tag (0.1.0-dev.N, 0.1.0-rc.N or 0.1.0, ADR 0081)
-# outside release.yml's run for that version, and any tag but those or the 12-hex commit
+# garam-bot/operator-<image>, a release version tag (0.1.0-dev.N, 0.1.0-rc.N or 0.1.0, ADR 0081)
+# outside operator-release.yml's run for that version, and any tag but those or the 12-hex commit
 # hash (#401). Every target that pushes runs it
-# first, and so does release.yml. It stops mistakes, not a determined pusher, since a
+# first, and so does operator-release.yml. It stops mistakes, not a determined pusher, since a
 # local shell can export GITHUB_WORKFLOW_REF; IAM stops the rest.
 .PHONY: verify-image-ref
-verify-image-ref: ## Refuse an IMAGE_REF under garam-agent-operator/ unless it is the 12-hex commit hash, or a release version (0.1.0-dev.N, 0.1.0-rc.N, 0.1.0) in its release run.
+verify-image-ref: ## Refuse an IMAGE_REF under garam-bot/operator-<image> unless it is the 12-hex commit hash, or a release version (0.1.0-dev.N, 0.1.0-rc.N, 0.1.0) in its release run.
 	go run ./hack/imageref "$(IMAGE_REF)"
 
 # Departs from the scaffold, and a regeneration restores the scaffold's form: it

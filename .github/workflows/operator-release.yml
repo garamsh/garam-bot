@@ -1,7 +1,7 @@
 name: operator release
 
-# Publishes a release: the manager's image to garam-agent-operator/manager and the
-# control service's to garam-agent-operator/control, each tagged with the version
+# Publishes a release: the manager's image to garam-bot/operator-manager and the
+# control service's to garam-bot/operator-control (garam-bot ADR 0041), each tagged with the version
 # its git tag names without the operator/v, from an operator/v0.1.0-dev.N,
 # operator/v0.1.0-rc.N or operator/v0.1.0 tag on main (operator ADR 0051, ADR 0081,
 # operator/docs/architecture/delivery.md). Modelled on sherlock's release
@@ -16,11 +16,12 @@ name: operator release
 # The trigger is the release tag and nothing else. A tag filter is a glob and
 # cannot spell those three forms, so `operator/v*` is as narrow as the trigger goes;
 # release.yml's `v*`, the runtime's release, does not match it, since a glob's `*`
-# stops at `/`. It is also exactly the ref the push role admits:
-# arn:aws:iam::486152169996:role/github-actions-garam-agent-operator-push trusts the
-# subject `repo:garamsh@307152666/garam-bot@1311139677:ref:refs/tags/operator/v*`
-# (garamsh/infra#292, #293, garamsh/aurora#865), so a run on any other ref gets no
-# credential. What `operator/v*` admits and the scheme does not is refused by the
+# stops at `/`. The push role,
+# arn:aws:iam::486152169996:role/github-actions-garam-bot-push (garamsh/aurora#866,
+# garam-bot ADR 0041), trusts the subject
+# `repo:garamsh@307152666/garam-bot@1311139677:ref:refs/tags/operator/v*` and the
+# runtime's `.../ref:refs/tags/v*` and nothing else, so a run on a branch or a pull
+# request gets no credential. What `operator/v*` admits and the scheme does not is refused by the
 # version step, before any AWS call: both repositories are IMMUTABLE and a wrong
 # name is permanent.
 #
@@ -100,7 +101,7 @@ jobs:
       # build that fails, on either image, fails before anything can be pushed.
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: arn:aws:iam::486152169996:role/github-actions-garam-agent-operator-push
+          role-to-assume: arn:aws:iam::486152169996:role/github-actions-garam-bot-push
           aws-region: ap-northeast-2
 
       - id: ecr
@@ -117,11 +118,11 @@ jobs:
         run: |
           set -euo pipefail
           for image in manager control; do
-            make verify-image-ref IMAGE_REF="$REGISTRY/garam-agent-operator/$image:$VERSION"
-            docker tag "garam-agent-operator/$image:$GITHUB_SHA" "$REGISTRY/garam-agent-operator/$image:$VERSION"
+            make verify-image-ref IMAGE_REF="$REGISTRY/garam-bot/operator-$image:$VERSION"
+            docker tag "garam-bot/operator-$image:$GITHUB_SHA" "$REGISTRY/garam-bot/operator-$image:$VERSION"
           done
           for image in manager control; do
-            docker push "$REGISTRY/garam-agent-operator/$image:$VERSION"
+            docker push "$REGISTRY/garam-bot/operator-$image:$VERSION"
           done
 
       # What the registry holds, read back from the registry: the digest each
@@ -142,9 +143,9 @@ jobs:
         run: |
           set -euo pipefail
           for image in manager control; do
-            ref="$REGISTRY/garam-agent-operator/$image:$VERSION"
+            ref="$REGISTRY/garam-bot/operator-$image:$VERSION"
             fields=$(aws ecr batch-get-image \
-              --repository-name "garam-agent-operator/$image" \
+              --repository-name "garam-bot/operator-$image" \
               --image-ids imageTag="$VERSION" \
               --query 'images[0].[imageManifestMediaType, imageId.imageDigest]' \
               --output text)

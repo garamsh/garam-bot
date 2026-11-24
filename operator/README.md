@@ -46,8 +46,8 @@ Each image is published to one repository, holding its release and development i
 
 | Image | Dockerfile | Repository |
 |---|---|---|
-| Manager | `Dockerfile` | `garam-agent-operator/manager` |
-| Control service | `build/control.Dockerfile` | `garam-agent-operator/control` |
+| Manager | `Dockerfile` | `garam-bot/operator-manager` |
+| Control service | `build/control.Dockerfile` | `garam-bot/operator-control` |
 
 A deployment references an image as `<repository>:<tag>@sha256:<digest>`. `docs/architecture/delivery.md` states the tag forms, how each image is published, and whether these repositories exist yet. This file claims no tag in them. `gh release list -R garamsh/garam-agent-operator` lists the releases.
 
@@ -88,7 +88,7 @@ make docker-build docker-push IMG=<registry>/<repository>:<tag>
 make deploy IMG=<registry>/<repository>:<tag>
 ```
 
-`docker-push` runs `make verify-image-ref` first, which, outside a release run, refuses a reference under `garam-agent-operator/` unless its tag is a 12-hex commit hash. `make build-installer IMG=<image>` writes a single applyable YAML to `dist/install.yaml`. `docs/architecture/delivery.md` states the procedure for publishing a development image.
+`docker-push` runs `make verify-image-ref` first, which, outside a release run, refuses a reference under `garam-bot/operator-<image>` unless its tag is a 12-hex commit hash. `make build-installer IMG=<image>` writes a single applyable YAML to `dist/install.yaml`. `docs/architecture/delivery.md` states the procedure for publishing a development image.
 
 The control service has no deploy target here. `make docker-build-control CONTROL_IMG=<image>` builds its image, and `make build` builds `bin/manager` and `bin/control`. It needs `CONTROL_DATABASE_URL` and the flags `go run ./cmd/control --help` lists, and `docs/architecture/control.md` states what each is for.
 
