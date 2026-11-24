@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/gateway"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/gateway"
 )
 
 // fakeFactory builds stub runtimes. A nil newFn yields a stub runtime

@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/garamsh/sherlock/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent"
 )
 
 // Turn runs one message through a fresh runtime and reports what the

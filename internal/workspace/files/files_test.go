@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/workspace/files"
+	"github.com/garamsh/garam-bot/internal/workspace/files"
 )
 
 func TestFS_TraversalRejected(t *testing.T) {

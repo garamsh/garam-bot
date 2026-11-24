@@ -22,14 +22,14 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/agent/anthropic"
-	"github.com/garamsh/sherlock/internal/agent/openai"
-	"github.com/garamsh/sherlock/internal/tool"
-	"github.com/garamsh/sherlock/internal/workspace"
-	"github.com/garamsh/sherlock/internal/workspace/files"
-	"github.com/garamsh/sherlock/internal/workspace/server"
-	"github.com/garamsh/sherlock/internal/workspace/shell"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent/anthropic"
+	"github.com/garamsh/garam-bot/internal/agent/openai"
+	"github.com/garamsh/garam-bot/internal/tool"
+	"github.com/garamsh/garam-bot/internal/workspace"
+	"github.com/garamsh/garam-bot/internal/workspace/files"
+	"github.com/garamsh/garam-bot/internal/workspace/server"
+	"github.com/garamsh/garam-bot/internal/workspace/shell"
 )
 
 // buildToolBinary compiles the tool named by name into its directory

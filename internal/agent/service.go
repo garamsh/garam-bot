@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // DefaultMaxIterations caps the act loop when Options.MaxIterations is zero.

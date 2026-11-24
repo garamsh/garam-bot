@@ -8,7 +8,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/garamsh/sherlock/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent"
 )
 
 // ErrAddressedStore requires an explicit migration before source-linked recall.

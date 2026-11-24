@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/tool"
-	"github.com/garamsh/sherlock/internal/workspace/shell"
+	"github.com/garamsh/garam-bot/internal/tool"
+	"github.com/garamsh/garam-bot/internal/workspace/shell"
 )
 
 // TestScriptTool_ShellExec_Integration drops the shell_exec tool

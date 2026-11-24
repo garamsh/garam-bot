@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/garamsh/sherlock/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent"
 )
 
 // maxMessageBody caps inbound message bodies so a sender cannot exhaust

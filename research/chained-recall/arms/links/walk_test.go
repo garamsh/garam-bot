@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent"
 )
 
 // chainGraph links mids 1 to 3 as a chain through entities b and c; mid 4

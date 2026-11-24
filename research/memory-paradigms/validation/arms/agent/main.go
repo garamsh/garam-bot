@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/memory/sqlite"
-	"github.com/garamsh/sherlock/research/chained-recall/study"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/memory/sqlite"
+	"github.com/garamsh/garam-bot/research/chained-recall/study"
 )
 
 func main() { study.Main(New()) }

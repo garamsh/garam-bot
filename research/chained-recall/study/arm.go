@@ -16,7 +16,7 @@ package study
 import (
 	"context"
 
-	"github.com/garamsh/sherlock/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent"
 )
 
 // Arm is one memory structure under test. Its methods are called in this

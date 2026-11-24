@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // noteStore is a stateful conversation store: it keeps the note, the

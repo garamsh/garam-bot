@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/config"
+	"github.com/garamsh/garam-bot/internal/config"
 )
 
 func TestResolveOperatorInstructions_NoFlagIsEmpty(t *testing.T) {

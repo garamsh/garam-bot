@@ -8,9 +8,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/memory/sqlite"
-	"github.com/garamsh/sherlock/research/chained-recall/study"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/memory/sqlite"
+	"github.com/garamsh/garam-bot/research/chained-recall/study"
 )
 
 // The shipped recall's budget: the two newest mids, then five historical

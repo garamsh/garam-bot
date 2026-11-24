@@ -16,10 +16,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/garamsh/sherlock/internal/config"
-	"github.com/garamsh/sherlock/internal/gateway"
-	"github.com/garamsh/sherlock/internal/memory/sqlite"
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/config"
+	"github.com/garamsh/garam-bot/internal/gateway"
+	"github.com/garamsh/garam-bot/internal/memory/sqlite"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // processStart is the time this process started, which the status route

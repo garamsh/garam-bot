@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	agentmemory "github.com/garamsh/sherlock/internal/agent/memory"
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/agent"
+	agentmemory "github.com/garamsh/garam-bot/internal/agent/memory"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // replyOnly renders the response document (agent.ResponseSchema) for a

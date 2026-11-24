@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/bot"
+	"github.com/garamsh/garam-bot/internal/bot"
 )
 
 func TestProbe_PassesOnlyARunningStatusWithAFreshHeartbeat(t *testing.T) {

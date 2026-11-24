@@ -13,7 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/garamsh/sherlock/internal/bot"
+	"github.com/garamsh/garam-bot/internal/bot"
 )
 
 func main() {

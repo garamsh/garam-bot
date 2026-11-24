@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/workspace"
+	"github.com/garamsh/garam-bot/internal/workspace"
 )
 
 // TestEndToEnd_PrivilegedWorkspaceExec exercises the shipped workspace and its

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/garamsh/sherlock/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent"
 )
 
 // damping is the probability that the walk follows an edge rather than

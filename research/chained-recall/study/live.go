@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	agentmemory "github.com/garamsh/sherlock/internal/agent/memory"
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/agent"
+	agentmemory "github.com/garamsh/garam-bot/internal/agent/memory"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // LiveProbe is one query the live stage asks.

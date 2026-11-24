@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // Default settings, overridable by config file, environment, or flags.

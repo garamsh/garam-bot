@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/garamsh/sherlock/internal/workspace"
+	"github.com/garamsh/garam-bot/internal/workspace"
 )
 
 // TestEndToEnd_WorkspaceServesContract drives "sherlock workspace" as a

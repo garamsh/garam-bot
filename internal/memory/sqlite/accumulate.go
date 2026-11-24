@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/garamsh/sherlock/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent"
 )
 
 // batchMessages is how many completed visible messages make one mid episode.

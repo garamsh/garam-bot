@@ -15,7 +15,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/garamsh/sherlock/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent"
 )
 
 const conversationSchema = `

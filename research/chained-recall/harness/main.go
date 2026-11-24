@@ -19,8 +19,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/garamsh/sherlock/internal/agent/openai"
-	"github.com/garamsh/sherlock/research/chained-recall/study"
+	"github.com/garamsh/garam-bot/internal/agent/openai"
+	"github.com/garamsh/garam-bot/research/chained-recall/study"
 )
 
 func main() {

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/garamsh/sherlock/internal/agent/openai"
+	"github.com/garamsh/garam-bot/internal/agent/openai"
 )
 
 // OracleTop is how many items an arm's Search may return for a hop's own

@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/memory/sqlite"
-	"github.com/garamsh/sherlock/research/chained-recall/study"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/memory/sqlite"
+	"github.com/garamsh/garam-bot/research/chained-recall/study"
 )
 
 // cutEmbedder places a text by which of a few words its first cut

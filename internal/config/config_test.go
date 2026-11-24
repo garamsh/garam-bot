@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/config"
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/config"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // agentFlags returns the flag set the agent subcommand resolves

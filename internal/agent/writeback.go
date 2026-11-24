@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // MemoryWriteTool is the reserved tool a turn ends by calling. It is the

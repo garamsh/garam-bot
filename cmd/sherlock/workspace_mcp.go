@@ -15,7 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
-	"github.com/garamsh/sherlock/internal/config"
+	"github.com/garamsh/garam-bot/internal/config"
 )
 
 // codeWorkspaceUnreachable is the JSON-RPC error code for a call the
