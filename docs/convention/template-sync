@@ -82,7 +82,7 @@ deliberate-differences:
   interfaces.md is the template's as of
     aea0a7d222f693855f47188df5e11e47f2af5d62, the one commit to touch it
     up to template main 97df2d2b78712709216daeee5f9de7ec78a918d5, without
-    its §Example (#PR). That section describes the CSI, CRI and OCI
+    its §Example (#1203). That section describes the CSI, CRI and OCI
     projects and names no release or commit they hold for, which
     documentation.md §Keep it current asks of a claim about anything
     outside this repository; the four rules apply without it. The
@@ -246,7 +246,7 @@ removal-audit:
     history. It found only text recorded above: docs/convention/README.md's
     Extends-free selection text and the PULL_REQUEST_TEMPLATE.md Summary
     comment. AGENTS.md holds no sentence or line the template has removed.
-  #PR ran it on interfaces.md and its README.md row alone, against template
+  #1203 ran it on interfaces.md and its README.md row alone, against template
     97df2d2b78712709216daeee5f9de7ec78a918d5, and on no other file. Each of
     the copy's ten non-empty lines, each a whole paragraph or bullet, is a
     line of the template's file there (grep -xF per line), and the row is
