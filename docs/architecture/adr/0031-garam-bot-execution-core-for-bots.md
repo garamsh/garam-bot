@@ -31,7 +31,7 @@ Issue #1172 (2026-10-29) reopened ADR 0010 when hardware-isolated microVMs repla
 
 ## Decision
 
-garam-bot is the open-source execution core that runs bots. It is not an agent and does not contain a reasoning loop. The in-house agent loop (sherlock), its gateway, and execution on gaon are superseded. The workspace and tool contracts from the previous sherlock architecture are candidates for the garam-bot agent and workspace provider interfaces.
+garam-bot is the open-source execution core that runs bots. It is not an agent and does not contain a reasoning loop. The in-house agent loop (sherlock), its gateway, and execution on gaon are superseded. The workspace and tool contracts from the previous sherlock architecture were candidates for the garam-bot agent and workspace provider interfaces. Those interfaces are now decided: ADR 0034 makes the workspace provider a Go driver interface, ADR 0035 makes the agent interface an HTTP protocol an adapter in the workspace serves, and ADR 0040 removes the in-house loop and moves the workspace server and its MCP server under `garam-bot workspace`.
 
 Records updated in place with this one — each remains accepted and describes the shipped shape until P2 lands:
 
@@ -42,7 +42,9 @@ Records updated in place with this one — each remains accepted and describes t
 
 ## Memory and tool contracts
 
-### Kept as candidates for the agent and workspace provider interfaces
+### Candidates for the agent and workspace provider interfaces, now settled
+
+Interface 3 is ADR 0034's `Provider`, not the gRPC contract, and interface 2 is ADR 0035's protocol. The workspace server and its MCP server stay as in-workspace tools a harness may be given (ADR 0040). The entries below record what each candidate was.
 
 - **Workspace gRPC contract** (ADR 0017's data plane): the workspace provider interface. An agent inside the workspace reaches files and exec through it.
 - **Workspace MCP server** (ADR 0028): the agent interface candidate. Claude Code configured with `sherlock workspace mcp` demonstrates the shape: an MCP-capable agent operating a workspace without the in-house loop.

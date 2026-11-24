@@ -5,7 +5,7 @@
 
 ## Context
 
-- **ADR 0031 supersedes the in-house agent loop.** It keeps the workspace gRPC data plane, the workspace CLI and the workspace MCP server as candidates for interfaces 2 and 3, and the memory store as a candidate for the bot's memory.
+- **ADR 0031 supersedes the in-house agent loop,** and keeps the memory store as a candidate for the bot's memory. Its other candidates, the workspace gRPC data plane, the workspace CLI and the workspace MCP server, were for interfaces 2 and 3, which ADR 0034 and ADR 0035 decide.
 - **The repository layout drops the sherlock name** and leaves `cmd/sherlock` to this design (`garamsh/discussions` discussion 6, comment 19857166). garam-bot#1205 renames the root module `github.com/garamsh/sherlock` to `github.com/garamsh/garam-bot` before garam-bot-operator moves in.
 - **Interface 3's providers reach a workspace's files and exec from outside** (ADR 0034). Interface 2's adapter runs inside it (ADR 0035). A harness without file or shell tools of its own still needs them in the workspace.
 - **`cmd/sherlock` today** is `sherlock agent`, the in-house loop with its gateway, and `sherlock workspace` with its operations and its MCP server (ADR 0017, ADR 0027, ADR 0028).
@@ -26,7 +26,7 @@
 - One binary, `garam-bot`, carries `run`, `probe`, `daemon` and `workspace`.
 - The gateway's hand-made mutual TLS and its issuer pin go with `sherlock agent` (garam-bot#1207).
 - Every responsibility document that describes the in-house loop (`agent.md`, `gateway.md`, `security.md`, `deployment.md`) is rewritten or deleted with the removal.
-- Removing and moving them is one implementation issue, after garam-bot#1205's module rename.
+- Removing and moving them is one implementation issue, after garam-bot#1205's module rename (`bot-system.md` §Goals ④ and ⑤, G8). ADRs 0027 and 0028 are rewritten in that issue, with the code they describe.
 
 ## Signs the decision was wrong
 
