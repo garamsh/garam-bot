@@ -70,7 +70,8 @@ func TestReleaseWorkflow_ChecksTheTagThroughThisCommandBeforeAnyCredential(t *te
 		}
 	}
 	require.GreaterOrEqual(t, check, 0, "operator-release.yml does not run the check")
-	require.GreaterOrEqual(t, credential, 0, "operator-release.yml obtains no credential, so the order below proves nothing")
+	require.GreaterOrEqual(t, credential, 0,
+		"operator-release.yml obtains no credential, so the order below proves nothing")
 	assert.Less(t, check, credential, "the tag check must come before the credential step")
 
 	// The tag reaches the command through the environment, not the command text.

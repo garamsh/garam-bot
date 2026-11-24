@@ -41,12 +41,14 @@ func TestCheck_AcceptsEachReleaseFormOnlyInTheReleaseWorkflowsRunForThatVersion(
 	// Controls: each refuses because one thing the release rule asks for is missing.
 	refused := map[string]struct{ ref, workflowRef string }{
 		"outside GitHub Actions": {manager + ":0.1.0-dev.5", ""},
-		"another workflow":       {manager + ":0.1.0-dev.5", workflows + "operator-checks.yml@refs/tags/operator/v0.1.0-dev.5"},
-		"the runtime's release":  {manager + ":0.1.0-dev.5", workflows + "release.yml@refs/tags/v0.1.0-dev.5"},
-		"a branch's run":         {manager + ":0.1.0-dev.5", workflows + "operator-release.yml@refs/heads/main"},
-		"another version's run":  {manager + ":0.1.0-dev.6", releaseRun},
-		"a release's run":        {manager + ":0.1.0", releaseRun},
-		"a prefix of the run":    {manager + ":0.1.0-dev.5", releaseRunFor("0.1.0-dev.55")},
+		"another workflow": {
+			manager + ":0.1.0-dev.5", workflows + "operator-checks.yml@refs/tags/operator/v0.1.0-dev.5",
+		},
+		"the runtime's release": {manager + ":0.1.0-dev.5", workflows + "release.yml@refs/tags/v0.1.0-dev.5"},
+		"a branch's run":        {manager + ":0.1.0-dev.5", workflows + "operator-release.yml@refs/heads/main"},
+		"another version's run": {manager + ":0.1.0-dev.6", releaseRun},
+		"a release's run":       {manager + ":0.1.0", releaseRun},
+		"a prefix of the run":   {manager + ":0.1.0-dev.5", releaseRunFor("0.1.0-dev.55")},
 	}
 	for name, c := range refused {
 		t.Run(name, func(t *testing.T) {
