@@ -1,0 +1,115 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    bot.garam.sh/spec-release.v1alpha1: 0.1.0
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: workspaceclasses.bot.garam.sh
+spec:
+  group: bot.garam.sh
+  names:
+    categories:
+    - garam
+    kind: WorkspaceClass
+    listKind: WorkspaceClassList
+    plural: workspaceclasses
+    singular: workspaceclass
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.provider
+      name: Provider
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          WorkspaceClass is how workspaces of one kind are made: which workspace provider makes them, the
+          resources each gets, and when an idle one sleeps.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: WorkspaceClassSpec is the declared state of a WorkspaceClass.
+            properties:
+              idle:
+                description: Idle is when an idle workspace sleeps.
+                properties:
+                  sleepAfter:
+                    description: SleepAfter is how long a workspace runs no session
+                      before it sleeps.
+                    type: string
+                required:
+                - sleepAfter
+                type: object
+                x-kubernetes-validations:
+                - message: sleepAfter is a positive duration
+                  rule: duration(self.sleepAfter) > duration('0s')
+              provider:
+                description: |-
+                  Provider names an implementation of garam-bot's workspace provider interface, such as mvmd or
+                  container.
+                maxLength: 63
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+              resources:
+                description: WorkspaceResources are the resources one workspace of
+                  the class gets, each more than zero.
+                properties:
+                  cpu:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  disk:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  memory:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                required:
+                - cpu
+                - disk
+                - memory
+                type: object
+                x-kubernetes-validations:
+                - message: cpu, memory and disk are each more than zero
+                  rule: quantity(string(self.cpu)).isGreaterThan(quantity('0')) &&
+                    quantity(string(self.memory)).isGreaterThan(quantity('0')) &&
+                    quantity(string(self.disk)).isGreaterThan(quantity('0'))
+            required:
+            - provider
+            - resources
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}

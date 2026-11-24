@@ -1,0 +1,318 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    bot.garam.sh/spec-release.v1alpha1: 0.1.0
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: bots.bot.garam.sh
+spec:
+  group: bot.garam.sh
+  names:
+    categories:
+    - garam
+    kind: Bot
+    listKind: BotList
+    plural: bots
+    singular: bot
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.agent.harness
+      name: Harness
+      type: string
+    - jsonPath: .spec.placement
+      name: Placement
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Running")].status
+      name: Running
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Bot is one bot: who it is, the agent harness it works with, the workspaces it attaches and what
+          it is permitted to do.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: BotSpec is the declared state of a Bot.
+            properties:
+              agent:
+                description: Agent is the harness the bot works with.
+                properties:
+                  harness:
+                    description: Harness names an implementation of garam-bot's agent
+                      interface, such as claude-code or codex.
+                    maxLength: 63
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                required:
+                - harness
+                type: object
+              permissions:
+                description: Permissions are what the bot may do, enforced where the
+                  bot acts.
+                properties:
+                  egress:
+                    description: Egress are the hosts the bot may reach, each named
+                      once.
+                    items:
+                      description: EgressPermission is one host the bot may reach.
+                      properties:
+                        host:
+                          description: Host is a DNS name whose last label begins
+                            with a letter, so it is never an IP address.
+                          maxLength: 253
+                          pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)*[a-z]([-a-z0-9]*[a-z0-9])?$
+                          type: string
+                      required:
+                      - host
+                      type: object
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - host
+                    x-kubernetes-list-type: map
+                  secrets:
+                    description: Secrets names the Secret keys the bot may use, in
+                      the bot's namespace.
+                    items:
+                      description: |-
+                        SecretKeyRef names one data key of a Secret in the referring object's own namespace, as
+                        "<secret-name>/<key>". The name is a DNS subdomain, as Kubernetes requires of a Secret's name, and
+                        the key is a Secret data key: [-._a-zA-Z0-9]+, neither "." nor "..". Neither holds a "/", so the
+                        split is unambiguous.
+                      maxLength: 507
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/[-._a-zA-Z0-9]+$
+                      type: string
+                      x-kubernetes-validations:
+                      - message: the secret name and the key are each at most 253
+                          characters
+                        rule: self.indexOf('/') <= 253 && self.size() - self.indexOf('/')
+                          - 1 <= 253
+                      - message: the key is neither . nor ..
+                        rule: '!self.endsWith(''/.'') && !self.endsWith(''/..'')'
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-type: set
+                  tools:
+                    description: Tools are the tools the bot may call, each named
+                      once.
+                    items:
+                      description: ToolPermission is one tool the bot may call.
+                      properties:
+                        name:
+                          description: Name is the tool's name.
+                          maxLength: 63
+                          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                type: object
+              persona:
+                description: Persona is who the bot is.
+                properties:
+                  instructions:
+                    description: Instructions are the bot's standing instructions,
+                      as text.
+                    maxLength: 65536
+                    type: string
+                  role:
+                    description: Role is the bot's role in its organization, in a
+                      few words.
+                    maxLength: 256
+                    minLength: 1
+                    type: string
+                required:
+                - role
+                type: object
+              placement:
+                default: Shared
+                description: |-
+                  Placement is whether the bot shares a pod with other bots of its namespace or has one of its
+                  own.
+                enum:
+                - Shared
+                - Dedicated
+                type: string
+              pool:
+                description: Pool names the BotPool, in the bot's namespace, whose
+                  pods a Shared bot runs in.
+                maxLength: 253
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                type: string
+              workspaces:
+                description: Workspaces are the workspaces the bot works in, each
+                  under a name unique within the bot.
+                items:
+                  description: |-
+                    WorkspaceAttachment attaches one workspace to the bot, either an existing Workspace by reference
+                    or a new one made from a template.
+                  properties:
+                    name:
+                      description: Name is the attachment's name within the bot.
+                      maxLength: 63
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    ref:
+                      description: WorkspaceRef attaches an existing Workspace in
+                        the bot's namespace.
+                      properties:
+                        access:
+                          default: Exclusive
+                          description: Access is how a bot holds a Workspace it attaches
+                            by reference.
+                          enum:
+                          - Exclusive
+                          - SharedRead
+                          type: string
+                        name:
+                          description: Name is the Workspace's name.
+                          maxLength: 253
+                          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    template:
+                      description: WorkspaceTemplate makes a workspace for the bot
+                        alone from a WorkspaceClass.
+                      properties:
+                        class:
+                          description: Class names the WorkspaceClass, in the bot's
+                            namespace, the workspace is made from.
+                          maxLength: 253
+                          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                          type: string
+                        lifetime:
+                          description: Lifetime is how long a workspace made from
+                            a template lives.
+                          enum:
+                          - Session
+                          - Bot
+                          type: string
+                      required:
+                      - class
+                      - lifetime
+                      type: object
+                  required:
+                  - name
+                  type: object
+                  x-kubernetes-validations:
+                  - message: exactly one of ref and template is set
+                    rule: has(self.ref) != has(self.template)
+                maxItems: 16
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+            required:
+            - agent
+            - persona
+            type: object
+            x-kubernetes-validations:
+            - message: a Dedicated bot names no pool
+              rule: '!has(self.pool) || !has(self.placement) || self.placement !=
+                ''Dedicated'''
+          status:
+            description: BotStatus is the observed state of a Bot, written by what
+              runs it.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the generation of the spec the
+                  status describes.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

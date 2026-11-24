@@ -22,12 +22,15 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-  # go.mod at the root is the repository's only module; it covers
-  # cmd/, internal/, tools/ and deploy/runtime-fixture/meter/.
-  # One pull request per week for every module bump: separate ones edit
-  # adjacent go.mod lines and go.sum, so each merge conflicts the rest.
+  # Two modules: go.mod at the root covers cmd/, internal/, tools/ and
+  # deploy/runtime-fixture/meter/, and api/go.mod the public interfaces
+  # (ADR 0032). Per module, one pull request per week for every module
+  # bump: separate ones edit adjacent go.mod lines and go.sum, so each
+  # merge conflicts the rest.
   - package-ecosystem: "gomod"
-    directory: "/"
+    directories:
+      - "/"
+      - "/api"
     schedule:
       interval: "weekly"
     groups:
