@@ -5,7 +5,7 @@ Governs garam-bot's public interfaces: where they live, how each is versioned an
 ## Current decisions
 
 - **Every component boundary is a versioned public interface with a conformance suite, and admits more than one implementation from its first version** (ADR 0031). There are five: the declaration spec, the agent, the workspace provider, the control connection protocol and the model gateway.
-- **The interfaces are the Go module `github.com/garamsh/garam-bot/api`,** apart from the root module the binary ships from, so a consumer imports an interface and not garam-bot (ADR 0032). The module holds no code the binary imports.
+- **The interfaces are the Go module `github.com/garamsh/garam-bot/api`,** apart from the root module the binary ships from, so a consumer imports an interface and not garam-bot (ADR 0032). It imports nothing from the root module, and the root module requires a published version of it, as any consumer does.
 - **Each interface version is a directory, `api/<interface>/<version>/`,** holding:
   - `README.md`, the normative specification, with numbered requirements, its compatibility rules and its open questions;
   - `conformance.md`, each requirement mapped to the tests of it;

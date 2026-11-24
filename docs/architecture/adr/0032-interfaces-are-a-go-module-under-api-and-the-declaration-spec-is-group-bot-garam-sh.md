@@ -13,7 +13,7 @@
 
 ## Decision
 
-1. **`api/` is a second Go module, `github.com/garamsh/garam-bot/api`,** holding the public interfaces and nothing the shipped binary imports. It is under the Library layout (`stack-go.md` §Directory layout). Each interface is `api/<interface>/<version>/`, with its specification, conformance list, schemas, Go types and conformance harness, so an interface can move to a repository of its own without changing its contents. Its requirements are the Kubernetes libraries at the minor version its consumers run, `v0.36`.
+1. **`api/` is a second Go module, `github.com/garamsh/garam-bot/api`,** holding the public interfaces. It imports nothing from the root module, and the root module, where it needs an interface, requires a published version of it as any other consumer does, never a `replace` to the directory. It is under the Library layout (`stack-go.md` §Directory layout). Each interface is `api/<interface>/<version>/`, with its specification, conformance list, schemas, Go types and conformance harness, so an interface can move to a repository of its own without changing its contents. Its requirements are the Kubernetes libraries at the minor version its consumers run, `v0.36`.
 2. **Interface 1's kinds are Bot, Workspace, WorkspaceClass and BotPool, in the group `bot.garam.sh`, all namespaced,** generated as CustomResourceDefinitions from the Go types by `make generate`.
 3. **Interface 1 has two implementations from its first version:** the API server serving the definitions, and `manifest.Parse`, the file form. The file form validates against the definitions' own schemas, so both admit by the same schema, and the one conformance suite runs against both.
 
