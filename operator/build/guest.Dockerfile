@@ -42,7 +42,7 @@ ARG REVISION=unknown
 # The workspace image's own title, source and revision labels describe
 # that image, so each is replaced.
 LABEL org.opencontainers.image.title="gaon-guest" \
-      org.opencontainers.image.source="https://github.com/garamsh/garam-agent-operator" \
+      org.opencontainers.image.source="https://github.com/garamsh/garam-bot" \
       org.opencontainers.image.revision="${REVISION}" \
       sh.garam.guest.runtime-image="${AGENT_IMAGE}" \
       sh.garam.guest.workspace-image="${WORKSPACE_IMAGE}" \

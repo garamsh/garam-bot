@@ -22,7 +22,7 @@ FROM gcr.io/distroless/static:nonroot@sha256:f7f8f729987ad0fdf6b05eeeae94b26e6a0
 # The Makefile's docker target passes the commit checked out; nothing checks it against the tree.
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="garam-agent-operator-control" \
-      org.opencontainers.image.source="https://github.com/garamsh/garam-agent-operator" \
+      org.opencontainers.image.source="https://github.com/garamsh/garam-bot" \
       org.opencontainers.image.revision="${REVISION}"
 WORKDIR /
 COPY --from=builder /workspace/control .
