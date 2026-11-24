@@ -193,7 +193,8 @@ build-tools:
 	done; \
 	echo "build-tools: $$built tools built, selected by: the tool list in the build-tools recipe"
 
-# Builds the two platform images (ADR 0017, ADR 0021); nothing is pushed and no
+# Builds the two platform images (ADR 0017, ADR 0021) and the runtime image that
+# runs one Bot (ADR 0033); nothing is pushed and no
 # registry is named here. Each build context is the repository root because
 # each build stage copies the module; what each context holds is $(dockerignores).
 #
@@ -249,7 +250,8 @@ shapeless_ignores = $(strip $(foreach file,$(dockerignores),$(if $(call context_
 # redefine what a context is for a build the guard then reports clean.
 AGENT_DOCKERFILE = build/agent.Dockerfile
 WORKSPACE_DOCKERFILE = build/workspace.Dockerfile
-build_inputs = $(AGENT_DOCKERFILE) $(WORKSPACE_DOCKERFILE) $(dockerignores)
+RUNTIME_DOCKERFILE = build/runtime.Dockerfile
+build_inputs = $(AGENT_DOCKERFILE) $(WORKSPACE_DOCKERFILE) $(RUNTIME_DOCKERFILE) $(dockerignores)
 checked_paths = $(context_paths) $(build_inputs)
 
 # Read paths that are not in the tree. They are handed to git as pathspecs,
@@ -293,6 +295,7 @@ build-images:
 	@echo "build-images: $(if $(revision_is_default),what docker reads [$(checked_paths)] matches $(REVISION),REVISION=$(REVISION) was passed in and what docker reads is not checked against it)"
 	$(BUILD_ENV) docker build -f $(AGENT_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t sherlock-agent:$(REVISION) .
 	$(BUILD_ENV) docker build -f $(WORKSPACE_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t sherlock-workspace:$(REVISION) .
+	$(BUILD_ENV) docker build -f $(RUNTIME_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t garam-bot-runtime:$(REVISION) .
 
 # The toolchain image the privileged CI job runs in, read out of the
 # Dockerfile that owns the pin rather than restated in the workflow (#633).

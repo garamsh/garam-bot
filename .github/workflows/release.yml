@@ -40,6 +40,12 @@ jobs:
       # baseline). This job writes nothing back to the repository.
       contents: read
       id-token: write
+    # The images this job publishes, each `<local name>=<repository>`: the
+    # local name is the one `make build-images` writes, tagged with the
+    # revision, and the repository is the one it is pushed to. The three steps
+    # below read this one list, so an image cannot be pushed and left unread.
+    env:
+      IMAGES: sherlock-agent=sherlock/agent sherlock-workspace=sherlock/workspace garam-bot-runtime=garam-bot/runtime
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -67,12 +73,12 @@ jobs:
       # shape that cannot hold that property, so this workflow does not use it.
       #
       # The agent image carries the first-party tools at /opt/sherlock/tools/
-      # (ADR 0021); there is no separate sherlock/tools image and no third
-      # image to push. The workspace image is unchanged.
+      # (ADR 0021); there is no separate sherlock/tools image. The workspace
+      # image is unchanged. The runtime image runs one Bot (ADR 0033).
       #
-      # Each image has one repository, `sherlock/<image>`: the account names
-      # a repository `<publishing repository>/<image>`, and the image name
-      # never repeats the prefix (ADR 0020). Releases and development builds
+      # Each image has one repository, `$IMAGES` above: the account names a
+      # repository `<publishing repository>/<image>`, and the image name never
+      # repeats the prefix (ADR 0020). Releases and development builds
       # share it and are told apart by tag. Release tags are semver (`0.1.0`,
       # `0.1.1`, ...) — a `v`-prefixed git tag with the `v` stripped — and
       # only this workflow pushes one. Development tags are the commit short
@@ -112,20 +118,20 @@ jobs:
       # The only irreversible step. Every local image is renamed first, so a
       # reference this cannot form fails before any upload begins.
       #
-      # `sherlock-<image>:<revision>` is the name the Makefile writes for each
-      # of the two. They are not re-derived here: a rename there leaves
-      # `docker tag` with no such image, which fails this step rather than
-      # pushing something else.
+      # `<local name>:<revision>` is the name the Makefile writes for each
+      # image. It is not re-derived here: a rename there leaves `docker tag`
+      # with no such image, which fails this step rather than pushing something
+      # else.
       - env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          for image in agent workspace; do
-            docker tag "sherlock-$image:$GITHUB_SHA" "$REGISTRY/sherlock/$image:$VERSION"
+          for image in $IMAGES; do
+            docker tag "${image%%=*}:$GITHUB_SHA" "$REGISTRY/${image#*=}:$VERSION"
           done
-          for image in agent workspace; do
-            docker push "$REGISTRY/sherlock/$image:$VERSION"
+          for image in $IMAGES; do
+            docker push "$REGISTRY/${image#*=}:$VERSION"
           done
 
       # What the registry holds, read back from the registry rather than from a
@@ -150,10 +156,11 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          for image in agent workspace; do
-            ref="$REGISTRY/sherlock/$image:$VERSION"
+          for image in $IMAGES; do
+            repository="${image#*=}"
+            ref="$REGISTRY/$repository:$VERSION"
             fields=$(aws ecr batch-get-image \
-              --repository-name "sherlock/$image" \
+              --repository-name "$repository" \
               --image-ids imageTag="$VERSION" \
               --query 'images[0].[imageManifestMediaType, imageId.imageDigest]' \
               --output text)

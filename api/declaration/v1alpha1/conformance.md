@@ -10,7 +10,7 @@ The tests of `README.md`'s requirements: what each one is, and how a new impleme
 - **Schema and marker tests**, in this package and `manifest/`: what admission cannot reach, run by `go test` in the `api/` module.
 - **Every admitted case** also asserts that the admitted object kept no status from the declaration (SCH-6), so an Admitter returns the whole object as admitted.
 - A pending case is skipped with its reason. It counts as named, not as passing.
-- **Reader conformance** (SEC-2, WS-1, VER-2, STA-1, and the reader half of OWN-4) has no harness here yet. Its `Reader` interface and the first reader to run it arrive with garam-bot's runtime PR (#1198, #1199); until then those cases are pending names.
+- **Reader conformance** (SEC-2, WS-1, VER-2, STA-1, and the reader half of OWN-4) has no harness here yet. garam-bot's runtime that runs one Bot (#1198, #1199) reads a Bot but resolves no secret, attaches no workspace, branches on no enum and writes no condition, so it meets none of these obligations yet. The `Reader` interface arrives with the first reader that acts on one of them: the runtime once it attaches workspaces or resolves secrets, or garam-bot-operator's Bot reconciler for STA-1. Until then those cases are pending names.
 
 ## Requirements and their tests
 
@@ -32,5 +32,5 @@ The tests of `README.md`'s requirements: what each one is, and how a new impleme
 | VER-1 | `TestCRDs_VER1_EachNamesTheSpecRelease` |
 | VER-2 | `Run`: `VER-2/a reader does not act on an enum value it does not know`, pending a reader suite |
 | IMG-1 | `Run`: `IMG-1/*`. `TestCRDs_IMG1_NoPropertyNamesAnImage` |
-| STA-1 | `Run`: `STA-1/Running is True while the bot's process runs`, pending the runtime's status contract |
+| STA-1 | `Run`: `STA-1/Running is True while the bot's process runs`, pending a runner suite: the runtime's status contract is `docs/architecture/runtime.md`, and the manager that writes the condition from it is garam-bot-operator's Bot reconciler |
 | FILE-1 | `TestParse_FILE1_AdmitsOneJSONDocument`, `TestParse_FILE1_RefusesAFileThatIsNotOneDocument` |
