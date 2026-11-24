@@ -1,6 +1,6 @@
 # ADR 0020: Each image is published to one immutable repository, and a consumer references an image by digest
 
-> Status: accepted
+> Status: accepted; the repository names amended by ADR 0041
 > Date: 2026-08-24 (revised in place 2026-08-24; 2026-08-24; 2026-09-05; 2026-09-06; 2026-09-25; 2026-10-09; 2026-10-09; 2026-10-09; 2026-10-09; 2026-10-28)
 
 ## Context

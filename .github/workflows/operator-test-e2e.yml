@@ -28,11 +28,11 @@ defaults:
     working-directory: operator
 
 env:
-  # The role `make garam-e2e` pulls garam's test image from ECR as. Its name,
-  # permissions and trust are garamsh/infra's (garamsh/infra#311, renamed under
-  # garamsh/infra#450); this ARN was read back from IAM on 2026-10-16, after the
-  # role was created.
-  GARAM_TEST_PULL_ROLE: arn:aws:iam::486152169996:role/github-actions-garam-agent-operator-pull
+  # The role `make garam-e2e` pulls garam's test image from ECR as (ADR 0041).
+  # Its name, permissions and trust are garamsh/aurora's (garamsh/aurora#866,
+  # which created it for garam-bot's promotion-e2e environment); the ARN is
+  # the one the PM relayed from it, not read back here.
+  GARAM_TEST_PULL_ROLE: arn:aws:iam::486152169996:role/github-actions-garam-bot-pull
 
 jobs:
   test-e2e:

@@ -11,8 +11,8 @@ import (
 const (
 	registry = "486152169996.dkr.ecr.ap-northeast-2.amazonaws.com/"
 	// manager and control are the two images' repositories.
-	manager = registry + "garam-agent-operator/manager"
-	control = registry + "garam-agent-operator/control"
+	manager = registry + "garam-bot/operator-manager"
+	control = registry + "garam-bot/operator-control"
 	// workflows is the prefix GITHUB_WORKFLOW_REF carries for every workflow of this repository.
 	workflows = "garamsh/garam-bot/.github/workflows/"
 	// releaseRun is GITHUB_WORKFLOW_REF in operator-release.yml's run for the tag operator/v0.1.0-dev.5.
@@ -54,7 +54,7 @@ func TestCheck_AcceptsEachReleaseFormOnlyInTheReleaseWorkflowsRunForThatVersion(
 		t.Run(name, func(t *testing.T) {
 			_, err := check(c.ref, c.workflowRef)
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "garam-agent-operator/manager:<12-hex commit hash> instead")
+			assert.Contains(t, err.Error(), "garam-bot/operator-manager:<12-hex commit hash> instead")
 			assert.Contains(t, err.Error(), "ADR 0078")
 		})
 	}
@@ -97,7 +97,7 @@ func TestCheck_AcceptsADevelopmentImageOnlyUnderItsTwelveHexHashAlone(t *testing
 		t.Run(name, func(t *testing.T) {
 			_, err := check(ref, "")
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "garam-agent-operator/control:<12-hex commit hash> instead")
+			assert.Contains(t, err.Error(), "garam-bot/operator-control:<12-hex commit hash> instead")
 			assert.Contains(t, err.Error(), "ADR 0078")
 		})
 	}
@@ -115,12 +115,15 @@ func TestCheck_ARefusedDevelopmentTagStaysRefusedInAReleaseRun(t *testing.T) {
 
 func TestCheck_AppliesNoRuleOutsideThePublishingRepository(t *testing.T) {
 	// Tags the rule refuses: the scaffold's defaults, a repository whose name only starts with the
-	// prefix, the prefix as a repository of its own, and another project's repositories.
+	// prefix, the old repositories, garam-bot's images that are not the operator's, and another
+	// project's repositories.
 	for _, ref := range []string{
 		"controller:latest",
 		"control:latest",
-		registry + "garam-agent-operatorx/manager:dev-1",
-		registry + "garam-agent-operator:0.1.0",
+		registry + "garam-bot/operatormanager:dev-1",
+		registry + "garam-agent-operator/manager:dev-1",
+		registry + "garam-bot/runtime:dev-1",
+		registry + "garam-bot:0.1.0",
 		registry + "garam/test:0.1.0-dev.5",
 		registry + "garam-dev/garam-test:dev-1",
 	} {

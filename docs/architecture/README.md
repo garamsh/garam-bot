@@ -80,6 +80,7 @@ The current code is the workspace and tool infrastructure from the previous sher
 - `0038` — garam brokers external apps through one official app per service, scopes in garam IAM, and short narrowed tokens
 - `0039` — `garam-bot daemon` is the connector of a PC and of a naru host, running several bots, and the PC app shows it
 - `0040` — `cmd/sherlock` goes: its workspace server and MCP server move under `garam-bot`, and `sherlock agent` and the in-house loop are removed
+- `0041` — every garam-bot image publishes to `garam-bot/<image>` through one push role, e2e pulls through one pull role, and the operator runs in `garam-bot-system`
 
 ### Modules
 
