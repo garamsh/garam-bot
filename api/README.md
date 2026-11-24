@@ -7,5 +7,7 @@ This directory is a Go module of its own, so a consumer imports an interface wit
 | Interface | Directory | Versions |
 |---|---|---|
 | 1. Declaration spec: Bot, Workspace, WorkspaceClass, BotPool | `declaration/` | `v1alpha1` |
+| 2. Agent: the protocol between a bot's process and the adapter running its harness in the workspace | `agent/` | `v1alpha1` |
+| 3. Workspace provider: the driver a program at an execution place makes and reaches workspaces through | `workspace/` | `v1alpha1` |
 
-Interfaces 2 to 5 (agent, workspace provider, control connection protocol, model gateway) are specified under `garamsh/garam-bot#1193`.
+Interfaces 4 and 5 (control connection protocol, model gateway) are not written yet.
