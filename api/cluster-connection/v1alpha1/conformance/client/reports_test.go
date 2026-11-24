@@ -30,9 +30,11 @@ func wholeView(t *testing.T) {
 	id := h.declare("", bot(ns, "a", "reviewer"))
 	h.start()
 
+	// A report may carry an object before the pass that applied it records its declaration's outcome,
+	// so the wait is for one that carries both.
 	r := h.report(func(r map[string]any) bool {
-		return carries("a", "made-here")(r) && strings.Contains(mustJSON(r), message)
-	}, "REP-1: the whole view, the status included")
+		return carries("a", "made-here")(r) && hasOutcome(id, "applied")(r) && strings.Contains(mustJSON(r), message)
+	}, "REP-1: the whole view, the status and the outcome included")
 
 	assert.NotEmpty(t, r["observedAt"], "REP-1")
 	connector, _ := r["connector"].(map[string]any)
