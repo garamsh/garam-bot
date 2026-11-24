@@ -1,33 +1,40 @@
-name: release
+name: operator release
 
 # Publishes a release: the manager's image to garam-agent-operator/manager and the
 # control service's to garam-agent-operator/control, each tagged with the version
-# its git tag names without the v, from a v0.1.0-dev.N, v0.1.0-rc.N or v0.1.0 tag on
-# main (ADR 0051, ADR 0081, delivery.md). Modelled on sherlock's release
+# its git tag names without the operator/v, from an operator/v0.1.0-dev.N,
+# operator/v0.1.0-rc.N or operator/v0.1.0 tag on main (operator ADR 0051, ADR 0081,
+# operator/docs/architecture/delivery.md). Modelled on sherlock's release
 # workflow (garamsh/sherlock@b3c05c2:.github/workflows/release.yml), which garam's
 # shares (garamsh/garam@9a3f8a6:.github/workflows/release.yml, its ADR-0039).
 #
 # Action pins are a full commit SHA with the version it resolved to as the line's
 # last word (ci.md §Verify a pinned dependency before adopting it);
-# .github/dependabot.yml's github-actions entry moves them, and `make verify-pins`
-# checks the pair agrees.
+# .github/dependabot.yml's github-actions entry moves them, and the operator's
+# `make verify-pins` checks the pair agrees.
 #
 # The trigger is the release tag and nothing else. A tag filter is a glob and
-# cannot spell those three forms, so `v*` is as narrow as the trigger goes. It is also exactly
-# the ref the push role admits: arn:aws:iam::486152169996:role/github-actions-garam-agent-operator-push
-# trusts the subject
-# `repo:garamsh@307152666/garam-agent-operator@1335647420:ref:refs/tags/v*`
-# (garamsh/infra#292, #293), so a run on any other ref gets no credential. What
-# `v*` admits and the scheme does not is refused by the version step, before any
-# AWS call: both repositories are IMMUTABLE and a wrong name is permanent.
+# cannot spell those three forms, so `operator/v*` is as narrow as the trigger goes;
+# release.yml's `v*`, the runtime's release, does not match it, since a glob's `*`
+# stops at `/`. It is also exactly the ref the push role admits:
+# arn:aws:iam::486152169996:role/github-actions-garam-agent-operator-push trusts the
+# subject `repo:garamsh@307152666/garam-bot@1311139677:ref:refs/tags/operator/v*`
+# (garamsh/infra#292, #293, garamsh/aurora#865), so a run on any other ref gets no
+# credential. What `operator/v*` admits and the scheme does not is refused by the
+# version step, before any AWS call: both repositories are IMMUTABLE and a wrong
+# name is permanent.
 #
 # Nothing here creates a tag. A person tags main's tip after a promotion and pushes
 # the tag; this workflow reads it.
 on:
   push:
-    tags: ["v*"]
+    tags: ["operator/v*"]
 
 permissions: read-all
+
+defaults:
+  run:
+    working-directory: operator
 
 # No concurrency group, and the absence is the guard rather than an omission. A
 # group cancels a queued run when a newer one arrives, whichever way
@@ -56,11 +63,12 @@ jobs:
       # The Go toolchain `make verify-image-ref` runs on, before the push below.
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version-file: go.mod
+          go-version-file: operator/go.mod
 
-      # A release is v0.1.0-dev.N, v0.1.0-rc.N or v0.1.0 (ADR 0081), and the image
-      # tag is that without the `v`. hack/releasetag holds the rule, so a test runs
-      # the same check over accepted and refused names. This step stands before any
+      # A release is operator/v0.1.0-dev.N, operator/v0.1.0-rc.N or operator/v0.1.0
+      # (ADR 0081), and the image tag is that without the `operator/v`.
+      # hack/releasetag holds the rule, so a test runs the same check over
+      # accepted and refused names. This step stands before any
       # credential, so a tag the scheme does not name costs nothing. The tag name
       # reaches the command through the environment, never the command text
       # (ci.md §Security baseline).

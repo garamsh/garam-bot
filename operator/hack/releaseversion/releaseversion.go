@@ -1,6 +1,6 @@
 // Package releaseversion decides which versions a release of this project may carry (ADR 0081): until
 // launch 0.1.0-dev.N or 0.1.0-rc.N, and at launch 0.1.0. It is the one place the three forms are
-// spelled; .github/workflows/release.yml (through hack/releasetag) and hack/imageref both read it.
+// spelled; .github/workflows/operator-release.yml (through hack/releasetag) and hack/imageref both read it.
 package releaseversion
 
 import (
@@ -19,13 +19,17 @@ func Valid(version string) bool {
 	return form.MatchString(version)
 }
 
-// FromTag answers the version a git tag names, which is the tag without its leading v, or an error
-// naming why the tag is not a release.
+// tagPrefix is what a release tag carries before its version: the operator's tag namespace in a
+// repository whose other components tag v<version> of their own.
+const tagPrefix = "operator/v"
+
+// FromTag answers the version a git tag names, which is the tag without its leading operator/v, or an
+// error naming why the tag is not a release.
 func FromTag(tag string) (string, error) {
-	version, ok := strings.CutPrefix(tag, "v")
+	version, ok := strings.CutPrefix(tag, tagPrefix)
 	if !ok || !Valid(version) {
-		return "", fmt.Errorf("tag %q is not v0.1.0-dev.N, v0.1.0-rc.N or v0.1.0, where N counts from 1 "+
-			"and has no leading zero (ADR 0081)", tag)
+		return "", fmt.Errorf("tag %q is not operator/v0.1.0-dev.N, operator/v0.1.0-rc.N or operator/v0.1.0, "+
+			"where N counts from 1 and has no leading zero (ADR 0081)", tag)
 	}
 	return version, nil
 }

@@ -1,7 +1,7 @@
 // Command imageref refuses an image reference ADR 0078's tag rule forbids a push of (#401). Under
 // garam-agent-operator/ the tag decides: a release version (0.1.0-dev.N, 0.1.0-rc.N or 0.1.0, ADR 0081)
-// only in .github/workflows/release.yml's run for the git tag of that version, or the 12-hex commit
-// hash alone. Every Makefile target that pushes, and release.yml before
+// only in the repository's .github/workflows/operator-release.yml run for the git tag operator/v<version>,
+// or the 12-hex commit hash alone. Every Makefile target that pushes, and operator-release.yml before
 // its push, runs it on the reference.
 //
 // It stops mistakes, not a determined pusher: GITHUB_WORKFLOW_REF is set by the Actions runner, and a
@@ -28,7 +28,7 @@ const (
 	// publishingRepository holds both images, release and development alike (ADR 0078).
 	publishingRepository = "garam-agent-operator/"
 	// releaseWorkflow is GITHUB_WORKFLOW_REF's value in a release run, up to the tag's version.
-	releaseWorkflow = "garamsh/garam-agent-operator/.github/workflows/release.yml@refs/tags/v"
+	releaseWorkflow = "garamsh/garam-bot/.github/workflows/operator-release.yml@refs/tags/operator/v"
 )
 
 var (
@@ -76,8 +76,8 @@ func check(ref, workflowRef string) (string, error) {
 		if workflowRef == releaseWorkflow+tag {
 			return "a release, pushed by the release workflow", nil
 		}
-		return "", fmt.Errorf("a release version tag is pushed only by .github/workflows/release.yml in its run "+
-			"for the git tag v%s (ADR 0078, ADR 0081); push a development image as %s:<12-hex commit hash> instead",
+		return "", fmt.Errorf("a release version tag is pushed only by .github/workflows/operator-release.yml in its run "+
+			"for the git tag operator/v%s (ADR 0078, ADR 0081); push a development image as %s:<12-hex commit hash> instead",
 			tag, path)
 	case commitHash.MatchString(tag):
 		return "a development image", nil

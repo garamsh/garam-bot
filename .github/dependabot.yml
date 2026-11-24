@@ -14,6 +14,9 @@ updates:
     directories:
       - "/build"
       - "/deploy/runtime-fixture/meter"
+      - "/operator"
+      - "/operator/build"
+      - "/operator/test/e2e/agent-image"
     schedule:
       interval: "weekly"
   # "/" is where the github-actions ecosystem looks; the workflows under
@@ -22,15 +25,16 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-  # Two modules: go.mod at the root covers cmd/, internal/, tools/ and
-  # deploy/runtime-fixture/meter/, and api/go.mod the public interfaces
-  # (ADR 0032). Per module, one pull request per week for every module
+  # Three modules: go.mod at the root covers cmd/, internal/, tools/ and
+  # deploy/runtime-fixture/meter/, api/go.mod the public interfaces
+  # (ADR 0032), and operator/go.mod the operator. Per module, one pull request per week for every module
   # bump: separate ones edit adjacent go.mod lines and go.sum, so each
   # merge conflicts the rest.
   - package-ecosystem: "gomod"
     directories:
       - "/"
       - "/api"
+      - "/operator"
     schedule:
       interval: "weekly"
     groups:

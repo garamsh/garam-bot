@@ -12,13 +12,13 @@ import (
 )
 
 // launch is the tag of the launch release.
-const launch = "v0.1.0"
+const launch = "operator/v0.1.0"
 
 func TestRun_PrintsTheVersionOfAReleaseTag(t *testing.T) {
 	for tag, version := range map[string]string{
-		"v0.1.0-dev.5": "0.1.0-dev.5",
-		"v0.1.0-rc.2":  "0.1.0-rc.2",
-		launch:         "0.1.0",
+		"operator/v0.1.0-dev.5": "0.1.0-dev.5",
+		"operator/v0.1.0-rc.2":  "0.1.0-rc.2",
+		launch:                  "0.1.0",
 	} {
 		var out, errOut bytes.Buffer
 		assert.Equal(t, 0, run([]string{tag}, &out, &errOut), tag)
@@ -29,8 +29,8 @@ func TestRun_PrintsTheVersionOfAReleaseTag(t *testing.T) {
 
 func TestRun_RefusesWhatTheSchemeDoesNotName(t *testing.T) {
 	for _, tag := range []string{
-		"v0.2.0", "v1.0.0", "v0.1.0-dev.0", "v0.1.0-dev.01", "v0.1.0-rc", "v0.1.0-beta.1",
-		"v0.1.0-dev.1-x", "0.1.0-dev.1", "main", "",
+		"operator/v0.2.0", "operator/v1.0.0", "operator/v0.1.0-dev.0", "operator/v0.1.0-dev.01", "operator/v0.1.0-rc",
+		"operator/v0.1.0-beta.1", "operator/v0.1.0-dev.1-x", "v0.1.0-dev.1", "0.1.0-dev.1", "main", "",
 	} {
 		var out, errOut bytes.Buffer
 		assert.Equal(t, 1, run([]string{tag}, &out, &errOut), "%q", tag)
@@ -49,7 +49,7 @@ type step struct {
 }
 
 func TestReleaseWorkflow_ChecksTheTagThroughThisCommandBeforeAnyCredential(t *testing.T) {
-	raw, err := os.ReadFile("../../.github/workflows/release.yml")
+	raw, err := os.ReadFile("../../../.github/workflows/operator-release.yml")
 	require.NoError(t, err)
 	var workflow struct {
 		Jobs map[string]struct {
@@ -69,8 +69,8 @@ func TestReleaseWorkflow_ChecksTheTagThroughThisCommandBeforeAnyCredential(t *te
 			credential = i
 		}
 	}
-	require.GreaterOrEqual(t, check, 0, "release.yml does not run the check")
-	require.GreaterOrEqual(t, credential, 0, "release.yml obtains no credential, so the order below proves nothing")
+	require.GreaterOrEqual(t, check, 0, "operator-release.yml does not run the check")
+	require.GreaterOrEqual(t, credential, 0, "operator-release.yml obtains no credential, so the order below proves nothing")
 	assert.Less(t, check, credential, "the tag check must come before the credential step")
 
 	// The tag reaches the command through the environment, not the command text.

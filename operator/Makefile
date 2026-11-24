@@ -271,12 +271,15 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 # the answer instead of reading the ref it named. Reading the peeled `^{}` value
 # first is the same guard for an annotated tag, whose unpeeled SHA is in the
 # answer and is not what GitHub runs.
+# The files it reads: the operator's own YAML, and its workflows, which sit at
+# the repository's root as .github/workflows/operator-*.yml.
+PIN_FILES = '*.yml' '*.yaml' ':(top,glob).github/workflows/operator-*.yml'
 .PHONY: verify-pins
 verify-pins: ## Report every SHA-pinned action and fail when its version comment is not the line's last word or does not resolve to its SHA.
 	@shape='^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]+([^@[:space:]]+)@([0-9a-f]{40})[[:space:]]+#[[:space:]]*(v?[0-9][A-Za-z0-9._+-]*)$$'; \
-	entries=$$(git grep -nE '^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]' -- '*.yml' '*.yaml' || true); \
+	entries=$$(git grep -nE '^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]' -- $(PIN_FILES) || true); \
 	total=$$(printf '%s' "$$entries" | grep -c . || true); \
-	[ "$$total" -gt 0 ] || { echo "pin check: no \`uses:\` line in any tracked YAML file, so nothing was checked" >&2; exit 1; }; \
+	[ "$$total" -gt 0 ] || { echo "pin check: no \`uses:\` line in the operator's tracked YAML files, so nothing was checked" >&2; exit 1; }; \
 	pins=; malformed=; \
 	while IFS= read -r entry; do \
 		site=$$(printf '%s' "$$entry" | cut -d: -f1,2); \

@@ -32,9 +32,9 @@ func TestValid_AcceptsTheThreeFormsAndNothingElse(t *testing.T) {
 	}
 }
 
-func TestFromTag_StripsTheVOfAnAcceptedTag(t *testing.T) {
+func TestFromTag_StripsTheOperatorVOfAnAcceptedTag(t *testing.T) {
 	for _, version := range accepted {
-		got, err := releaseversion.FromTag("v" + version)
+		got, err := releaseversion.FromTag("operator/v" + version)
 		require.NoError(t, err, version)
 		assert.Equal(t, version, got)
 	}
@@ -42,17 +42,20 @@ func TestFromTag_StripsTheVOfAnAcceptedTag(t *testing.T) {
 
 func TestFromTag_RefusesEveryOtherTag(t *testing.T) {
 	for _, version := range refused {
-		_, err := releaseversion.FromTag("v" + version)
-		require.Error(t, err, "v%q", version)
+		_, err := releaseversion.FromTag("operator/v" + version)
+		require.Error(t, err, "operator/v%q", version)
 		assert.Contains(t, err.Error(), "ADR 0081")
 	}
 
-	// Controls: the accepted forms are refused without their v, and a doubled v is refused, so the
-	// verdict comes from the form and from exactly one v.
+	// Controls: the accepted forms are refused without their operator/v, with a bare v (the tag of the
+	// repository's other components), and with a doubled v, so the verdict comes from the form and from
+	// exactly one operator/v.
 	for _, version := range accepted {
 		_, err := releaseversion.FromTag(version)
-		assert.Error(t, err, "an accepted version without its v: %s", version)
+		assert.Error(t, err, "an accepted version without its operator/v: %s", version)
+		_, err = releaseversion.FromTag("v" + version)
+		assert.Error(t, err, "an accepted version under a bare v: %s", version)
 	}
-	_, err := releaseversion.FromTag("vv0.1.0")
+	_, err := releaseversion.FromTag("operator/vv0.1.0")
 	assert.Error(t, err)
 }

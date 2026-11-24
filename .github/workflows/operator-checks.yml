@@ -1,14 +1,25 @@
-name: Checks
+name: Operator checks
 
 # Runs only on the `dev` -> `main` promotion pull request: work lands on `dev`
 # unchecked by CI, and its author's local `make ci` is the gate there. No `push`
 # trigger, because the promotion merges without squashing and that merge is the tree
-# this run already checked (ADR 0028).
+# this run already checked (operator ADR 0028).
 on:
   pull_request:
     branches: [main]
+    # The operator's checks, on the promotion when it carries a change to
+    # operator/, to the api module the operator requires, or to this file.
+    # ci.yml checks the root and api modules on the same pull request.
+    paths:
+      - "operator/**"
+      - "api/**"
+      - ".github/workflows/operator-checks.yml"
 
 permissions: {}
+
+defaults:
+  run:
+    working-directory: operator
 
 jobs:
   checks:
@@ -29,7 +40,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
-          go-version-file: go.mod
+          go-version-file: operator/go.mod
 
       - name: Run the check set
         run: make ci

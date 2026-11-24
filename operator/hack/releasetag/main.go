@@ -1,5 +1,5 @@
 // Command releasetag answers the image version a release's git tag names, and refuses a tag that is
-// not a release (ADR 0081). .github/workflows/release.yml runs it before any credential, so a wrong
+// not a release (ADR 0081). The repository's .github/workflows/operator-release.yml runs it before any credential, so a wrong
 // tag costs nothing: both repositories are immutable and a wrong name is permanent. The tag reaches it
 // as an argument, never in command text.
 package main
