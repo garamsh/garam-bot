@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
-	"github.com/garamsh/sherlock/internal/workspace"
+	"github.com/garamsh/garam-bot/internal/workspace"
 )
 
 // callTimeout bounds one workspace RPC. Read, Write and List are

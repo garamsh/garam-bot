@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // Model is the agent's narrow view of a chat model (ADR 0004): it receives

@@ -4,7 +4,7 @@
 // shares S's store, so its offline records equal S's; it differs live.
 package main
 
-import "github.com/garamsh/sherlock/research/chained-recall/study"
+import "github.com/garamsh/garam-bot/research/chained-recall/study"
 
 // Instruction is M's one change. Production would carry it in the
 // platform contract's §Source-linked memory; the study appends it to the

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/garamsh/sherlock/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent"
 )
 
 // Recalled renders items as the production recall renders mids

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/garamsh/sherlock/internal/tool/tooltest"
+	"github.com/garamsh/garam-bot/internal/tool/tooltest"
 )
 
 type shapeSample struct {

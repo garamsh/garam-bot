@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/garamsh/sherlock/internal/config"
-	"github.com/garamsh/sherlock/internal/workspace/server"
+	"github.com/garamsh/garam-bot/internal/config"
+	"github.com/garamsh/garam-bot/internal/workspace/server"
 )
 
 // newWorkspaceCommand returns the "sherlock workspace" subcommand: it

@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/garamsh/sherlock/research/chained-recall/study"
+	"github.com/garamsh/garam-bot/research/chained-recall/study"
 )
 
 func main() { study.Main(New()) }

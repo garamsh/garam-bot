@@ -12,10 +12,10 @@ import (
 	"os"
 	"sync"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/agent/memory"
-	"github.com/garamsh/sherlock/internal/agent/openai"
-	"github.com/garamsh/sherlock/internal/memory/sqlite"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent/memory"
+	"github.com/garamsh/garam-bot/internal/agent/openai"
+	"github.com/garamsh/garam-bot/internal/memory/sqlite"
 )
 
 // runBase builds the base store every episode starts from: the #856

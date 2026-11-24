@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/garamsh/sherlock/internal/workspace/shell"
+	"github.com/garamsh/garam-bot/internal/workspace/shell"
 )
 
 // TestMain lets this test binary stand in for the platform binary: the

@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // productionPrompt is the production synthesis prompt

@@ -3,7 +3,7 @@ package gateway
 import (
 	"context"
 
-	"github.com/garamsh/sherlock/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent"
 )
 
 // RuntimeFactory builds the agent's runtime. The events sink is the

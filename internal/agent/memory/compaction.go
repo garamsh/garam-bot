@@ -3,7 +3,7 @@ package memory
 import (
 	"context"
 
-	"github.com/garamsh/sherlock/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent"
 )
 
 // DefaultMaxHistoryMessages bounds the conversation window a rolling

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // exchange is one chat call as the session made it: what the model was

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/garamsh/sherlock/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent"
 )
 
 // MaxDrainBatch bounds how many queued messages one turn takes (ADR 0015);

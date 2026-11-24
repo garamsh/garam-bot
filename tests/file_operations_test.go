@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/message"
+	"github.com/garamsh/garam-bot/internal/message"
 )
 
 var fileOperationTasks = []struct{ message, path, content string }{

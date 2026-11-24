@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/agent/openai"
+	"github.com/garamsh/garam-bot/internal/agent/openai"
 )
 
 func TestEmbedder_SendsTextAndReadsVector(t *testing.T) {

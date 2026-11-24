@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/message"
+	"github.com/garamsh/garam-bot/internal/message"
 )
 
 // readEntries decodes every *.json entry in dir, keyed by file name.

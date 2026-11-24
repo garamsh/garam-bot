@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/gateway"
-	"github.com/garamsh/sherlock/internal/memory/sqlite"
+	"github.com/garamsh/garam-bot/internal/gateway"
+	"github.com/garamsh/garam-bot/internal/memory/sqlite"
 )
 
 // statusReply is the decoded body of a status GET.

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/agent/openai"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent/openai"
 )
 
 // Env is what the study hands an arm.

@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/bot"
+	"github.com/garamsh/garam-bot/internal/bot"
 )
 
 const mira = `apiVersion: bot.garam.sh/v1alpha1

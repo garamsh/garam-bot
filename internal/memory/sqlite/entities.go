@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/garamsh/sherlock/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent"
 )
 
 // word is one token: letters and digits, joined inside by hyphens or

@@ -16,9 +16,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	sherlock "github.com/garamsh/sherlock/cmd/sherlock"
-	"github.com/garamsh/sherlock/internal/memory/sqlite"
-	"github.com/garamsh/sherlock/internal/tool"
+	sherlock "github.com/garamsh/garam-bot/cmd/sherlock"
+	"github.com/garamsh/garam-bot/internal/memory/sqlite"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // pinnedToolTree installs a minimal manifest for the one required tool

@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/garamsh/sherlock/internal/message"
+	"github.com/garamsh/garam-bot/internal/message"
 )
 
 type callInput struct {

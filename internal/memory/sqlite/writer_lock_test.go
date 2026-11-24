@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
-	"github.com/garamsh/sherlock/internal/memory/sqlite"
+	"github.com/garamsh/garam-bot/internal/memory/sqlite"
 )
 
 // TestOpenConversation_RefusesSecondWriter holds the one-writer rule:

@@ -1,4 +1,4 @@
-module github.com/garamsh/sherlock
+module github.com/garamsh/garam-bot
 
 go 1.26.10
 

@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // maxErrorBody caps how much of an error response body is kept in APIError.

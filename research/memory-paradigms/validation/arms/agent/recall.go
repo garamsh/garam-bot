@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/tool"
-	"github.com/garamsh/sherlock/research/chained-recall/study"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/tool"
+	"github.com/garamsh/garam-bot/research/chained-recall/study"
 )
 
 const (

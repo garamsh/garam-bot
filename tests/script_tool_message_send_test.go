@@ -16,10 +16,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/gateway"
-	"github.com/garamsh/sherlock/internal/message"
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/gateway"
+	"github.com/garamsh/garam-bot/internal/message"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // TestScriptTool_MessageSend_Integration drops the message_send tool

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/garamsh/sherlock/internal/tool"
+	"github.com/garamsh/garam-bot/internal/tool"
 )
 
 // MemorySearchTool is the reserved call that ranks mid episodes by

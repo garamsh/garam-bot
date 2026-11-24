@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/garamsh/sherlock/internal/agent"
-	"github.com/garamsh/sherlock/internal/agent/anthropic"
-	"github.com/garamsh/sherlock/internal/agent/openai"
-	"github.com/garamsh/sherlock/internal/config"
+	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/agent/anthropic"
+	"github.com/garamsh/garam-bot/internal/agent/openai"
+	"github.com/garamsh/garam-bot/internal/config"
 )
 
 // newModelFunc resolves the model config into the Factory.NewModel wiring:

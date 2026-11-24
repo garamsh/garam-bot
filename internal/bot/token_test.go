@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/bot"
+	"github.com/garamsh/garam-bot/internal/bot"
 )
 
 var start = time.Date(2026, 11, 24, 0, 0, 0, 0, time.UTC)

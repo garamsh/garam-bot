@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/sherlock/internal/message"
-	"github.com/garamsh/sherlock/internal/tool/tooltest"
+	"github.com/garamsh/garam-bot/internal/message"
+	"github.com/garamsh/garam-bot/internal/tool/tooltest"
 )
 
 // platformStamped are the fields message_send stamps from its own

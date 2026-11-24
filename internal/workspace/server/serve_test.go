@@ -18,9 +18,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/garamsh/sherlock/internal/workspace"
-	"github.com/garamsh/sherlock/internal/workspace/server"
-	"github.com/garamsh/sherlock/internal/workspace/shell"
+	"github.com/garamsh/garam-bot/internal/workspace"
+	"github.com/garamsh/garam-bot/internal/workspace/server"
+	"github.com/garamsh/garam-bot/internal/workspace/shell"
 )
 
 // TestMain routes the resource-limit verb the way the platform binary

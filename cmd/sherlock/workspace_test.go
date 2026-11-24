@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	sherlock "github.com/garamsh/sherlock/cmd/sherlock"
+	sherlock "github.com/garamsh/garam-bot/cmd/sherlock"
 )
 
 // TestWorkspaceCommand_NonLoopbackAddrFailsStartup pins the fail-closed

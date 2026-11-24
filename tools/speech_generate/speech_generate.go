@@ -26,7 +26,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
-	"github.com/garamsh/sherlock/internal/workspace"
+	"github.com/garamsh/garam-bot/internal/workspace"
 )
 
 const (
