@@ -1,0 +1,93 @@
+version: "2"
+run:
+  allow-parallel-runners: true
+  # The linter analyses what a build with these tags would compile, so without
+  # them every file behind `//go:build e2e` is invisible to `make lint` — which
+  # reports `0 issues.` either way.
+  build-tags:
+    - e2e
+    - gaonharness
+    - conformance
+linters:
+  default: none
+  enable:
+    - copyloopvar
+    - depguard
+    - dupl
+    - errcheck
+    - ginkgolinter
+    - goconst
+    - gocyclo
+    - govet
+    - ineffassign
+    - lll
+    - modernize
+    - misspell
+    - nakedret
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - logcheck
+  settings:
+    custom:
+      logcheck:
+        type: "module"
+        description: Checks Go logging calls for Kubernetes logging conventions.
+    depguard:
+      rules:
+        forbid-sort-pkg:
+          deny:
+            - pkg: sort
+              desc: Should be replaced with slices package
+    revive:
+      rules:
+        - name: comment-spacings
+        - name: import-shadowing
+    modernize:
+      disable:
+        - omitzero
+        - newexpr
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - lll
+        path: api/*
+      - linters:
+          - dupl
+          - lll
+        path: internal/*
+      # The gaon operator's tests and stand-ins repeat wire names and
+      # fixture values on purpose, so a reader sees each case's input.
+      - linters:
+          - goconst
+        path: ^(internal/gaon|tests/gaon)/
+      # The reference server's tests spell each wire member and fixture
+      # value in the request they build, for the same reason.
+      - linters:
+          - goconst
+        path: ^interfaces/.*_test\.go$
+      # Go 1.27 needs golangci-lint v2.15.0, whose modernize reports these
+      # three in code the gaon import does not touch. Each goes when its
+      # file is next changed, and then so does its entry here.
+      - linters:
+          - modernize
+        path: ^(internal/(controller|desired|garam|gaon)|tests/(control|gaon))/
+        text: '^(embedlit|stringscut|errorsastype):'
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

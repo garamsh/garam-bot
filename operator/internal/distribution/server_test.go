@@ -1,0 +1,267 @@
+package distribution_test
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"maps"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+
+	"github.com/garamsh/garam-agent-operator/internal/definition"
+	"github.com/garamsh/garam-agent-operator/internal/definition/repository"
+	"github.com/garamsh/garam-agent-operator/internal/distribution"
+)
+
+const (
+	controller = "grn:root/iam/operator/k8s"
+	elsewhere  = "grn:root/iam/operator/other"
+	org        = "grn:root/iam/org/acme"
+	// orgID is org's identifier, the organization every test's definitions belong to.
+	orgID  = "acme"
+	agentA = "grn:acme/iam/agent/a"
+	agentB = "grn:acme/iam/agent/b"
+	agentC = "grn:acme/iam/agent/c"
+	epoch  = "7"
+)
+
+// verdict is what the test double answers for one proof.
+type verdict struct {
+	proof distribution.Proof
+	err   error
+}
+
+// prover is the test double for garam's controller proof. It proves the controller and each
+// agent given an epoch, unless the test set another verdict, and records every token it was sent.
+type prover struct {
+	mu       sync.Mutex
+	session  *verdict
+	agents   map[string]verdict
+	epochs   map[string]string
+	tokens   []string
+	sessions int
+	// refused holds the tokens garam refuses as not live, its 422.
+	refused map[string]bool
+}
+
+func (p *prover) Prove(_ context.Context, c, token, agent string) (distribution.Proof, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.tokens = append(p.tokens, token)
+	if p.refused[token] {
+		return distribution.Proof{}, distribution.ErrTokenRefused
+	}
+	if agent == "" {
+		p.sessions++
+		if p.session != nil {
+			return p.session.proof, p.session.err
+		}
+		return distribution.Proof{Operator: c, Org: org}, nil
+	}
+	if v, ok := p.agents[agent]; ok {
+		return v.proof, v.err
+	}
+	e, ok := p.epochs[agent]
+	if !ok {
+		return distribution.Proof{}, distribution.ErrNotProved
+	}
+	return distribution.Proof{Operator: c, Org: org, Agent: &distribution.ProvenAgent{GRN: agent, Epoch: e}}, nil
+}
+
+func (p *prover) setSession(v verdict) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.session = &v
+}
+
+// setAgentB sets the verdict for agentB's placement proofs.
+func (p *prover) setAgentB(v verdict) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.agents[agentB] = v
+}
+
+// registrar registers each creation under the GRN its request id names.
+type registrar struct{}
+
+func (registrar) Register(_ context.Context, r definition.Registration) (definition.Registered, error) {
+	return definition.Registered{Agent: definition.GRN(r.Request.RequestID), Epoch: "1"}, nil
+}
+
+// creator is the controller the fixture's agents are created on, so revision 1 is no controller's
+// under test and each test's revisions come from configure.
+const creator = "grn:root/iam/operator/creator"
+
+// env is the controller routes over an in-memory store holding agentA and agentB recorded for
+// controller under epoch, and agentC recorded for another controller.
+type env struct {
+	server      *httptest.Server
+	prover      *prover
+	definitions definition.Service
+	// store is the in-memory store the definitions are kept in.
+	store        *repository.Memory
+	profile      definition.ProfileRef
+	withToken    *http.Client
+	withoutToken *http.Client
+	configures   int
+	// clock is what the routes read the time from.
+	clock *clock
+}
+
+func newEnv(t *testing.T) *env {
+	t.Helper()
+	return newEnvCarrying(t, 10)
+}
+
+// newEnvCarrying is newEnv with one feed answer carrying at most maxAgents candidates.
+func newEnvCarrying(t *testing.T, maxAgents int) *env {
+	t.Helper()
+	ctx := context.Background()
+	store := repository.NewMemory()
+	definitions := definition.NewService(store, registrar{})
+	class := "standard"
+	p, err := definitions.PublishProfile(ctx, orgID, "small", definition.ExecutionSettings{
+		Resources:        corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")}},
+		StorageSize:      resource.MustParse("1Gi"),
+		StorageClassName: &class,
+	})
+	require.NoError(t, err)
+	profile := definition.ProfileRef{Name: p.Name, Version: p.Version}
+	tmpl, err := definitions.PublishTemplate(ctx, orgID, definition.Template{Name: "researcher", Profile: profile})
+	require.NoError(t, err)
+
+	e := &env{
+		prover:      &prover{agents: map[string]verdict{}, epochs: map[string]string{agentA: epoch, agentB: epoch}},
+		definitions: definitions,
+		store:       store,
+		profile:     profile,
+		clock:       &clock{now: time.Date(2026, 10, 14, 9, 0, 0, 0, time.UTC)},
+	}
+	for _, a := range []string{agentA, agentB, agentC} {
+		_, _, err := definitions.CreateAgent(ctx, definition.CreateInput{
+			Request:    definition.RequestKey{Organization: orgID, RequestID: a},
+			Binding:    definition.Binding{Actor: "actor", Operation: "iam:agent.create", Target: creator, OperationRef: "create-ref-" + a},
+			Controller: creator,
+			Template:   definition.TemplateRef{Name: tmpl.Name, Version: tmpl.Version},
+			Profile:    profile,
+		})
+		require.NoError(t, err)
+	}
+	e.configure(t, agentA, controller, 1)
+	e.configure(t, agentB, controller, 1)
+	e.configure(t, agentC, elsewhere, 1)
+
+	e.server = httptest.NewUnstartedServer(distribution.NewHandler(distribution.Config{
+		Definitions:  definitions,
+		Prover:       e.prover,
+		PollInterval: 10 * time.Millisecond,
+		MaxAgents:    maxAgents,
+		Logger:       slog.New(slog.DiscardHandler),
+		Now:          e.clock.Now,
+	}))
+	e.server.StartTLS()
+	t.Cleanup(e.server.Close)
+	e.withoutToken = e.server.Client()
+	e.withToken = clientWithToken(e.server, controller, controllerToken)
+	return e
+}
+
+// configure stores agent's next revision, recorded for operator under epoch.
+func (e *env) configure(t *testing.T, agent, operator string, expected definition.Revision) {
+	t.Helper()
+	e.configures++
+	_, err := e.definitions.Configure(context.Background(), definition.ConfigureInput{
+		Request: definition.RequestKey{Organization: orgID, RequestID: fmt.Sprintf("configure-%d", e.configures)},
+		Binding: definition.Binding{
+			Actor: "actor", Operation: "iam:agent.configure", Target: agent,
+			Assignment: definition.Assignment{Operator: operator, Epoch: epoch},
+		},
+		Agent:            definition.GRN(agent),
+		ExpectedRevision: expected,
+		Profile:          e.profile,
+		Config:           definition.Configuration{Ego: fmt.Sprintf("revision %d", expected+1)},
+	})
+	require.NoError(t, err)
+}
+
+// controllerHeader is the header the controller names its GRN in, beside its token.
+const controllerHeader = "Controller-Grn"
+
+// controllerToken is the token the controller presents, as garam answers one.
+const controllerToken = "garam_ot_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+// clientWithToken is a client of server presenting token as a bearer, under grn.
+func clientWithToken(server *httptest.Server, grn, token string) *http.Client {
+	return &http.Client{Transport: presenting{base: server.Client().Transport, header: http.Header{
+		"Authorization": {"Bearer " + token}, controllerHeader: {grn},
+	}}}
+}
+
+// presenting sends every request with header set on it.
+type presenting struct {
+	base   http.RoundTripper
+	header http.Header
+}
+
+func (p presenting) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	maps.Copy(r.Header, p.header)
+	return p.base.RoundTrip(r)
+}
+
+// feed is one answer of the desired feed.
+type feed struct {
+	status  int
+	cursor  string
+	agents  map[string]string
+	kind    string
+	message string
+}
+
+func (e *env) desired(t *testing.T, client *http.Client, query string) feed {
+	t.Helper()
+	resp, err := client.Get(e.server.URL + "/v1/operators/self/desired" + query)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	var out struct {
+		Cursor string `json:"cursor"`
+		Agents []struct {
+			Agent    string `json:"agent"`
+			Revision string `json:"revision"`
+		} `json:"agents"`
+		Kind    string `json:"kind"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
+	f := feed{status: resp.StatusCode, cursor: out.Cursor, agents: map[string]string{},
+		kind: out.Kind, message: out.Message}
+	for _, a := range out.Agents {
+		f.agents[a.Agent] = a.Revision
+	}
+	return f
+}
+
+// report sends a status report for agent and returns the status and the answer's raw fields.
+func (e *env) report(t *testing.T, client *http.Client, agent, body string) (int, map[string]any) {
+	t.Helper()
+	resp, err := client.Post(e.server.URL+"/v1/operators/self/agents/"+url.PathEscape(agent)+"/status", "application/json",
+		strings.NewReader(body))
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(raw, &out))
+	return resp.StatusCode, out
+}

@@ -1,0 +1,209 @@
+package definition_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/garamsh/garam-agent-operator/internal/definition"
+)
+
+// binding is what an authority for a configure request to firstAgent would bind.
+func binding(digest string) definition.Binding {
+	return definition.Binding{
+		Actor:        actor,
+		Operation:    "iam:agent.configure",
+		Target:       string(firstAgent),
+		BodySHA256:   digest,
+		OperationRef: "ref-" + digest,
+		Assignment:   definition.Assignment{Operator: "grn:acme/iam/operator/k8s", Epoch: "7"},
+	}
+}
+
+// configure is a configure request to firstAgent expecting revision expected.
+func (f fixture) configure(requestID, ego string, expected definition.Revision) definition.ConfigureInput {
+	return definition.ConfigureInput{
+		Request:          key(requestID),
+		Binding:          binding(requestID + "-" + ego),
+		Agent:            firstAgent,
+		ExpectedRevision: expected,
+		Profile:          f.profile,
+		Config:           config(ego, definition.ToolPins{webFetch: firstPin}),
+	}
+}
+
+// registered is a fixture with firstAgent registered at revision 1.
+func registered(t *testing.T) fixture {
+	t.Helper()
+	f := newFixture(t, registration{agent: firstAgent})
+	_, _, err := f.service.CreateAgent(context.Background(), f.create("create", f.template))
+	require.NoError(t, err)
+	return f
+}
+
+func TestConfigure_StaleRevisionRefused(t *testing.T) {
+	ctx := context.Background()
+	f := registered(t)
+
+	// Control: a request expecting the latest revision is stored as the next revision.
+	accepted, err := f.service.Configure(ctx, f.configure("c1", "edited by one", 1))
+	require.NoError(t, err)
+	assert.Equal(t, definition.Applied{Revision: 2}, accepted)
+
+	_, err = f.service.Configure(ctx, f.configure("c2", "edited by two", 1))
+	require.ErrorIs(t, err, definition.ErrStaleRevision)
+
+	d, err := f.service.GetDefinition(ctx, firstAgent)
+	require.NoError(t, err)
+	assert.Equal(t, definition.Revision(2), d.Revision)
+	assert.Equal(t, "edited by one", d.Config.Ego)
+}
+
+func TestConfigure_RepeatedRequestReturnsFirstOutcome(t *testing.T) {
+	ctx := context.Background()
+	f := registered(t)
+
+	first, err := f.service.Configure(ctx, f.configure("c1", "first", 1))
+	require.NoError(t, err)
+	_, err = f.service.Configure(ctx, f.configure("c2", "second", 2))
+	require.NoError(t, err)
+
+	repeat, err := f.service.Configure(ctx, f.configure("c1", "first", 1))
+	require.NoError(t, err)
+	assert.Equal(t, first, repeat)
+	d, err := f.service.GetDefinition(ctx, firstAgent)
+	require.NoError(t, err)
+	assert.Equal(t, definition.Revision(3), d.Revision)
+	assert.Equal(t, "second", d.Config.Ego)
+
+	// Control: the same change under another request id is a new request, and stale.
+	_, err = f.service.Configure(ctx, f.configure("c3", "first", 1))
+	require.ErrorIs(t, err, definition.ErrStaleRevision)
+	// A refused request's repeat returns its refusal, not a revision applied since.
+	_, err = f.service.Configure(ctx, f.configure("c3", "first", 1))
+	require.ErrorIs(t, err, definition.ErrStaleRevision)
+}
+
+func TestConfigure_RequestIDReusedForAnotherBindingRefused(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(*definition.ConfigureInput)
+	}{
+		{"another actor", func(in *definition.ConfigureInput) { in.Binding.Actor = "grn:acme/iam/user/other" }},
+		{"another operation", func(in *definition.ConfigureInput) { in.Binding.Operation = "iam:agent.create" }},
+		{"another target", func(in *definition.ConfigureInput) { in.Binding.Target = string(secondAgent) }},
+		{"another body", func(in *definition.ConfigureInput) { in.Binding.BodySHA256 = other }},
+		{"another operation reference", func(in *definition.ConfigureInput) { in.Binding.OperationRef = other }},
+		{"another assignment", func(in *definition.ConfigureInput) { in.Binding.Assignment.Epoch = "8" }},
+		{"another agent", func(in *definition.ConfigureInput) { in.Agent = secondAgent }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			f := registered(t)
+			_, err := f.service.Configure(ctx, f.configure("c1", "first", 1))
+			require.NoError(t, err)
+
+			reused := f.configure("c1", "first", 1)
+			tt.change(&reused)
+			_, err = f.service.Configure(ctx, reused)
+			require.ErrorIs(t, err, definition.ErrRequestReused)
+
+			// Control: the identical request under the key is a repeat, not a reuse.
+			_, err = f.service.Configure(ctx, f.configure("c1", "first", 1))
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestConfigure_UnregisteredAgentRefused(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t, registration{agent: firstAgent})
+
+	_, err := f.service.Configure(ctx, f.configure("c1", "ego", 1))
+	require.ErrorIs(t, err, definition.ErrNotFound)
+
+	// Control: once the agent is registered, the same request is accepted.
+	_, _, err = f.service.CreateAgent(ctx, f.create("create", f.template))
+	require.NoError(t, err)
+	_, err = f.service.Configure(ctx, f.configure("c1", "ego", 1))
+	require.NoError(t, err)
+}
+
+func TestConfigure_UnpublishedProfileRefused(t *testing.T) {
+	ctx := context.Background()
+	f := registered(t)
+
+	in := f.configure("c1", "ego", 1)
+	in.Profile = definition.ProfileRef{Name: "unpublished", Version: 1}
+	_, err := f.service.Configure(ctx, in)
+	require.ErrorIs(t, err, definition.ErrNotFound)
+
+	// Control: the same request naming a published profile version is accepted.
+	_, err = f.service.Configure(ctx, f.configure("c1", "ego", 1))
+	require.NoError(t, err)
+}
+
+func TestConfigure_AnotherOrganizationsProfileRefused(t *testing.T) {
+	ctx := context.Background()
+	f := registered(t)
+	gpu, err := f.service.PublishProfile(ctx, globex, "gpu", settings("8", "100Gi"))
+	require.NoError(t, err)
+
+	in := f.configure("c1", "ego", 1)
+	in.Profile = definition.ProfileRef{Name: gpu.Name, Version: gpu.Version}
+	_, err = f.service.Configure(ctx, in)
+	require.ErrorIs(t, err, definition.ErrNotFound)
+
+	// Control: once org publishes a profile under that name and version, the same request is accepted.
+	_, err = f.service.PublishProfile(ctx, org, "gpu", settings("1", "2Gi"))
+	require.NoError(t, err)
+	applied, err := f.service.Configure(ctx, in)
+	require.NoError(t, err)
+	assert.Equal(t, definition.Applied{Revision: 2}, applied)
+}
+
+func TestConfigure_AnotherOrganizationsAgentRefused(t *testing.T) {
+	ctx := context.Background()
+	f := registered(t)
+	_, err := f.service.PublishProfile(ctx, globex, f.profile.Name, settings("1", "2Gi"))
+	require.NoError(t, err)
+
+	// firstAgent was created in org; globex has a profile under the name the request names.
+	in := f.configure("c1", "ego", 1)
+	in.Request.Organization = globex
+	_, err = f.service.Configure(ctx, in)
+	require.ErrorIs(t, err, definition.ErrNotFound)
+	d, err := f.service.GetDefinition(ctx, firstAgent)
+	require.NoError(t, err)
+	assert.Equal(t, definition.Revision(1), d.Revision)
+
+	// Control: the same request in the agent's own organization is accepted.
+	applied, err := f.service.Configure(ctx, f.configure("c1", "ego", 1))
+	require.NoError(t, err)
+	assert.Equal(t, definition.Applied{Revision: 2}, applied)
+}
+
+func TestConfigure_RefusesAMalformedKeyReferenceAndStoresNothing(t *testing.T) {
+	ctx := context.Background()
+	f := registered(t)
+
+	in := f.configure("malformed", "ego", 1)
+	in.Config.Model.APIKey = unseparatedKeyRef
+	_, err := f.service.Configure(ctx, in)
+	assert.ErrorIs(t, err, definition.ErrInvalidSecretRef)
+	d, err := f.service.GetDefinition(ctx, firstAgent)
+	require.NoError(t, err)
+	assert.Equal(t, definition.Revision(1), d.Revision)
+
+	// Control: the request again under the same id, with a well-formed reference, is stored. Had
+	// the refused one been recorded, this would be refused as a reused request id.
+	applied, err := f.service.Configure(ctx, f.configure("malformed", "ego", 1))
+	require.NoError(t, err)
+	assert.Equal(t, definition.Revision(2), applied.Revision)
+	d, err = f.service.GetDefinition(ctx, firstAgent)
+	require.NoError(t, err)
+	assert.Equal(t, definition.SecretRef("model-api-key/api-key"), d.Config.Model.APIKey)
+}
