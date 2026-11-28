@@ -46,13 +46,13 @@ jobs:
     # local name is the one `make build-images` writes, tagged with the
     # revision, and the repository is the one it is pushed to. The three steps
     # below read this one list, so an image cannot be pushed and left unread.
-    # The order is the push order. All four repositories are new under
+    # The order is the push order. All five repositories are new under
     # github-actions-garam-bot-push (garamsh/aurora#866; garam-bot/workspacefile
-    # was created after it), so none has a push
+    # and garam-bot/claude-code were created after it), so none has a push
     # an earlier release has shown; the read-back below each push is what
     # shows it.
     env:
-      IMAGES: garam-bot-runtime=garam-bot/runtime sherlock-agent=garam-bot/agent sherlock-workspace=garam-bot/workspace garam-bot-workspacefile=garam-bot/workspacefile
+      IMAGES: garam-bot-runtime=garam-bot/runtime sherlock-agent=garam-bot/agent sherlock-workspace=garam-bot/workspace garam-bot-workspacefile=garam-bot/workspacefile garam-bot-claude-code=garam-bot/claude-code
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
