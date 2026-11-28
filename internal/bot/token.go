@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,21 +40,21 @@ const (
 	nonceTries = 2
 )
 
-// errNoPlace is a token source configured without its connector's trust or credential file.
-var errNoPlace = errors.New("--connector-url needs --connector-trust-file and --credential-file")
+// errNoPlace is a connector configured without its trust file or any credential file.
+var errNoPlace = errors.New("--connector-url needs --connector-trust-file, and --credential-file or " +
+	"--workspace-credential-file")
 
 // TokenSource holds the bot's garam token, which it obtains from the place's connector, bound to a key
 // it makes and holds in memory alone, and obtains again before it expires (interface 6). The token's
 // value never reaches a log line, an error or the status file.
 type TokenSource struct {
 	url            string
-	trustFile      string
 	credentialFile string
 	now            func() time.Time
 	key            *ecdsa.PrivateKey
 
-	// trust and client are the connector's trust as last read, and the client verifying against it.
-	trust  []byte
+	// trust is the connector's trust as last read, and client the client verifying against it.
+	trust  placeTrust
 	client *http.Client
 	// htu and nonce are what the connector last answered to sign a proof with.
 	htu, nonce string
@@ -71,19 +69,17 @@ type TokenSource struct {
 	stale      bool
 }
 
-// NewTokenSource makes the process's key (KEY-1) and a source obtaining the token from the connector at
-// url, trusting trustFile's certificates and presenting credentialFile's credential.
-func NewTokenSource(url, trustFile, credentialFile string, now func() time.Time) (*TokenSource, error) {
+// NewTokenSource returns a source obtaining the token from the connector at url, bound to the process's
+// key (KEY-1), trusting trustFile's certificates and presenting credentialFile's credential.
+func NewTokenSource(url, trustFile, credentialFile string, key *ecdsa.PrivateKey, now func() time.Time) (
+	*TokenSource, error,
+) {
 	if trustFile == "" || credentialFile == "" {
 		return nil, errNoPlace
 	}
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("make the process's key: %w", err)
-	}
 	return &TokenSource{
-		url: strings.TrimRight(url, "/"), trustFile: trustFile, credentialFile: credentialFile, now: now, key: key,
-		renew: make(chan struct{}, 1),
+		url: strings.TrimRight(url, "/"), trust: placeTrust{file: trustFile}, credentialFile: credentialFile,
+		now: now, key: key, renew: make(chan struct{}, 1),
 	}, nil
 }
 
@@ -193,21 +189,15 @@ func (s *TokenSource) obtain(ctx context.Context) (time.Duration, error) {
 
 // readTrust reads the connector's trust again, and trusts it alone from now on (T-1).
 func (s *TokenSource) readTrust() error {
-	trust, err := os.ReadFile(s.trustFile)
-	if err != nil {
-		return fmt.Errorf("read the connector's trust: %w", err)
+	changed, err := s.trust.read()
+	if err != nil || !changed {
+		return err
 	}
-	if s.client != nil && bytes.Equal(trust, s.trust) {
-		return nil
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(trust) {
-		return fmt.Errorf("%s holds no PEM certificate", s.trustFile)
-	}
-	s.trust = trust
 	s.client = &http.Client{
-		Timeout:   30 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS13}},
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: s.trust.roots, MinVersion: tls.VersionTLS13},
+		},
 		// A redirect would carry the credential wherever it pointed.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}

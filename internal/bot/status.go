@@ -32,6 +32,8 @@ type Status struct {
 	Heartbeat time.Time    `json:"heartbeat"`
 	Bot       BotRef       `json:"bot"`
 	Token     *TokenStatus `json:"token,omitempty"`
+	// Workspace is absent for a bot with no workspace.
+	Workspace *WorkspaceStatus `json:"workspace,omitempty"`
 }
 
 // BotRef names the Bot the process runs, at the generation it read.

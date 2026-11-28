@@ -49,7 +49,9 @@ func (r *reports) read() []error {
 // running is a TokenSource of c, run until the test ends.
 func running(t *testing.T, c *connector) (*bot.TokenSource, *reports) {
 	t.Helper()
-	source, err := bot.NewTokenSource(c.server.URL, c.trust, c.credential, time.Now)
+	key, err := bot.NewKey()
+	require.NoError(t, err)
+	source, err := bot.NewTokenSource(c.server.URL, c.trust, c.credential, key, time.Now)
 	require.NoError(t, err)
 	r := &reports{}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -191,11 +193,13 @@ func anotherCertificate(t *testing.T) []byte {
 }
 
 func TestNewTokenSource_RefusesAConnectorWithoutItsFiles(t *testing.T) {
-	_, err := bot.NewTokenSource("https://connector.test", "", "/token", time.Now)
+	key, err := bot.NewKey()
+	require.NoError(t, err)
+	_, err = bot.NewTokenSource("https://connector.test", "", "/token", key, time.Now)
 	assert.Error(t, err)
-	_, err = bot.NewTokenSource("https://connector.test", "/ca.crt", "", time.Now)
+	_, err = bot.NewTokenSource("https://connector.test", "/ca.crt", "", key, time.Now)
 	assert.Error(t, err)
 	// Control: both files named.
-	_, err = bot.NewTokenSource("https://connector.test", "/ca.crt", "/token", time.Now)
+	_, err = bot.NewTokenSource("https://connector.test", "/ca.crt", "/token", key, time.Now)
 	assert.NoError(t, err)
 }

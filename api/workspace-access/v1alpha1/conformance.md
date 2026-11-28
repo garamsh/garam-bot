@@ -1,6 +1,6 @@
 # Workspace access v1alpha1 conformance
 
-The tests an implementation of `README.md`'s server must pass, each named and mapped to the requirements it holds. KEY-1, AUTH-2, WS-3's wait, TOK-2, DIAL-2, REN-1 and VER-2 are the client's, and no suite holds them yet: `internal/bot`'s tests are to hold them for `garam-bot run`. CRED-2's binding to a place's own workload, PIN-1's binding cache and BOT-1's resolution from what a place runs need a place that runs workloads; the fixture models them, and the connector's tests hold them for the cluster.
+The tests an implementation of `README.md`'s server must pass, each named and mapped to the requirements it holds. KEY-1, AUTH-2, WS-3's wait, TOK-2, DIAL-2, REN-1 and VER-2 are the client's, and no suite holds them: `internal/bot`'s tests hold them for `garam-bot run`, against this reference server where it reaches them. CRED-2's binding to a place's own workload, PIN-1's binding cache and BOT-1's resolution from what a place runs need a place that runs workloads; the fixture models them, and the connector's tests hold them for the cluster.
 
 ## The suite
 
@@ -84,5 +84,5 @@ Each case is a subtest of `TestServer`.
 | SEC-1 | `SEC-1/a refusal carries no token and no credential`. What a server logs is the connector's tests' |
 | REACH-1 | Read by review: no call reaches past `TokenDir` and the adapter's port |
 | Interface 3's errors | The table of README §Answers and refusals mapping a provider's errors: the connector's tests', since the reference links no provider |
-| KEY-1, AUTH-2, TOK-2, DIAL-2, REN-1, VER-2 | the client's, for `internal/bot`'s tests |
+| KEY-1, AUTH-2, TOK-2, DIAL-2, REN-1, VER-2 | the client's, `internal/bot`'s tests: AUTH-2 in `TestWorkspace_WaitsAfterEach401…`, WS-3's wait in `TestWorkspace_ReadsAPendingWorkspaceNoSoonerThanItsRetryAfter` and `TestPendingWait_…`, TOK-2 in `TestWorkspace_AcquiresTheWorkspace…` and `TestRenewal_…`, WS-1's rewrite in `TestWorkspace_WritesItsTokensAgainAfterAnAcquireThatStartedTheWorkspace`, REN-1 in `TestBackoff_…`, VER-2 in `TestKnownPhase_…`. KEY-1 is read by review, one key made per process for both interfaces. DIAL-2 is interface 2's caller's, not built yet |
 | VER-1 | `SpecRelease` in this package, read by review: the release is a constant, not behaviour |
