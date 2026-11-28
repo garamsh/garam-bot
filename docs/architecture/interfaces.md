@@ -51,6 +51,7 @@ Governs garam-bot's public interfaces: where they live, how each is versioned an
   - obtains the session's model and tool tokens.
   - **Who holds what.** The connector links interface 3's providers and holds their rights. The process holds none, and authenticates with a place credential of its own audience and a DPoP proof by its key, pinned per workload instance.
   - **Its reach is the cut.** No release of `v1alpha1` may add a call that runs a command in a workspace, reads from it, or reaches past the token directory and the adapter's port (REACH-1).
+  - **Links (release 0.2.0).** A write follows no link at any component of its path, so a link planted in the workspace cannot carry a token out of the token directory (FILE-1). The connector writes through interface 3's `WriteFile`, which is to promise the same: the Pod provider's file helper is to resolve with no link followed, with the connector's build.
   - **Its implementations** are the reference server in `reference/`, which stands in for a place's connector, workloads and workspaces at once, and the cluster's connector, not built yet (garam-bot#1281). At a cluster, garam-bot-operator ADR 0099 decides the connector's side.
   - **Its server suite** sits behind the build tag `conformance`. `make conformance-workspace-access`, a stage of `make ci`, runs it against the reference server. Running it against the connector arrives with the end-to-end suite on kind (garam-bot#1252).
 

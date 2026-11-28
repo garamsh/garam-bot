@@ -35,7 +35,10 @@ func (b *bot) key() string { return b.namespace + "/" + b.name }
 type instance struct {
 	id, container string
 	// bot is "<namespace>/<name>", or empty for a workload that runs no bot.
-	bot     string
+	bot string
+	// botUID is the identity of the bot the instance was started for: a bot made again under its name
+	// is another bot, and the instance is not its (BOT-1).
+	botUID  string
 	running bool
 }
 
@@ -56,8 +59,9 @@ type space struct {
 	files    map[string]entry
 }
 
-// dial is one open dial.
+// dial is one open dial, or one reserved while its connection is taken over (DIAL-3).
 type dial struct {
+	// conn is nil while the dial is reserved.
 	conn                    net.Conn
 	instance, botUID, space string
 	// last is when the dial last passed a byte, by the place's clock.
@@ -77,7 +81,7 @@ type place struct {
 	dials      map[*dial]bool
 	maxDials   int
 	issuer     bool
-	// offset moves the place's clock for the dials' idle time alone (DIAL-3).
+	// offset moves the place's clock, which times idle dials (DIAL-3) and proofs (PROOF-1).
 	offset time.Duration
 }
 
@@ -93,23 +97,26 @@ func spaceKey(uid, attachment string) string { return uid + "/" + attachment }
 
 func newID() string { return rand.Text()[:12] }
 
-// clock is the place's clock for idle dials. The caller holds mu.
+// clock is the place's clock for idle dials and proofs. The caller holds mu.
 func (p *place) clock() time.Time { return time.Now().Add(p.offset) }
 
 // closeDials closes every dial match takes. The caller holds mu.
 func (p *place) closeDials(match func(*dial) bool) {
 	for d := range p.dials {
 		if match(d) {
-			_ = d.conn.Close()
+			if d.conn != nil {
+				_ = d.conn.Close()
+			}
 			delete(p.dials, d)
 		}
 	}
 }
 
-// removeBot forgets the bot, deletes its workspaces and closes its dials (DIAL-4). The caller holds
-// mu.
+// removeBot forgets the bot and its limit, deletes its workspaces and closes its dials (DIAL-4). The
+// caller holds mu.
 func (p *place) removeBot(b *bot) {
 	delete(p.bots, b.key())
+	delete(p.botLimits, b.uid)
 	for attachment := range b.attachments {
 		delete(p.spaces, spaceKey(b.uid, attachment))
 	}

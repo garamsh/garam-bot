@@ -1,6 +1,8 @@
 package reference
 
 import (
+	"bufio"
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/sha256"
@@ -8,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -64,7 +68,51 @@ func (s *server) handler() http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		refuse(w, http.StatusNotFound, v1alpha1.CodeNotFound, "no such call")
 	})
-	return mux
+	return recovering(mux)
+}
+
+// recovering answers a handler's panic with 503 temporarily_unavailable where nothing is answered yet
+// (T-3). net/http would close the connection instead.
+func recovering(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rw := &answering{ResponseWriter: w}
+		defer func() {
+			recovered := recover()
+			if recovered == nil {
+				return
+			}
+			if recovered == http.ErrAbortHandler || rw.answered || rw.hijacked { //nolint:errorlint // ErrAbortHandler is compared, as net/http does
+				panic(recovered)
+			}
+			refuse(rw, http.StatusServiceUnavailable, v1alpha1.CodeTemporarilyUnavailable, "the server failed")
+		}()
+		next.ServeHTTP(rw, r)
+	})
+}
+
+// answering records whether a response has begun, or its connection was taken over.
+type answering struct {
+	http.ResponseWriter
+	answered, hijacked bool
+}
+
+func (a *answering) WriteHeader(status int) {
+	a.answered = true
+	a.ResponseWriter.WriteHeader(status)
+}
+
+func (a *answering) Write(b []byte) (int, error) {
+	a.answered = true
+	return a.ResponseWriter.Write(b)
+}
+
+func (a *answering) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := a.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("the connection cannot be taken over")
+	}
+	a.hijacked = true
+	return hijacker.Hijack()
 }
 
 // caller is who a request was authenticated as.
@@ -103,6 +151,10 @@ func (s *server) authenticated(next func(http.ResponseWriter, *http.Request, cal
 			return
 		}
 		b := p.bots[inst.bot]
+		if b != nil && b.uid != inst.botUID {
+			// The instance is of the bot's earlier incarnation, which is gone.
+			b = nil
+		}
 		instanceKey := inst.key()
 		p.mu.Unlock()
 		if b == nil {
@@ -144,7 +196,8 @@ func (s *server) verify(credential string) (string, error) {
 	if err := token.Claims(s.keys, &claims); err != nil {
 		return "", err
 	}
-	if err := claims.Validate(jwt.Expected{Issuer: issuer, AnyAudience: jwt.Audience{Audience}, Time: time.Now()}); err != nil {
+	// No leeway: CRED-2 takes no credential past its exp.
+	if err := claims.ValidateWithLeeway(jwt.Expected{Issuer: issuer, AnyAudience: jwt.Audience{Audience}, Time: time.Now()}, 0); err != nil {
 		return "", err
 	}
 	switch {
@@ -193,22 +246,25 @@ func (s *server) proofKey(r *http.Request, credential string) (string, error) {
 	}
 	digest := sha256.Sum256([]byte(credential))
 	iat := time.Unix(claims.IAT, 0)
+	p := s.place
+	p.mu.Lock()
+	now := p.clock()
+	p.mu.Unlock()
 	switch {
 	case claims.HTM != r.Method:
 		return "", errors.New("the proof names another method")
 	case claims.ATH != base64.RawURLEncoding.EncodeToString(digest[:]):
 		return "", errors.New("the proof names another credential")
-	case claims.JTI == "" || time.Since(iat).Abs() > v1alpha1.ProofWindow:
+	case claims.JTI == "" || now.Sub(iat).Abs() > v1alpha1.ProofWindow:
 		return "", errors.New("the proof has no jti, or is outside its window")
 	}
 	sum, err := header.JSONWebKey.Thumbprint(crypto.SHA256)
 	if err != nil {
 		return "", err
 	}
-	p := s.place
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	now := time.Now()
+	now = p.clock()
 	for jti, seen := range p.proofs {
 		if now.Sub(seen) > v1alpha1.ProofMemory {
 			delete(p.proofs, jti)
@@ -233,8 +289,42 @@ func (s *server) takeBot(w http.ResponseWriter, b *bot) bool {
 	return allowed
 }
 
+// noBody refuses a request whose body is not empty or {} with 400 invalid, so a member the server does
+// not know is never taken in silence (T-2).
+func noBody(w http.ResponseWriter, r *http.Request) bool {
+	read, err := io.ReadAll(io.LimitReader(r.Body, 4<<10))
+	if err == nil && len(bytes.TrimSpace(read)) > 0 {
+		err = decodeWhole(bytes.NewReader(read), &struct{}{})
+	}
+	if err != nil {
+		refuse(w, http.StatusBadRequest, v1alpha1.CodeInvalid, "the call takes no body")
+		return false
+	}
+	return true
+}
+
+// decodeWhole decodes one JSON value into into, refusing a member it does not name and anything after
+// the value (T-2).
+func decodeWhole(r io.Reader, into any) error {
+	decoder := json.NewDecoder(r)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(into); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return err
+		}
+		return errors.New("data after the body")
+	}
+	return nil
+}
+
 // acquire creates, starts or recovers the workspace (WS-1).
-func (s *server) acquire(w http.ResponseWriter, _ *http.Request, c caller) {
+func (s *server) acquire(w http.ResponseWriter, r *http.Request, c caller) {
+	if !noBody(w, r) {
+		return
+	}
 	if reason := c.bot.attachments[c.attachment]; reason != "" {
 		refuse(w, http.StatusUnprocessableEntity, v1alpha1.CodeUnsupported, reason)
 		return
@@ -298,11 +388,15 @@ func (s *server) writeWorkspace(w http.ResponseWriter, answer v1alpha1.Workspace
 
 // files writes the body's files, in order, under the token directory (FILE-1).
 func (s *server) files(w http.ResponseWriter, r *http.Request, c caller) {
-	body := http.MaxBytesReader(w, r.Body, 4*v1alpha1.MaxContentBytes)
-	decoder := json.NewDecoder(body)
-	decoder.DisallowUnknownFields()
+	// The bound leaves room for base64 and the members around 64 KiB of content.
 	var files v1alpha1.Files
-	if err := decoder.Decode(&files); err != nil {
+	err := decodeWhole(http.MaxBytesReader(w, r.Body, 4*v1alpha1.MaxContentBytes), &files)
+	var tooLarge *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooLarge):
+		refuse(w, http.StatusRequestEntityTooLarge, v1alpha1.CodeInvalid, "the content is above 64 KiB")
+		return
+	case err != nil:
 		refuse(w, http.StatusBadRequest, v1alpha1.CodeInvalid, "the body is not Files")
 		return
 	}
@@ -338,14 +432,34 @@ func (s *server) files(w http.ResponseWriter, r *http.Request, c caller) {
 		return
 	}
 	for _, f := range files.Files {
+		if through := sp.linkAbove(f.Path); through != "" {
+			// The files before it stay written.
+			writeJSON(w, http.StatusBadRequest, v1alpha1.ErrorBody{
+				Error: v1alpha1.CodeInvalid, Description: "the path passes through a link at " + through, Path: f.Path,
+			})
+			return
+		}
 		// A link at the path is replaced, never followed.
 		sp.files[f.Path] = entry{content: append([]byte(nil), f.Content...)}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// linkAbove answers the first directory of path that is a link, or empty where none is (FILE-1).
+func (sp *space) linkAbove(path string) string {
+	for i := 1; i < len(path); i++ {
+		if path[i] == '/' && sp.files[path[:i]].link != "" {
+			return path[:i]
+		}
+	}
+	return ""
+}
+
 // tokens answers the session's tokens (TOK-1).
-func (s *server) tokens(w http.ResponseWriter, _ *http.Request, c caller) {
+func (s *server) tokens(w http.ResponseWriter, r *http.Request, c caller) {
+	if !noBody(w, r) {
+		return
+	}
 	p := s.place
 	p.mu.Lock()
 	issuer := p.issuer

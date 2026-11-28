@@ -5,7 +5,7 @@
 package v1alpha1
 
 // SpecRelease is the release of v1alpha1's specification this package states (VER-1).
-const SpecRelease = "0.1.0"
+const SpecRelease = "0.2.0"
 
 // Version is the version of the protocol these names speak.
 const Version = "workspace-access/v1alpha1"

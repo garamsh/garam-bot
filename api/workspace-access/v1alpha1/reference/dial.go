@@ -12,11 +12,16 @@ import (
 )
 
 // dial opens one connection to the workspace's interface 2 port, which in the reference echoes what
-// it is sent (DIAL-1, DIAL-3).
+// it is sent (DIAL-1, DIAL-3). The dial is reserved under the lock its bounds are checked under, so
+// concurrent dials cannot pass them, and an end, a removal or a stop that lands before the connection
+// is taken over closes it (DIAL-4).
 func (s *server) dial(w http.ResponseWriter, r *http.Request, c caller) {
 	if !strings.EqualFold(r.Header.Get("Upgrade"), v1alpha1.DialProtocol) ||
 		!strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade") {
 		refuse(w, http.StatusBadRequest, v1alpha1.CodeInvalid, "a dial upgrades to "+v1alpha1.DialProtocol)
+		return
+	}
+	if !noBody(w, r) {
 		return
 	}
 	hijacker, ok := w.(http.Hijacker)
@@ -48,19 +53,28 @@ func (s *server) dial(w http.ResponseWriter, r *http.Request, c caller) {
 		refuse(w, http.StatusServiceUnavailable, v1alpha1.CodeTemporarilyUnavailable, "the server's dials")
 		return
 	}
+	d := &dial{instance: c.instance, botUID: c.bot.uid, space: key, last: p.clock()}
+	p.dials[d] = true
 	p.mu.Unlock()
 	if !s.takeBot(w, c.bot) {
+		s.forget(d)
 		return
 	}
 	conn, buffered, err := hijacker.Hijack()
 	if err != nil {
+		s.forget(d)
 		return
 	}
-	d := &dial{conn: conn, instance: c.instance, botUID: c.bot.uid, space: key}
 	p.mu.Lock()
-	d.last = p.clock()
-	p.dials[d] = true
+	_, open := p.dials[d]
+	if open {
+		d.conn, d.last = conn, p.clock()
+	}
 	p.mu.Unlock()
+	if !open {
+		_ = conn.Close()
+		return
+	}
 	_, _ = buffered.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: " +
 		v1alpha1.DialProtocol + "\r\n\r\n")
 	if buffered.Flush() != nil {
@@ -93,8 +107,11 @@ func (s *server) echo(d *dial, in *bufio.Reader) {
 func (s *server) forget(d *dial) {
 	s.place.mu.Lock()
 	delete(s.place.dials, d)
+	conn := d.conn
 	s.place.mu.Unlock()
-	_ = d.conn.Close()
+	if conn != nil {
+		_ = conn.Close()
+	}
 }
 
 // closeIdle closes, until ctx ends, every dial that passed no byte for DialIdle by the place's clock

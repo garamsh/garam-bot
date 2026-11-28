@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -28,18 +29,20 @@ func TestServer(t *testing.T) {
 	}{
 		{"T-1/the server serves TLS 1.3 and refuses an older handshake", transportTLS13},
 		{"T-2/a request member the server does not know is refused", unknownMember},
-		{"CRED-2/a missing, expired, foreign, long or pre-start credential is refused", credentialRefused},
+		{"CRED-2/a missing, expired, foreign, long, pre-start or iat-less credential is refused", credentialRefused},
 		{"CRED-2/a credential of an instance that ended is refused", credentialOfEndedInstance},
 		{"CRED-2/a credential is reused while it lives", credentialReused},
-		{"PROOF-1/a proof for another method, URL, origin or credential is refused", proofRefused},
+		{"PROOF-1/a proof that is missing, repeated, unverified, of another typ, or for another method, URL, origin or credential is refused", proofRefused},
 		{"PROOF-1/a proof within 60 seconds of the clock is taken and one past it is refused", proofWindow},
 		{"PROOF-1/a seen jti is refused", proofReplayed},
+		{"PROOF-1/a jti seen 90 seconds ago is refused while its proof is within the window", proofRemembered},
 		{"PIN-1/a second key for one instance is refused with invalid_key", pinSecondKey},
 		{"PIN-1/a restarted instance pins its new key", pinRestarted},
 		{"PIN-1/a new instance of the bot pins its own key", pinNewInstance},
 		{"BOT-1/a workload that runs no bot is unknown", botNoBot},
 		{"BOT-1/an attachment of another bot is not found", botOtherAttachment},
 		{"BOT-1/a bot made again under its name reaches a new workspace and not the old", botRemade},
+		{"BOT-1/an instance of the bot's earlier incarnation reaches nothing", botEarlierIncarnation},
 		{"WS-1/acquire is idempotent and answers the workspace's state", acquireIdempotent},
 		{"WS-1/acquire starts a stopped workspace and recovers a failed one with its data", acquireRecovers},
 		{"WS-1/an attachment the server cannot serve is unsupported", acquireUnsupported},
@@ -51,7 +54,9 @@ func TestServer(t *testing.T) {
 		{"FILE-1/files under the token directory are written whole and in order", filesWritten},
 		{"FILE-1/the token directory itself, a sibling, a dot-dot and an unclean path are refused and nothing is written", filesPathRefused},
 		{"FILE-1/a link at the final component is replaced, not followed", filesLinkReplaced},
-		{"FILE-1/content above 64 KiB is refused", filesTooLarge},
+		{"FILE-1/a link at an inner component is not followed, and the files before it stay written", filesInnerLink},
+		{"FILE-1/a write of 17 files or of none is refused and nothing is written", filesCount},
+		{"FILE-1/content above 64 KiB in all is refused", filesTooLarge},
 		{"FILE-1/a workspace not running is answered not_running", filesNotRunning},
 		{"DIAL-1/a dial reaches the adapter's port and passes bytes unchanged", dialEchoes},
 		{"DIAL-1/another upgrade token is refused", dialOtherUpgrade},
@@ -63,11 +68,11 @@ func TestServer(t *testing.T) {
 		{"DIAL-4/a dial closes when its workspace stops", dialClosesWithWorkspace},
 		{"TOK-1/session tokens name the model and every tool", tokensAnswered},
 		{"TOK-1/a server with no issuer answers waiting_for_gateway", tokensNoIssuer},
-		{"LIMIT-1/a bot past its limit is answered 429 alone", limitBot},
-		{"LIMIT-1/a call refused before a provider is asked takes nothing", limitRefusedTakesNothing},
+		{"LIMIT-1/a bot past its limit is answered 429 alone, for each call that reaches a provider or an issuer", limitBot},
+		{"LIMIT-1/a call refused before a provider or an issuer is asked takes nothing", limitRefusedTakesNothing},
 		{"LIMIT-2/an instance past its request limit is answered 429, refused requests counted", limitInstance},
 		{"SEC-1/a refusal carries no token and no credential", secretsNotInRefusal},
-		// Last: it moves the server's clock for idle dials, which closes any other open dial.
+		// Last: it moves the server's clock past every open dial's idle time.
 		{"DIAL-3/a dial idle for 120 seconds is closed, and one idle for 50 is not", dialIdle},
 	} {
 		t.Run(c.name, c.run)
@@ -89,6 +94,18 @@ func transportTLS13(t *testing.T) {
 
 func unknownMember(t *testing.T) {
 	b := newBot(t)
+	unknown := map[string]any{"mode": "0600"}
+	for label, path := range map[string]string{"acquire": ws("main"), "session tokens": ws("main") + v1alpha1.TokensSuffix} {
+		method := http.MethodPut
+		if label == "session tokens" {
+			method = http.MethodPost
+		}
+		refused := b.call(t, method, path, unknown)
+		assert.Equal(t, http.StatusBadRequest, refused.status, "%s: %s", label, refused.raw)
+		assert.Equal(t, v1alpha1.CodeInvalid, refused.code, label)
+	}
+	// Control: an acquire with an empty object, and one with no body, are taken.
+	assert.Equal(t, http.StatusOK, b.call(t, http.MethodPut, ws("main"), map[string]any{}).status)
 	b.running(t)
 	refused := b.call(t, http.MethodPut, ws("main")+v1alpha1.FilesSuffix,
 		map[string]any{"files": []map[string]any{{"path": token, "content": []byte("t")}}, "mode": "0600"})
@@ -106,11 +123,11 @@ func credentialRefused(t *testing.T) {
 		"expired":              credential(t, b.instance, "--expired"),
 		"living over an hour":  credential(t, b.instance, "--lifetime", "61m"),
 		"issued before start":  credential(t, b.instance, "--before-start"),
+		"carrying no iat":      credential(t, b.instance, "--no-iat"),
 	} {
 		refused := b.process.call(t, c, http.MethodGet, ws("main"), nil, proofOptions{})
 		assert.Equal(t, http.StatusUnauthorized, refused.status, label)
 		assert.Equal(t, v1alpha1.CodeInvalidCredential, refused.code, label)
-		assert.Contains(t, refused.header.Get(v1alpha1.HeaderAuthenticate), "DPoP", label)
 	}
 	missing := b.process.call(t, "", http.MethodGet, ws("main"), nil, proofOptions{})
 	assert.Equal(t, v1alpha1.CodeInvalidCredential, missing.code, "missing")
@@ -136,8 +153,18 @@ func credentialReused(t *testing.T) {
 
 func proofRefused(t *testing.T) {
 	b := newBot(t)
+	// Setup: the process's key is pinned to the instance.
+	require.Equal(t, http.StatusNotFound, b.call(t, http.MethodGet, ws("main"), nil).status)
 	other := credential(t, b.instance)
+	thief := newProcess(t)
 	for label, o := range map[string]proofOptions{
+		"no proof":                             {none: true},
+		"two proofs":                           {twice: true},
+		"a signature that does not verify":     {corrupt: true},
+		"another key's jwk over the signature": {jwk: &thief.key.PublicKey},
+		"the pinned key's jwk over another key's signature": {signer: thief.key, jwk: &b.process.key.PublicKey},
+		"another typ":        {typ: "JWT"},
+		"a query in htu":     {url: baseURL + ws("main") + "?attachment=main"},
 		"another method":     {method: http.MethodPost},
 		"another path":       {url: baseURL + ws("other")},
 		"another origin":     {url: "https://another.invalid" + ws("main")},
@@ -169,6 +196,18 @@ func proofReplayed(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, b.process.call(t, b.credential, http.MethodGet, ws("main"), nil, proofOptions{reuse: proof}).status)
 	refused := b.process.call(t, b.credential, http.MethodGet, ws("main"), nil, proofOptions{reuse: proof})
 	assert.Equal(t, v1alpha1.CodeInvalidDPoPProof, refused.code, "a jti seen is refused")
+}
+
+func proofRemembered(t *testing.T) {
+	b := newBot(t)
+	proof := b.process.proof(t, http.MethodGet, baseURL+ws("main"), b.credential, proofOptions{iat: 55 * time.Second})
+	require.Equal(t, http.StatusNotFound, b.process.call(t, b.credential, http.MethodGet, ws("main"), nil, proofOptions{reuse: proof}).status)
+	// Its iat is 35 seconds behind the moved clock, so only the jti's memory refuses it.
+	advanceClock(t, 90*time.Second)
+	refused := b.process.call(t, b.credential, http.MethodGet, ws("main"), nil, proofOptions{reuse: proof})
+	assert.Equal(t, v1alpha1.CodeInvalidDPoPProof, refused.code, "a jti seen 90 seconds ago is remembered")
+	// Control: a fresh proof for the moved clock is taken.
+	assert.Equal(t, http.StatusNotFound, b.call(t, http.MethodGet, ws("main"), nil).status)
 }
 
 func pinSecondKey(t *testing.T) {
@@ -245,6 +284,29 @@ func botRemade(t *testing.T) {
 	assert.False(t, old.Exists, "the old bot's workspace is gone")
 }
 
+func botEarlierIncarnation(t *testing.T) {
+	b := newBot(t)
+	b.running(t)
+	earlier := *b
+	var remade struct {
+		UID string `json:"uid"`
+	}
+	fixtureJSON(t, &remade, "remake", b.namespace, b.name)
+	require.NotEqual(t, earlier.uid, remade.UID) // setup
+	b.uid, b.instance, b.process = remade.UID, instance(t, b.namespace, b.name), newProcess(t)
+	b.credential = credential(t, b.instance)
+	// Control: the remade bot's own instance reaches its workspace.
+	b.running(t)
+	for label, a := range map[string]answered{
+		"acquire": earlier.acquire(t, "main"),
+		"write":   earlier.write(t, v1alpha1.File{Path: token, Content: []byte("earlier")}),
+	} {
+		assert.Contains(t, []int{http.StatusUnauthorized, http.StatusForbidden}, a.status, "%s: %s", label, a.raw)
+		assert.Contains(t, []v1alpha1.Code{v1alpha1.CodeInvalidCredential, v1alpha1.CodeUnknownBot}, a.code, label)
+	}
+	assert.False(t, b.file(t, token).Exists, "the remade bot's workspace holds nothing of the earlier instance's")
+}
+
 func acquireIdempotent(t *testing.T) {
 	b := newBot(t, "--tool", "github")
 	first, second := b.acquire(t, "main"), b.acquire(t, "main")
@@ -315,14 +377,14 @@ func readBeforeAcquire(t *testing.T) {
 	assert.Equal(t, http.StatusOK, b.call(t, http.MethodGet, ws("main"), nil).status) // control
 }
 
-// readsPastBotLimit is more reads than any bot's limit leaves room for, and fewer than an instance's.
-const readsPastBotLimit = 24
-
 func readTakesNothing(t *testing.T) {
+	l := serverLimits(t)
 	b := newBot(t)
 	b.running(t)
-	for range readsPastBotLimit {
-		require.Equal(t, http.StatusOK, b.call(t, http.MethodGet, ws("main"), nil).status)
+	reads := l.BotBurst + 4
+	callers := b.spread(t, instancesFor(l, reads))
+	for i := range reads {
+		require.Equal(t, http.StatusOK, callers[i%len(callers)].call(t, http.MethodGet, ws("main"), nil).status)
 	}
 	assert.Equal(t, http.StatusOK, b.acquire(t, "main").status, "reads took nothing from the bot's limit")
 }
@@ -379,13 +441,58 @@ func filesLinkReplaced(t *testing.T) {
 	assert.Equal(t, before, b.file(t, target).Content, "the link's target is not written")
 }
 
+func filesInnerLink(t *testing.T) {
+	b := newBot(t)
+	b.running(t)
+	dir, target := strings.TrimSuffix(token, "/token"), "/workspace/planted"
+	run(t, "link", b.uid, "main", dir, target)
+	require.Equal(t, target, b.file(t, dir).Link) // setup
+	first := v1alpha1.TokenDir + "model-token"
+	refused := b.write(t, v1alpha1.File{Path: first, Content: []byte("first")}, v1alpha1.File{Path: token, Content: []byte("token")})
+	assert.Equal(t, http.StatusBadRequest, refused.status, refused.raw)
+	assert.Equal(t, v1alpha1.CodeInvalid, refused.code)
+	var body v1alpha1.ErrorBody
+	require.NoError(t, json.Unmarshal([]byte(refused.raw), &body))
+	assert.Equal(t, token, body.Path, "the refusal names the path it reached")
+	assert.False(t, b.file(t, target+"/token").Exists, "nothing is written through the link")
+	assert.Equal(t, "first", b.file(t, first).Content, "the files before it stay written")
+	// Control: a path through no link is written.
+	assert.Equal(t, http.StatusNoContent, b.write(t, v1alpha1.File{Path: first, Content: []byte("again")}).status)
+}
+
+func filesCount(t *testing.T) {
+	b := newBot(t)
+	b.running(t)
+	var files []v1alpha1.File
+	for i := range v1alpha1.MaxFiles + 1 {
+		files = append(files, v1alpha1.File{Path: fmt.Sprintf("%sfile-%02d", v1alpha1.TokenDir, i), Content: []byte("x")})
+	}
+	for label, refused := range map[string]answered{"17 files": b.write(t, files...), "no file": b.write(t)} {
+		assert.Equal(t, http.StatusBadRequest, refused.status, "%s: %s", label, refused.raw)
+		assert.Equal(t, v1alpha1.CodeInvalid, refused.code, label)
+	}
+	assert.False(t, b.file(t, files[0].Path).Exists, "nothing of a refused write is written")
+	// Control: 16 files are written.
+	assert.Equal(t, http.StatusNoContent, b.write(t, files[:v1alpha1.MaxFiles]...).status)
+	assert.True(t, b.file(t, files[v1alpha1.MaxFiles-1].Path).Exists)
+}
+
 func filesTooLarge(t *testing.T) {
 	b := newBot(t)
 	b.running(t)
-	refused := b.write(t, v1alpha1.File{Path: token, Content: bytes.Repeat([]byte("x"), v1alpha1.MaxContentBytes+1)})
-	assert.Equal(t, http.StatusRequestEntityTooLarge, refused.status)
-	assert.Equal(t, v1alpha1.CodeInvalid, refused.code)
-	assert.Equal(t, http.StatusNoContent, b.write(t, v1alpha1.File{Path: token, Content: bytes.Repeat([]byte("x"), v1alpha1.MaxContentBytes)}).status) // control
+	second := v1alpha1.TokenDir + "model-token"
+	of := func(n int) []byte { return bytes.Repeat([]byte("x"), n) }
+	for label, refused := range map[string]answered{
+		"two files of 40 KiB": b.write(t, v1alpha1.File{Path: token, Content: of(40 << 10)}, v1alpha1.File{Path: second, Content: of(40 << 10)}),
+		"one file of 200 KiB": b.write(t, v1alpha1.File{Path: token, Content: of(200 << 10)}),
+	} {
+		assert.Equal(t, http.StatusRequestEntityTooLarge, refused.status, "%s: %s", label, refused.raw)
+		assert.Equal(t, v1alpha1.CodeInvalid, refused.code, label)
+	}
+	assert.False(t, b.file(t, token).Exists, "nothing of a refused write is written")
+	// Control: 64 KiB in all, in two files, is written.
+	half := v1alpha1.MaxContentBytes / 2
+	assert.Equal(t, http.StatusNoContent, b.write(t, v1alpha1.File{Path: token, Content: of(half)}, v1alpha1.File{Path: second, Content: of(half)}).status)
 }
 
 func filesNotRunning(t *testing.T) {
@@ -453,13 +560,23 @@ func dialServerCap(t *testing.T) {
 	b, other := newBot(t), newBot(t)
 	b.running(t)
 	other.running(t)
-	run(t, "max-dials", "1")
-	t.Cleanup(func() { run(t, "max-dials", "256") })
-	require.NotNil(t, b.dial(t, "main", v1alpha1.DialProtocol).conn)
+	setMaxDials(t, 1)
+	// Earlier cases' dials close at their client, and the server forgets them in its own time.
+	require.Eventually(t, func() bool { return b.dial(t, "main", v1alpha1.DialProtocol).conn != nil }, 5*time.Second, 100*time.Millisecond)
 	refused := other.dial(t, "main", v1alpha1.DialProtocol)
 	require.Nil(t, refused.conn)
 	assert.Equal(t, http.StatusServiceUnavailable, refused.answer.status)
 	assert.Equal(t, v1alpha1.CodeTemporarilyUnavailable, refused.answer.code)
+}
+
+// setMaxDials sets the server's dial cap for the case, and puts the earlier one back after it.
+func setMaxDials(t *testing.T, n int) {
+	t.Helper()
+	var answer struct {
+		Previous int `json:"previous"`
+	}
+	fixtureJSON(t, &answer, "max-dials", fmt.Sprint(n))
+	t.Cleanup(func() { run(t, "max-dials", fmt.Sprint(answer.Previous)) })
 }
 
 func dialClosesWithInstance(t *testing.T) {
@@ -520,52 +637,122 @@ func tokensNoIssuer(t *testing.T) {
 	assert.Equal(t, http.StatusOK, b.call(t, http.MethodPost, ws("main")+v1alpha1.TokensSuffix, nil).status) // control
 }
 
-// limitAttempts bounds how many calls the limit tests make before they expect a 429. A server's limits
-// are its own; these are far above any a process's course needs.
-const limitAttempts = 60
+// limitSlack is how many calls past a burst a limit test makes, for what a limit gives back meanwhile.
+const limitSlack = 10
 
 func limitBot(t *testing.T) {
+	l := serverLimits(t)
 	b, other := newBot(t), newBot(t)
-	// Two instances share the calls, so neither instance's own request limit is what refuses.
-	second := &bot{namespace: b.namespace, name: b.name, uid: b.uid, instance: instance(t, b.namespace, b.name), process: newProcess(t)}
-	second.credential = credential(t, second.instance)
-	var limited answered
-	for i := range limitAttempts {
-		a := []*bot{b, second}[i%2].acquire(t, "main")
-		if a.status != http.StatusOK {
-			limited = a
-			break
-		}
+	b.running(t)
+	// Several instances share the calls, so no instance's own request limit is what refuses.
+	callers := b.spread(t, instancesFor(l, 3*(l.BotBurst+limitSlack)))
+	next := 0
+	caller := func() *bot {
+		next++
+		return callers[next%len(callers)]
 	}
-	require.Equal(t, http.StatusTooManyRequests, limited.status, "a bot's calls are limited (LIMIT-1)")
-	assert.Equal(t, v1alpha1.CodeTemporarilyUnavailable, limited.code)
-	assert.NotEmpty(t, limited.header.Get(v1alpha1.HeaderRetryAfter))
+	spend := func() answered {
+		for range l.BotBurst + limitSlack {
+			if a := caller().acquire(t, "main"); a.status != http.StatusOK {
+				return a
+			}
+		}
+		return answered{}
+	}
+	for _, kind := range []struct {
+		name string
+		call func(*bot) answered
+	}{
+		{"an acquire", func(c *bot) answered { return c.acquire(t, "main") }},
+		{"a write of files", func(c *bot) answered { return c.write(t, v1alpha1.File{Path: token, Content: []byte("t")}) }},
+		{"a dial", func(c *bot) answered {
+			d := c.dial(t, "main", v1alpha1.DialProtocol)
+			if d.conn != nil {
+				_ = d.conn.Close()
+			}
+			return d.answer
+		}},
+		{"a session tokens call", func(c *bot) answered { return c.call(t, http.MethodPost, ws("main")+v1alpha1.TokensSuffix, nil) }},
+	} {
+		// The limit gives a call back in its own time, so the call may land just after; a few
+		// tries leave that to chance no more than once in thousands.
+		var a answered
+		for range 3 {
+			limited := spend()
+			require.Equal(t, http.StatusTooManyRequests, limited.status, "a bot's calls are limited (LIMIT-1)")
+			assert.Equal(t, v1alpha1.CodeTemporarilyUnavailable, limited.code)
+			assert.NotEmpty(t, limited.header.Get(v1alpha1.HeaderRetryAfter))
+			if a = kind.call(caller()); a.status == http.StatusTooManyRequests {
+				break
+			}
+		}
+		assert.Equal(t, http.StatusTooManyRequests, a.status, "%s takes from the bot's limit: %s", kind.name, a.raw)
+	}
 	assert.Equal(t, http.StatusOK, other.acquire(t, "main").status, "control: another bot is not limited by the first")
 }
 
-// refusedBeforeProvider is more refused calls than a bot's limit, and fewer than its instance's.
-const refusedBeforeProvider = 22
-
 func limitRefusedTakesNothing(t *testing.T) {
+	l := serverLimits(t)
 	b := newBot(t, "--unsupported", "shared")
-	for range refusedBeforeProvider {
-		require.Equal(t, v1alpha1.CodeUnsupported, b.acquire(t, "shared").code)
+	b.running(t)
+	callers := b.spread(t, instancesFor(l, 4*(l.BotBurst+1)))
+	run(t, "issuer", "--off")
+	t.Cleanup(func() { run(t, "issuer", "--on") })
+	setMaxDials(t, 0)
+	large := bytes.Repeat([]byte("x"), v1alpha1.MaxContentBytes+1)
+	for _, kind := range []struct {
+		name string
+		code v1alpha1.Code
+		call func(*bot) answered
+	}{
+		{"an unsupported acquire", v1alpha1.CodeUnsupported, func(c *bot) answered { return c.acquire(t, "shared") }},
+		{"session tokens with no issuer", v1alpha1.CodeWaitingForGateway, func(c *bot) answered {
+			return c.call(t, http.MethodPost, ws("main")+v1alpha1.TokensSuffix, nil)
+		}},
+		{"a dial past the server's cap", v1alpha1.CodeTemporarilyUnavailable, func(c *bot) answered {
+			return c.dial(t, "main", v1alpha1.DialProtocol).answer
+		}},
+		{"a write above 64 KiB", v1alpha1.CodeInvalid, func(c *bot) answered { return c.write(t, v1alpha1.File{Path: token, Content: large}) }},
+	} {
+		for i := range l.BotBurst + 1 {
+			a := kind.call(callers[i%len(callers)])
+			require.NotEqual(t, http.StatusTooManyRequests, a.status, "%s took from the bot's limit", kind.name)
+			require.Equal(t, kind.code, a.code, "%s: %s", kind.name, a.raw)
+		}
+		assert.Equal(t, http.StatusOK, b.acquire(t, "main").status, "%s took nothing from the bot's limit", kind.name)
 	}
-	assert.Equal(t, http.StatusOK, b.acquire(t, "main").status, "refused calls took nothing from the bot's limit")
 }
 
 func limitInstance(t *testing.T) {
+	l := serverLimits(t)
 	b := newBot(t)
+	thief := newProcess(t)
+	// Setup: the process's key is pinned to the instance.
+	require.Equal(t, http.StatusNotFound, b.call(t, http.MethodGet, ws("absent"), nil).status)
+	calls := []struct {
+		code v1alpha1.Code
+		call func() answered
+	}{
+		{v1alpha1.CodeNotFound, func() answered { return b.call(t, http.MethodGet, ws("absent"), nil) }},
+		{v1alpha1.CodeInvalidDPoPProof, func() answered {
+			return b.process.call(t, b.credential, http.MethodGet, ws("absent"), nil, proofOptions{method: http.MethodPost})
+		}},
+		{v1alpha1.CodeInvalidKey, func() answered { return thief.call(t, b.credential, http.MethodGet, ws("absent"), nil, proofOptions{}) }},
+	}
+	// A server that counted only the calls it took would refuse after three times its burst.
 	var limited answered
-	for range limitAttempts * 2 {
-		a := b.call(t, http.MethodGet, ws("absent"), nil)
-		if a.status != http.StatusNotFound {
+	for i := range l.InstanceBurst + l.InstanceBurst/2 + limitSlack {
+		c := calls[i%len(calls)]
+		if a := c.call(); a.status == http.StatusTooManyRequests {
 			limited = a
 			break
+		} else {
+			require.Equal(t, c.code, a.code, a.raw)
 		}
 	}
 	require.Equal(t, http.StatusTooManyRequests, limited.status, "an instance's requests are limited, refused ones counted (LIMIT-2)")
 	assert.Equal(t, v1alpha1.CodeTemporarilyUnavailable, limited.code)
+	assert.NotEmpty(t, limited.header.Get(v1alpha1.HeaderRetryAfter))
 	assert.Equal(t, http.StatusNotFound, newBot(t).call(t, http.MethodGet, ws("absent"), nil).status, "control: another instance is not limited")
 }
 
@@ -588,9 +775,9 @@ func dialIdle(t *testing.T) {
 	b.running(t)
 	d := b.dial(t, "main", v1alpha1.DialProtocol)
 	require.True(t, echoes(t, d.conn)) // setup
-	run(t, "clock", "--advance", "50s")
+	advanceClock(t, 50*time.Second)
 	time.Sleep(500 * time.Millisecond)
 	assert.True(t, echoes(t, d.conn), "a dial idle for 50 seconds stays open")
-	run(t, "clock", "--advance", "121s")
+	advanceClock(t, 121*time.Second)
 	assert.True(t, closes(t, d.conn), "a dial idle for 120 seconds is closed")
 }

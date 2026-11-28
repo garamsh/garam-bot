@@ -61,7 +61,7 @@ A record states one current decision and is kept current: update the body when t
 3. **Each call is cut to what the driver needs:**
    - acquire, which creates or starts the workspace and answers its phase with the session's model and tool URLs;
    - read the workspace's state;
-   - write files under `/run/garam-bot/` alone, several in one call, never following a link at a path's final component;
+   - write files under `/run/garam-bot/` alone, several in one call, never following a link at any component of a path;
    - dial interface 2's port 7700 alone;
    - obtain the session's model and tool tokens.
 

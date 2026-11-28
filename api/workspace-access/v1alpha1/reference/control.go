@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	workspace "github.com/garamsh/garam-bot/api/workspace/v1alpha1"
 )
@@ -37,6 +38,7 @@ func (p *place) control() http.Handler {
 var controlled = map[string]bool{
 	"bot": true, "remake": true, "remove": true, "instance": true, "restart": true, "end": true,
 	"workspace": true, "file": true, "link": true, "exists": true, "issuer": true, "max-dials": true, "clock": true,
+	"limits": true,
 }
 
 // BotAnswer is what bot and remake print.
@@ -64,6 +66,23 @@ type ExistsAnswer struct {
 	Exists bool `json:"exists"`
 }
 
+// LimitsAnswer is what limits prints: the bursts of the bot's and the instance's limits, and the
+// seconds each takes to give back one call (LIMIT-1, LIMIT-2).
+type LimitsAnswer struct {
+	BotBurst             int `json:"botBurst"`
+	BotEverySeconds      int `json:"botEverySeconds"`
+	InstanceBurst        int `json:"instanceBurst"`
+	InstanceEverySeconds int `json:"instanceEverySeconds"`
+}
+
+// MaxDialsAnswer is what max-dials prints: the cap it replaced, for a caller to put back.
+type MaxDialsAnswer struct {
+	Previous int `json:"previous"`
+}
+
+// done is what a subcommand prints that answers nothing.
+type done struct{}
+
 // stringList is a flag taken more than once.
 type stringList []string
 
@@ -84,6 +103,8 @@ func (p *place) run(name string, args []string) (any, error) {
 		if !ok {
 			return nil, errors.New("no such bot")
 		}
+		// The earlier bot's instances run on, as a workload outlives its owner for a while, and reach
+		// nothing (BOT-1).
 		p.removeBot(b)
 		made := &bot{namespace: b.namespace, name: b.name, uid: newID(), attachments: b.attachments, tools: b.tools}
 		p.bots[made.key()] = made
@@ -95,7 +116,7 @@ func (p *place) run(name string, args []string) (any, error) {
 		if b, ok := p.bots[args[0]+"/"+args[1]]; ok {
 			p.removeBot(b)
 		}
-		return ExistsAnswer{}, nil
+		return done{}, nil
 	case "instance":
 		return p.addInstance(args)
 	case "restart", "end":
@@ -109,6 +130,7 @@ func (p *place) run(name string, args []string) (any, error) {
 		p.dropInstance(inst)
 		if name == "end" {
 			inst.running = false
+			delete(p.instLimits, inst.id)
 		} else {
 			inst.container = newID()
 		}
@@ -122,14 +144,15 @@ func (p *place) run(name string, args []string) (any, error) {
 			return nil, errors.New("issuer takes --on or --off")
 		}
 		p.issuer = args[0] == "--on"
-		return ExistsAnswer{Exists: p.issuer}, nil
+		return done{}, nil
 	case "max-dials":
 		n, err := strconv.Atoi(single(args))
 		if err != nil || n < 0 {
 			return nil, errors.New("max-dials takes N")
 		}
+		previous := p.maxDials
 		p.maxDials = n
-		return ExistsAnswer{Exists: true}, nil
+		return MaxDialsAnswer{Previous: previous}, nil
 	case "clock":
 		flags := flag.NewFlagSet("clock", flag.ContinueOnError)
 		flags.SetOutput(io.Discard)
@@ -138,7 +161,15 @@ func (p *place) run(name string, args []string) (any, error) {
 			return nil, errors.New("clock takes --advance DURATION")
 		}
 		p.offset += *advance
-		return ExistsAnswer{Exists: true}, nil
+		return done{}, nil
+	case "limits":
+		if len(args) != 0 {
+			return nil, errors.New("limits takes no argument")
+		}
+		return LimitsAnswer{
+			BotBurst: botBurst, BotEverySeconds: int(botEvery / time.Second),
+			InstanceBurst: instanceBurst, InstanceEverySeconds: int(instanceEvery / time.Second),
+		}, nil
 	}
 	return nil, fmt.Errorf("unknown subcommand %q", name)
 }
@@ -185,6 +216,9 @@ func (p *place) addInstance(args []string) (any, error) {
 	case len(args) == 1 && args[0] == "--no-bot":
 	case len(args) == 2:
 		inst.bot = args[0] + "/" + args[1]
+		if b, ok := p.bots[inst.bot]; ok {
+			inst.botUID = b.uid
+		}
 	default:
 		return nil, errors.New("instance takes NAMESPACE NAME, or --no-bot")
 	}
@@ -217,11 +251,12 @@ func (p *place) moveSpace(args []string) (any, error) {
 	default:
 		return nil, errors.New("workspace takes --stopped, --failed, --pending, --deleting or --running")
 	}
-	return ExistsAnswer{Exists: true}, nil
+	return done{}, nil
 }
 
-// reachSpace reads a path of a workspace, plants a link in it, or says whether it exists. The caller
-// holds mu.
+// reachSpace reads a path of a workspace, plants a link in it, or says whether it exists. A link may
+// stand at any component of a path a write names, a directory's among them (FILE-1). The caller holds
+// mu.
 func (p *place) reachSpace(name string, args []string) (any, error) {
 	want := map[string]int{"file": 3, "link": 4, "exists": 2}[name]
 	if len(args) != want {

@@ -47,7 +47,7 @@ const (
 const usage = `usage: workspace-access-reference --dir DIR <subcommand> [arguments]
 
   serve [--listen ADDR]
-  credential INSTANCE [--audience AUDIENCE] [--expired] [--lifetime DURATION] [--before-start]
+  credential INSTANCE [--audience AUDIENCE] [--expired] [--lifetime DURATION] [--before-start] [--no-iat]
   bot NAMESPACE NAME [--attachment A]... [--unsupported A]... [--tool T]...
   remake NAMESPACE NAME
   remove NAMESPACE NAME
@@ -61,6 +61,7 @@ const usage = `usage: workspace-access-reference --dir DIR <subcommand> [argumen
   issuer --on|--off
   max-dials N
   clock --advance DURATION
+  limits
 `
 
 // Main runs one subcommand: serve, or a fixture subcommand printing its answer as JSON. It answers the
@@ -258,9 +259,10 @@ func credential(dir string, args []string) (any, error) {
 	expired := flags.Bool("expired", false, "")
 	lifetime := flags.Duration("lifetime", 10*time.Minute, "")
 	beforeStart := flags.Bool("before-start", false, "")
+	noIAT := flags.Bool("no-iat", false, "")
 	positional, err := parseInterleaved(flags, args)
 	if err != nil || len(positional) != 1 {
-		return nil, usageError("credential takes INSTANCE, --audience, --expired, --lifetime and --before-start")
+		return nil, usageError("credential takes INSTANCE, --audience, --expired, --lifetime, --before-start and --no-iat")
 	}
 	read, err := os.ReadFile(filepath.Join(dir, CredentialKeyFile))
 	if err != nil {
@@ -281,22 +283,30 @@ func credential(dir string, args []string) (any, error) {
 	}
 	now := time.Now()
 	expiry := now.Add(*lifetime)
-	switch {
-	case *expired:
-		now, expiry = now.Add(-20*time.Minute), now.Add(-10*time.Minute)
-	case *beforeStart:
+	if *expired || *beforeStart {
 		started, err := readStarted(dir)
 		if err != nil {
 			return nil, err
 		}
-		// Issued a second before the server started, and alive for ten minutes from now.
-		now, expiry = started.Add(-time.Second), time.Now().Add(10*time.Minute)
+		if *expired {
+			// Issued as the server started, so only its expiry refuses it. Times are whole seconds, so
+			// the expiry a second ago needs the server two seconds old.
+			time.Sleep(time.Until(started.Add(2*time.Second + 100*time.Millisecond)))
+			now, expiry = started, time.Now().Add(-time.Second)
+		} else {
+			// Issued a second before the server started, and alive for ten minutes from now.
+			now, expiry = started.Add(-time.Second), time.Now().Add(10*time.Minute)
+		}
 	}
-	raw, err := jwt.Signed(signer).Claims(jwt.Claims{
+	claims := jwt.Claims{
 		Issuer: issuer, Subject: positional[0], Audience: jwt.Audience{*audience},
 		IssuedAt: jwt.NewNumericDate(now), NotBefore: jwt.NewNumericDate(now), Expiry: jwt.NewNumericDate(expiry),
 		ID: rand.Text(),
-	}).Serialize()
+	}
+	if *noIAT {
+		claims.IssuedAt = nil
+	}
+	raw, err := jwt.Signed(signer).Claims(claims).Serialize()
 	if err != nil {
 		return nil, err
 	}
