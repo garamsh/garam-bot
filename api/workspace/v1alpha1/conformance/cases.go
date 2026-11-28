@@ -295,7 +295,13 @@ func labelsKept(t *testing.T, e *env) {
 	spec := e.spec()
 	labels := map[string]string{"bot.garam.sh/bot-uid": "6d3c0f1e-1b2a-4c5d-8e9f-0a1b2c3d4e5f", "attachment": "main"}
 	spec.Labels = maps.Clone(labels)
-	name := e.running(t, spec)
+	name := e.name(t)
+	created, _, err := e.Provider.Create(t.Context(), name, spec)
+	wantNoErr(t, "Create", err)
+	if !maps.Equal(created.Spec.Labels, labels) {
+		t.Fatalf("Create: labels %v, want %v", created.Spec.Labels, labels)
+	}
+	e.waitPhase(t, name, v1alpha1.PhaseRunning)
 	got, err := e.Provider.Get(t.Context(), name)
 	wantNoErr(t, "Get", err)
 	if !maps.Equal(got.Spec.Labels, labels) {
