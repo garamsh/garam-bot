@@ -135,3 +135,16 @@ Append-only: once merged, the body below is not rewritten. A fact later found wr
 - **The stub issuer behind a flag.** Any installation could then issue tokens no gateway checks.
 - **The manager serving interface 7.** It opens no listener, and ADR 0090 keeps it to the Kubernetes API.
 - **A connector that stays off without garam.** A cluster-owned Bot would then have no workspace, and the standalone mode would run no bot's work.
+
+## Errata
+
+### 2026-11-28 — decision 5's labels do not reach a naru Machine
+
+Decision 5 says the labels "reach the backend through interface 3's optional `Spec.Labels` … and are read back from it". That is not true for the naru Machine provider.
+
+- **Why.** naru's `machines/v1alpha1`, at `garamsh/naru` `lib/machineapi` `fd356f26c62aa97bec8eab3252d46966a24cca87`, carries no caller's label on a Machine. Its `Shape.Labels` are "values a host must carry", a placement constraint and not a mark on the Machine.
+- **How interface 3 answers it.** Its release 0.3.0 adds `Capabilities.Labels` beside `Spec.Labels`. The Pod provider is to report true. The naru Machine provider is to report false and refuse a spec carrying any label with `ErrUnsupported` (garam-bot ADR 0043).
+- **What follows here.**
+  - The connector sends labels only to a provider that keeps them.
+  - Decision 6's sweep never deletes a workspace whose labels it cannot read. So it deletes no naru Machine, and its release prefix still scopes what it lists.
+  - Until naru#453 adds caller-set Machine metadata labels, a deleted Bot's naru Machines are deleted by hand. After it, the naru Machine provider reports `Capabilities.Labels` true and naru workspaces are swept as Pod workspaces are.

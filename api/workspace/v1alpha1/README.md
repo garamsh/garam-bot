@@ -40,7 +40,7 @@ What this interface does not carry:
 ## Workspaces and names
 
 - **NAME-1.** A workspace and a snapshot are named by the caller, with a DNS label of at most 63 characters (`ParseName`). An implementation MUST refuse any other name with `ErrInvalid`. Names are the caller's own: an implementation MUST answer a name another caller holds as `ErrNotFound`.
-- **SPEC-1.** An implementation MUST refuse with `ErrInvalid` a spec that `Spec.Check` refuses: an image that is not `repository@sha256:<digest>`, a resource that is zero, port 0 or a repeated port, an env name that is empty or holds `=`, or an egress rule that is malformed or whose prefix is not in canonical form. `Spec.Check` refuses at least what naru's Machine API refuses of the fields it maps to, so no spec it takes is refused there.
+- **SPEC-1.** An implementation MUST refuse with `ErrInvalid` a spec that `Spec.Check` refuses: an image that is not `repository@sha256:<digest>`, a resource that is zero, port 0 or a repeated port, an env name that is empty or holds `=`, a label that LABEL-1's form refuses, or an egress rule that is malformed or whose prefix is not in canonical form. `Spec.Check` refuses at least what naru's Machine API refuses of the fields it maps to, so no spec it takes is refused there.
 - `Resources.CPU` is whole CPUs. A caller rounds a WorkspaceClass's `cpu` up to whole CPUs before it creates, so every field of a spec reaches the backend as the caller wrote it.
 - A workspace has one data volume of `Resources.DiskBytes`, mounted at `DataPath`, `/workspace`. What survives a stop, a start, a move inside the backend and a restore is what is under it, and nothing else is promised to (DATA-1).
 
@@ -48,6 +48,9 @@ What this interface does not carry:
 
 - **LIFE-1.** `Create` is idempotent by name: a name that holds a spec `SameSpec` takes as equal answers that workspace with `created` false, and a name that holds another spec MUST be refused with `ErrConflict`. A spec is never changed in place: a resize is a delete and a create.
 - **LIFE-2.** A workspace `Create` made reaches `PhaseRunning` unless it fails, and `Get` and `List` answer it. `List` is ordered by name. A read answers the spec as created, except that it MUST answer each `Env` value as `Redacted`, `<set>`: no read returns a value a caller put in.
+- **LABEL-1.** An implementation that reports `Capabilities.Labels` keeps a spec's `Labels` and answers them, as written, in every read: `Get`, `List`, and the answer of `Create`. `SameSpec` compares them, so a `Create` of a name under other labels is `ErrConflict`. One that cannot keep them reports `Capabilities.Labels` false, and MUST refuse a spec carrying any label with `ErrUnsupported`, never run it and drop them.
+  - **The form.** A key is a Kubernetes label key: a name of at most 63 characters, `[A-Za-z0-9]` at both ends and `-`, `_` or `.` between, optionally behind a DNS subdomain prefix of at most 253 characters and a `/`. A value is such a name or empty. `Spec.Check` refuses any other with `ErrInvalid` (SPEC-1).
+  - **What they are for.** A caller marks each workspace with who owns it, so that it can tell its own from another's without a record of its own. Labels hold no secret, and a read never redacts them.
 - **LIFE-3.** `Stop` and `Start` set the desired state and are idempotent, and the workspace reaches `PhaseStopped` and `PhaseRunning`. `Stop` gives the workspace `grace` to stop before it is ended.
 - **LIFE-4.** `Delete` is idempotent. It deletes the workspace and its data volume and keeps its snapshots. Once the backend has let go of the workspace, `Get` MUST answer `ErrNotFound` and the name MUST take a new `Create`. Until then a `Create` of the name MAY answer `ErrDeleting`.
 - **LIFE-5.** A call that names a workspace or a snapshot the caller does not have MUST answer `ErrNotFound`.
@@ -113,6 +116,7 @@ The naru Machine provider is a client of `machines/v1alpha1` (`garamsh/naru` `li
 | `GetSnapshot`, `DeleteSnapshot` | `GET`, `DELETE .../snapshots/{name}` |
 | `Capabilities.Snapshot` | true: `capabilities.snapshot` always holds `volumes` |
 | `Capabilities.Stdin` | false |
+| `Capabilities.Labels` | false: a Machine carries no label of its caller's. Its shape's `labels` are values a host must carry, not marks on the Machine. naru#453 asks for caller-set Machine metadata labels, after which the provider maps `Labels` onto them and reports true |
 
 | Machine phase | Workspace phase |
 |---|---|
@@ -152,6 +156,7 @@ Each mapping is its implementation issue's to build, and this section is what th
 | `Dial` | the `portforward` subresource | a port published on loopback | the Machine's address on the host's bridge, under an ingress rule |
 | `Egress` | a NetworkPolicy of `ipBlock` rules | the engine cannot enforce rules: `Capabilities.Egress` false, and no network | `networkPolicy.egress` |
 | `Stdin` | true: the `exec` subresource carries stdin | the engine's exec | false: Exec takes no input |
+| `Labels` | true: labels of the Pod, the claim and the NetworkPolicy, and the spec the claim records | the engine's container and volume labels, decided with its issue | decided with its issue |
 | `Snapshot` | a VolumeSnapshot, where the cluster serves the API | false | Snapshot disk |
 
 ## Versioning and compatibility

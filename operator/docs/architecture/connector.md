@@ -160,10 +160,11 @@ These follow [ADR 0099](adr/0099-serve-every-bots-process-its-workspace-from-the
   - **The naru Machine provider** stays as it runs. A Machine's port is guarded by the adapter's token alone, since naru-proxy serves it to whoever reaches it.
   - **Choosing a provider.** A WorkspaceClass's `spec.provider`, `pod` or `naru`, picks one.
 - **Each workspace is named per Bot and per release, and isolated.**
-  - **Naming.** Its name is `w<release>-<bot>`, hashes of the release and of the Bot's namespace, name, UID and attachment. It carries labels naming the release and the Bot.
+  - **Naming.** Its name is `w<release>-<bot>`, hashes of the release and of the Bot's namespace, name, UID and attachment. It carries labels naming the release and the Bot, where its provider keeps labels: the Pod provider does, and the naru Machine provider does not yet.
   - **Ingress.** Its NetworkPolicy admits no ingress, since `Dial` is `portforward`.
   - **Egress** is per provider: `--pod-workspace-egress` and `--naru-workspace-egress`, as `<cidr>/<protocol>/<port>` rules that must include DNS. The gateway and tool proxy URLs are `--pod-model-gateway-url`, `--pod-tool-proxy-url`, `--naru-model-gateway-url` and `--naru-tool-proxy-url`.
-  - **Deletion.** The sweep takes only this release's workspaces, by prefix and labels, and leaves those of a namespace no longer watched. It deletes one only after a live `GET` of its Bot answers NotFound or another UID, and 10 minutes have passed since it first found it so.
+  - **Deletion.** The sweep takes only this release's workspaces, by prefix and labels, and leaves those of a namespace no longer watched. It deletes one only after a live `GET` of its Bot answers NotFound or another UID, and 10 minutes have passed since it first found it so. A workspace whose labels it cannot read is never deleted.
+  - **naru Machines are not swept yet.** The naru Machine provider keeps no labels until naru#453 adds caller-set Machine metadata labels, so until then a deleted Bot's naru Machines are deleted by hand, by the place's operator (ADR 0099's errata).
 - **Images.** The workspace image is `--agent-image <harness>=<ref>` by digest, and the Pod provider's file helper is `--workspace-helper-image`.
 - **Session tokens.** Before G3 and G6 there is no production issuer, so the call answers 503 `waiting_for_gateway`. The stub issuer is compiled only under the build tag `e2e`, into the end-to-end suite's own connector image (garam-bot#1252).
 - **Limits.**

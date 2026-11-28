@@ -31,6 +31,7 @@ The tests of `README.md`'s requirements: what each one is, and how a new impleme
 | FILE-2 | `FILE-2/a read of a missing file is file not found` |
 | ISO-1 | `ISO-1/one workspace does not see another's files` |
 | DIAL-1 | `DIAL-1/dial reaches a spec port and refuses another`. That the listener authenticates every connection is interface 2's AUTH-1, tested there |
+| LABEL-1 | `LABEL-1/labels are answered by every read as written`, `LABEL-1/labels are refused without the labels capability`. `TestSpecCheck_SPEC1` and `TestSameSpec_LIFE1` hold the form and the comparison |
 | NET-1 | `NET-1/egress rules are refused without the egress capability`, `NET-1/egress rules are taken with the egress capability`. `NET-1/a workspace sends nothing its egress rules do not allow`, pending a conformance image that reports what it can reach |
 | SNAP-1 | `SNAP-1/snapshot is idempotent by name and refuses another workspace's` |
 | SNAP-2 | `SNAP-2/a restore holds the snapshot's data and outlives its source`, `SNAP-2/a restore of another disk size is refused` |
