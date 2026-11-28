@@ -64,7 +64,8 @@ func TestChart_Install(t *testing.T) {
 
 // The chart installed into an envtest API server with no CRDs, whose namespaces enforce PodSecurity
 // restricted: once with --skip-crds, then a second release watching a namespace the first claimed,
-// then a release claiming a namespace of its own.
+// then a release claiming a namespace of its own, then one with a workspace namespace and another
+// naming the same one.
 var _ = Describe("The connector chart installed into an API server", Ordered, func() {
 	var (
 		ctx        = context.Background()
@@ -109,7 +110,10 @@ var _ = Describe("The connector chart installed into an API server", Ordered, fu
 		kubeconfig = filepath.Join(GinkgoT().TempDir(), "kubeconfig")
 		Expect(os.WriteFile(kubeconfig, data, 0o600)).To(Succeed())
 
-		namespaces := []string{releaseNamespace, "second-system", "third-system", "third-team", watched[0], watched[1]}
+		namespaces := []string{
+			releaseNamespace, "second-system", "third-system", "third-team", "fourth-system", "fourth-team",
+			"fifth-system", "fifth-team", watched[0], watched[1],
+		}
 		for _, name := range namespaces {
 			Expect(k8sClient.Create(ctx, &corev1.Namespace{
 				Name:   name,
@@ -137,6 +141,22 @@ var _ = Describe("The connector chart installed into an API server", Ordered, fu
 		out, err := install("third", "third-system", "--set-json", `watchNamespaces=["third-team"]`)
 		Expect(err).NotTo(HaveOccurred(), out)
 		Expect(crdInstalled()).To(BeTrue())
+	})
+
+	It("installs a release's workspace namespace, and refuses a second release naming it", func() {
+		out, err := install("fourth", "fourth-system",
+			append([]string{"--set-json", `watchNamespaces=["fourth-team"]`}, workspaceValues...)...)
+		Expect(err).NotTo(HaveOccurred(), out)
+		var namespace corev1.Namespace
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: workspaceNamespace}, &namespace)).To(Succeed())
+		Expect(namespace.Labels).To(HaveKeyWithValue("bot.garam.sh/workspace-release", "fourth-system.fourth"))
+
+		out, err = install("fifth", "fifth-system",
+			append([]string{"--set-json", `watchNamespaces=["fifth-team"]`}, workspaceValues...)...)
+		Expect(err).To(HaveOccurred())
+		Expect(out).To(ContainSubstring(`Namespace "%s" in namespace "" exists and cannot be imported`, workspaceNamespace))
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: workspaceNamespace}, &namespace)).To(Succeed())
+		Expect(namespace.Labels).To(HaveKeyWithValue("bot.garam.sh/workspace-release", "fourth-system.fourth"))
 	})
 
 	It("runs each program's Pod as a namespace enforcing PodSecurity restricted admits it", func() {

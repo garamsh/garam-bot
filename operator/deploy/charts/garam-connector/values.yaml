@@ -16,6 +16,13 @@ images:
   connector: ""
   # runtime is garam-bot/runtime, which every Bot's Pod runs.
   runtime: ""
+  # workspaceHelper is the Pod provider's file helper, which every Pod workspace runs. Required where
+  # workspaces.namespace is set.
+  workspaceHelper: ""
+  # agents are the workspace images, one per harness: a Bot's spec.agent.harness picks one, and a
+  # harness with none is answered unsupported (ADR 0099 decision 8). For example
+  # {claude-code: <repository>:<tag>@sha256:<digest>}.
+  agents: {}
 
 # apiServer is the address range and port the programs reach the Kubernetes API at, for their
 # NetworkPolicies' egress. Where the API server lies is the distribution's, and no portable selector
@@ -93,6 +100,36 @@ manager:
       memory: 64Mi
     limits:
       memory: 256Mi
+
+# workspaces are the bots' workspaces, which the connector serves through interface 7 (ADR 0099). Off
+# until namespace is set, and only where the connector is enabled.
+workspaces:
+  # namespace holds every workspace. The chart renders it, labelled for this release and enforcing
+  # PodSecurity restricted, and gives the connector the Pod provider's rights there alone. It is never
+  # the release namespace or a watched one. helm uninstall deletes it, and every workspace in it.
+  namespace: ""
+  # maxDials is the most dials open in all (DIAL-3).
+  maxDials: 256
+  # pod is the Pod provider, which runs every workspace as a Pod in namespace.
+  pod:
+    # enforcesNetworkPolicy says the cluster's network plugin enforces NetworkPolicy egress. Where it
+    # is false, a workspace with egress rules is refused, and so every Pod workspace is.
+    enforcesNetworkPolicy: true
+    # modelGatewayURL and toolProxyURL are the model gateway and tool proxy a Pod workspace reaches.
+    # Both are required.
+    modelGatewayURL: ""
+    toolProxyURL: ""
+    # egress are the addresses a Pod workspace reaches: a list of {cidr, protocol, port, endPort},
+    # protocol tcp or udp, endPort optional. They name Pod or host addresses after DNAT, never a
+    # Service's address. The chart refuses a list without a rule to port 53.
+    egress: []
+  # naru is the naru Machine provider's workspaces, where connector.naru is enabled. A Machine runs
+  # outside the cluster, so its URLs and egress are ones it reaches from there. All three are required
+  # there, egress as pod.egress is, and refused where connector.naru is off.
+  naru:
+    modelGatewayURL: ""
+    toolProxyURL: ""
+    egress: []
 
 # proxy is the forward proxy the connector reaches garam through. Where url is set, the connector's
 # egress to garam goes to cidr:port alone.

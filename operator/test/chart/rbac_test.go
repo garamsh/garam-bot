@@ -199,7 +199,7 @@ func claimedNamespaces(objects []unstructured.Unstructured) []string {
 }
 
 func TestChart_BindsEachRoleToItsProgramAlone(t *testing.T) {
-	objects := render(t)
+	objects := render(t, workspaceValues...)
 	known := roles(t, objects)
 	for _, binding := range typed[rbacv1.RoleBinding](t, objects, "RoleBinding") {
 		key := binding.Namespace + "/" + binding.Name
@@ -209,7 +209,7 @@ func TestChart_BindsEachRoleToItsProgramAlone(t *testing.T) {
 		if _, ok := known[binding.Namespace+"/"+binding.RoleRef.Name]; !ok {
 			t.Errorf("RoleBinding %s binds no rendered Role", key)
 		}
-		account := strings.TrimSuffix(binding.Name, "-watched")
+		account := strings.TrimSuffix(strings.TrimSuffix(binding.Name, "-watched"), "-workspaces")
 		if len(binding.Subjects) != 1 || binding.Subjects[0].Kind != rbacv1.ServiceAccountKind ||
 			binding.Subjects[0].Name != account || binding.Subjects[0].Namespace != releaseNamespace {
 			t.Errorf("RoleBinding %s binds %+v, want the ServiceAccount %s/%s alone",
