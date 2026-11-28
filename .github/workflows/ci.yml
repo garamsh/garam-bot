@@ -55,7 +55,7 @@ jobs:
       # fail and name the refusal instead (#1077).
       - run: make ci
         env:
-          SHERLOCK_REQUIRE_USERNS: "1"
+          GARAM_BOT_REQUIRE_USERNS: "1"
 
   # The image the privileged job runs in, read out of the Dockerfile that owns
   # the pin. A job's `container.image` cannot read a file, but it can read the
@@ -114,9 +114,9 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      # Build-only smoke check of both platform images (ADR 0017);
+      # Build-only smoke check of the platform images (ADR 0017);
       # nothing is pushed.
       - run: make build-images REVISION="$GITHUB_SHA"
       # The deployment deploy/local/README.md documents must start and
-      # answer a request; the step fails if the agent does not.
+      # run its checks; the step fails if the workspace does not.
       - run: deploy/local/smoke.sh

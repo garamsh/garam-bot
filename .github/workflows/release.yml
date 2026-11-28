@@ -46,13 +46,13 @@ jobs:
     # local name is the one `make build-images` writes, tagged with the
     # revision, and the repository is the one it is pushed to. The three steps
     # below read this one list, so an image cannot be pushed and left unread.
-    # The order is the push order. All five repositories are new under
+    # The order is the push order. All four repositories are new under
     # github-actions-garam-bot-push (garamsh/aurora#866; garam-bot/workspacefile
     # and garam-bot/claude-code were created after it), so none has a push
     # an earlier release has shown; the read-back below each push is what
     # shows it.
     env:
-      IMAGES: garam-bot-runtime=garam-bot/runtime sherlock-agent=garam-bot/agent sherlock-workspace=garam-bot/workspace garam-bot-workspacefile=garam-bot/workspacefile garam-bot-claude-code=garam-bot/claude-code
+      IMAGES: garam-bot-runtime=garam-bot/runtime garam-bot-workspace=garam-bot/workspace garam-bot-workspacefile=garam-bot/workspacefile garam-bot-claude-code=garam-bot/claude-code
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -79,9 +79,7 @@ jobs:
       # `docker/buildx-push-action` with `push: true`, once per image, is the
       # shape that cannot hold that property, so this workflow does not use it.
       #
-      # The agent image carries the first-party tools at /opt/sherlock/tools/
-      # (ADR 0021); there is no separate sherlock/tools image. The workspace
-      # image is unchanged. The runtime image runs one Bot (ADR 0033).
+      # The runtime image runs one Bot (ADR 0033).
       #
       # Each image has one repository, `$IMAGES` above: the account names a
       # repository `<publishing repository>/<image>`, and the image name never
