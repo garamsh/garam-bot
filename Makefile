@@ -1,4 +1,4 @@
-.PHONY: lint format format-fix test test-privileged test-podworkspace test-claude-code build build-images toolchain-image proto generate ci hooks conformance-bot-token
+.PHONY: lint format format-fix test test-privileged test-podworkspace test-claude-code build build-images toolchain-image proto generate ci hooks conformance-bot-token conformance-workspace-access
 
 # The toolchain floor every go command below runs under: `go install tool@version`
 # and `go run tool@version` take the toolchain from the tool's own `go.mod` rather
@@ -389,7 +389,29 @@ conformance-bot-token:
 	test "$$passed" -gt 0 || exit 1; \
 	exit $$status
 
-ci: lint format generate test build conformance-bot-token
+# Interface 7's server suite against its reference server
+# (api/workspace-access/v1alpha1/conformance.md), served and counted as
+# interface 6's is above.
+WORKSPACE_ACCESS_REFERENCE = $(CURDIR)/.cache/workspace-access-reference
+
+conformance-workspace-access:
+	cd api && go build -o "$(WORKSPACE_ACCESS_REFERENCE)" ./workspace-access/v1alpha1/reference/cmd/workspace-access-reference
+	@dir=$$(mktemp -d); status=0; \
+	"$(WORKSPACE_ACCESS_REFERENCE)" --dir "$$dir" serve >"$$dir/ready" 2>"$$dir/server.log" & pid=$$!; \
+	trap 'kill $$pid 2>/dev/null; rm -r -- "$${dir:?}"' EXIT; \
+	for _ in $$(seq 100); do [ -s "$$dir/ready" ] && break; sleep 0.1; done; \
+	[ -s "$$dir/ready" ] || { cat "$$dir/server.log" >&2; exit 1; }; \
+	cd api || exit 1; \
+	CONFORMANCE_BASE_URL="$$(cat "$$dir/url")" CONFORMANCE_TRUST_FILE="$$dir/ca.pem" \
+	CONFORMANCE_FIXTURE="$(WORKSPACE_ACCESS_REFERENCE) --dir $$dir" \
+		go test -tags=conformance ./workspace-access/v1alpha1/conformance/server/ -v -count=1 2>&1 | tee "$$dir/log" || status=$$?; \
+	passed=$$(grep -c '^    --- PASS' "$$dir/log"); \
+	echo "conformance-workspace-access: conformance.md's server suite against the reference server:" \
+		"$$passed passed, $$(grep -c '^    --- FAIL' "$$dir/log") failed"; \
+	test "$$passed" -gt 0 || exit 1; \
+	exit $$status
+
+ci: lint format generate test build conformance-bot-token conformance-workspace-access
 
 proto:
 	buf lint

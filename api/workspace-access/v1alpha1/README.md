@@ -29,11 +29,11 @@ The normative specification of garam-bot's interface 7, workspace access, at ver
 
   It carries nothing else of interface 3: no exec, no read of a file, no snapshot and no delete. REACH-1 keeps it so.
 - **The server serves every bot the place runs,** whether garam declared it or the place did. Interface 7 needs no garam identity, so a bot declared at its place has a workspace too.
-- **The package's constants are the schema's names:** `SpecRelease`, the path prefix, the token directory, the dial's upgrade token, and the error codes (`doc.go`). Its Go types arrive with the reference server.
+- **The package is the schema:** its constants name `SpecRelease`, the paths, the token directory, the dial's upgrade token, the error codes and the bounds (`doc.go`, `access.go`), its types are the bodies, and `CheckTokenPath` is FILE-1's path rule.
 
 | Implementation | Place | State |
 |---|---|---|
-| `reference` | none: it issues its own place credentials, models workload instances and their restarts, holds its bots and workspaces in memory over `workspacefake`, and issues stub session tokens | the reference implementation; to build |
+| `reference` | none: it issues its own place credentials, models workload instances and their restarts, holds its bots and workspaces in memory, echoes on each workspace's interface 2 port, and issues stub session tokens | the reference implementation, built, passing the server suite |
 | `operator/cmd/connector` | a user's cluster (`operator/docs/architecture/connector.md`, garam-bot-operator ADR 0099) | first production implementation; to build |
 | the daemon | a PC or a naru host (ADR 0039) | second production implementation; to build |
 
@@ -60,7 +60,7 @@ The normative specification of garam-bot's interface 7, workspace access, at ver
 | 200 | — | `Workspace` (WS-1, WS-2) or `SessionTokens` (TOK-1) |
 | 204 | — | The files are written (FILE-1) |
 | 101 | — | The dial is open (DIAL-1) |
-| 400 | `invalid` | A body, member, path or header the specification refuses (T-2, FILE-1, DIAL-1) |
+| 400 | `invalid` | A body, member, path or header the specification refuses, or a path that passes through a link (T-2, FILE-1, DIAL-1) |
 | 401 | `invalid_credential` | The place's credential is missing, does not verify, has expired, names another audience, lives longer than an hour, was issued before the server started, or is not bound to a running instance of the bot (CRED-2) |
 | 401 | `invalid_dpop_proof` | The proof is missing, does not verify, names another method, URL or credential, is outside the clock window, or replays a `jti` (PROOF-1) |
 | 401 | `invalid_key` | The proof's key is not the key pinned to the instance (PIN-1) |
@@ -146,7 +146,10 @@ Interface 3's errors reach the client so:
 
 - **FILE-1.** `PUT .../files` writes the files of the body, `{"files": [{"path": <path>, "content": <base64>}, ...]}`, each whole, through interface 3's `WriteFile`.
   - **The paths.** A path `p` is taken only where `path.Clean(p) == p`, `p` begins with `TokenDir`, `/run/garam-bot/`, and `p` is longer than it. Any other path MUST be answered 400 `invalid`, and nothing of the body is written.
-  - **Links.** The server MUST NOT follow a symbolic link at a path's final component: it replaces the link, never the file the link names. Code in the workspace can plant a link, and a token written through it would land where that code chose.
+  - **Links.** The server MUST NOT follow a symbolic link at any component of a path. Code in the workspace can plant a link, and a token written through it would land where that code chose, outside `TokenDir` among other places.
+    - **At the final component**, the server replaces the link, never the file the link names.
+    - **At any other component**, the directory `TokenDir` itself among them, it writes nothing through the link, and answers 400 `invalid` with that path as a failure of the order below.
+    - **How a server holds it.** It resolves each component with no link followed, as `openat2` with `RESOLVE_NO_SYMLINKS` does, and not by reading the path first, which code in the workspace can change between the read and the write.
   - **The size.** The body holds 1 to 16 files. Content above 64 KiB in all MUST be answered 413 `invalid`.
   - **The order.** The files are written in the body's order. A failure answers which path it reached, `{"error": ..., "path": <path>}`, and the files before it stay written.
   - **The answer.** It is 204 once every file is written. A workspace that is not running is answered 409 `not_running`.
