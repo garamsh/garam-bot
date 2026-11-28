@@ -71,7 +71,7 @@ jobs:
           role-to-assume: ${{ env.GARAM_TEST_PULL_ROLE }}
           aws-region: ap-northeast-2
 
-      - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+      - uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2.2.0
 
       # `make test-e2e` installs kind itself, at the version the Makefile pins, so
       # this job holds no kind version of its own. helm/kind-action would put that
