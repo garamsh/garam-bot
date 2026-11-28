@@ -132,10 +132,18 @@ func TestRun_FollowsStatusFromTheEventLog(t *testing.T) {
 	require.NoError(t, err)
 	waitPhase(t, p, "followed", v1alpha1.PhaseStopped)
 
-	// A cursor the log no longer holds is answered by listing again.
-	f.server.ExpireLog(callerName)
+	// A cursor the log no longer holds is answered by listing again: the provider is cut off while
+	// the Machine starts and the log drops those events.
+	f.gate.close()
 	_, err = other.StartMachine(t.Context(), "followed")
 	require.NoError(t, err)
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		m, err := other.Machine(t.Context(), "followed")
+		require.NoError(c, err)
+		assert.Equal(c, machineapi.PhaseRunning, m.Status.Phase)
+	}, 10*time.Second, 10*time.Millisecond)
+	f.server.ExpireLog(callerName)
+	f.gate.open()
 	waitPhase(t, p, "followed", v1alpha1.PhaseRunning)
 
 	require.NoError(t, other.DeleteMachine(t.Context(), "followed"))
