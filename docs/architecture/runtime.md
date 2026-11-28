@@ -14,7 +14,7 @@ Governs the runtime that runs one Bot: what `garam-bot run` reads, the status co
   - **Expiry.** A token is not answered once its `expires_in` has passed, whether or not a new one was obtained.
   - **No token.** Without `--credential-file`, the bot runs with no garam identity, as a cluster-owned bot does.
   - **Confinement.** The token, the proof and the credential reach no log line, error or status. The token is held in memory alone.
-  - **Not yet presented.** No garam route accepts a bot token yet (`bot-system.md` §Authentication), so the process holds a token nothing presents, and nothing calls `TokenSource.Refused` until the first caller.
+  - **Presented.** The mailbox's poll presents it, with a proof of each request bound to it (below), and calls `TokenSource.Refused` where garam answers 401.
 - **The workspace of the Bot's first attachment, through its connector, where `--connector-url` and `--workspace-credential-file` are given** (ADR 0043, interface 7 `api/workspace-access/v1alpha1/`). A Bot with no attachment runs with no workspace. It is `Workspace` in `internal/bot`.
   - **What it reads.** `--workspace-credential-file` holds the place's credential of interface 7's audience, read again for each request. The connector's trust is `--connector-trust-file`'s, as interface 6's is.
   - **Acquiring.** It acquires the workspace until it runs. It reads a pending workspace again with a `GET` no sooner than its `Retry-After`, or after a back-off from 1 second doubling to 60 where it has none (WS-3), and acquires a stopped or failed one again, which starts or recovers it.
@@ -35,12 +35,19 @@ Governs the runtime that runs one Bot: what `garam-bot run` reads, the status co
   - **Messages.** The tasks come from a `MessageSource`, one message at a time: the driver asks for the next only once the last is acknowledged, and never twice at once.
     - A message's identifier, stable across its deliveries, is its task's identifier, so a message delivered twice runs once (TASK-1).
     - A source that asks to be polled later is polled again after the time it asks, at most 60 seconds. One that fails is polled again after a back-off from 1 second, doubling to 60.
-    - Until garam's mailbox serves the bot, the source is `Inbox` over `--inbox-dir`:
+    - For a bot garam declared, the source is `Mailbox`, garam's long poll of the bot's mailbox (`pollBotMailbox`, garam ADR-0194), where `--mailbox-url`, `--mailbox-origin`, `--garam-root-file` and `--bot-grn` are given:
+      - **What it reads.** `--mailbox-url` is garam's machine listener as the process dials it, and `--mailbox-origin` garam's machine origin, which every proof's `htu` names and every signature's `iss` is. `--garam-root-file` holds the root garam's certificates chain to, read again as it changes, and trusted alone. `--bot-grn` is the bot's GRN, the mailbox polled and every signature's audience. Some of them without the rest, the mailbox without `--credential-file`, or with `--inbox-dir`, fails the start with `Failed`.
+      - **The poll.** `POST /bots/{grn}/mailbox` carries the bot's token as `DPoP` with a proof of the request, and the cursor of the last message done, which acknowledges it. garam holds a poll up to 30 seconds, so one is read for 75. It goes through the proxy `HTTPS_PROXY` names, and follows no redirect.
+      - **garam's answers.** A 204 polls again. A 409 polls with no cursor, and the message it named is handed out again. A 401 tells `TokenSource` the token was refused. A 429 waits its `Retry-After`. Any other refusal, 503 among them, is polled again after the back-off with the same cursor.
+      - **The signature** (garam ADR-0101). Each hand-out's signature is verified before its task is given: one ES256 compact JWS of type `agent-message+jwt`, issued by the origin, addressed to the bot's GRN alone, over the message's identifier and the SHA-256 of its content, valid now within 60 seconds of skew. The keys are garam's `/message-signing-keys`, held an hour, read again for a key not held at most once a minute, and used a day more while a read fails.
+      - **The message.** Its content is a `garam-message.v1` object, and its input the body, from the sender the signature's `sub` names. Its task's identifier is garam's message identifier where it is a task identifier, and `m-` and the hex of the first 16 bytes of its SHA-256 otherwise.
+      - **Refused.** A hand-out whose signature or content is refused is rejected, and so acknowledged. The log names its task's identifier, its attempt and why, and nothing of its content. While the keys cannot be read, no message is judged: the poll is answered as failed, and the message is handed out again.
+    - Otherwise, and for a bot with no garam identity, the source is `Inbox` over `--inbox-dir`:
       - each regular file is one message, given in the order of the names, its name the identifier and its content the input;
       - a name starting with `.` is skipped, so a writer can rename a file into place, and so is a name that is no task identifier;
       - a file is removed once its task is done;
       - a file larger than 1 MiB, or a message rejected, is set aside as `.<name>.rejected`.
-    - Without `--inbox-dir`, the session is opened and given no task.
+    - With neither, the session is opened and given no task.
   - **Events.** It long-polls the session's events, holding up to 50 seconds (`MaxWait`), from the last it read, and skips a type it does not know (VER-2). It keeps the end of every task the events show.
     - A task is done at its `taskDone`, read now or earlier: one that ended while another task was current, or that an earlier process gave, is not waited on.
     - A task refused `busy` waits for the session's running task to end, reading its events, and is given after it.
@@ -70,8 +77,8 @@ Governs the runtime that runs one Bot: what `garam-bot run` reads, the status co
 
 - **User.** It runs as uid and gid 65532 (`build/runtime.Dockerfile`), named by number in the image so the kubelet can verify it, with no capability. So the Pod can assert `runAsNonRoot` without a `runAsUser`, drop every capability, forbid privilege escalation and use the RuntimeDefault seccomp profile, which is what PodSecurity `restricted` asks.
 - **Status directory.** `/run/garam-bot` is writable by that user in the image. A Pod with a read-only root filesystem mounts an `emptyDir` there.
-- **Files.** The Bot file, the connector's trust file and the credential files are mounted read-only, and readable by uid 65532 or the Pod's group. At a cluster the credential is the Bot's projected ServiceAccount token (garam-bot-operator ADR 0097).
-- **Network.** It reaches its connector, at a cluster a Service in the release namespace.
+- **Files.** The Bot file, the connector's trust file, garam's root and the credential files are mounted read-only, and readable by uid 65532 or the Pod's group. At a cluster the credential is the Bot's projected ServiceAccount token (garam-bot-operator ADR 0097).
+- **Network.** It reaches its connector, at a cluster a Service in the release namespace, and for a bot garam declared garam's machine listener, through the proxy `HTTPS_PROXY` names where one stands between. Its clients of the connector use no proxy.
 - **Image.** It is `garam-bot-runtime:<revision>` from `make build-images`, published to `garam-bot/runtime` and referenced by digest (`deployment.md` §Images and tags).
 
 ## Rationale

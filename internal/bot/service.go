@@ -39,6 +39,14 @@ type Options struct {
 	// InboxDir is the directory of message files the bot's workspace is given tasks from, one task per
 	// file, until G4. Empty, its session is opened and given no task.
 	InboxDir string
+	// MailboxURL, MailboxOrigin, GaramRootFile and BotGRN, given together, have a garam-owned bot's
+	// messages come from its garam mailbox: garam's machine listener as dialled, its origin, the root
+	// its certificate chains to, and the bot's GRN. They need CredentialFile, the bot's garam identity,
+	// and exclude InboxDir.
+	MailboxURL    string
+	MailboxOrigin string
+	GaramRootFile string
+	BotGRN        string
 	// Sleep waits d, or until ctx ends. Time's own where nil.
 	Sleep func(ctx context.Context, d time.Duration) error
 	// StatusFile is the path the status contract's file is written at.
@@ -76,6 +84,10 @@ func (s *service) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	messages, err := s.messages(token)
+	if err != nil {
+		return err
+	}
 	background := func(run func(context.Context)) {
 		ctx, stop := context.WithCancel(ctx)
 		done := make(chan struct{})
@@ -107,10 +119,6 @@ func (s *service) Run(ctx context.Context) error {
 				o.Logger.Warn("workspace not ready; retrying", "attachment", space.cfg.Attachment, "error", err)
 			})
 		})
-		var messages MessageSource
-		if o.InboxDir != "" {
-			messages = NewInbox(o.InboxDir, 0, o.Sleep, o.Logger)
-		}
 		if driver, err = NewDriver(DriverConfig{Bot: bot, Place: space, Messages: messages, Sleep: o.Sleep, Logger: o.Logger}); err != nil {
 			return err
 		}
@@ -191,6 +199,34 @@ func (s *service) placeClients(bot *v1alpha1.Bot) (*TokenSource, *Workspace, err
 	}
 	return token, space, nil
 }
+
+// messages is the bot's message source: its garam mailbox where it is configured, the inbox where
+// that is, and none otherwise.
+func (s *service) messages(token *TokenSource) (MessageSource, error) {
+	o := s.options
+	// NewMailbox refuses some of the mailbox's options without the rest.
+	mailbox := o.MailboxURL != "" || o.MailboxOrigin != "" || o.GaramRootFile != "" || o.BotGRN != ""
+	switch {
+	case !mailbox && o.InboxDir != "":
+		return NewInbox(o.InboxDir, 0, o.Sleep, o.Logger), nil
+	case !mailbox:
+		return nil, nil
+	case token == nil:
+		return nil, errMailboxIdentity
+	case o.InboxDir != "":
+		return nil, errTwoSources
+	}
+	return NewMailbox(MailboxConfig{
+		URL: o.MailboxURL, Origin: o.MailboxOrigin, RootFile: o.GaramRootFile, GRN: o.BotGRN,
+		Identity: token, Now: o.Now, Logger: o.Logger,
+	})
+}
+
+// The mailbox's configurations that fail the start.
+var (
+	errMailboxIdentity = errors.New("--mailbox-url needs --credential-file, the bot's garam identity")
+	errTwoSources      = errors.New("--mailbox-url and --inbox-dir are two message sources; give one")
+)
 
 // errNoConnector is a credential file given with no connector to present it to.
 var errNoConnector = errors.New("--credential-file and --workspace-credential-file need --connector-url")

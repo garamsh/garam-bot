@@ -52,6 +52,14 @@ connector:
     key: ca.crt
   # garamEgressCIDR is the address range garam is reached at on 443 where no proxy is set.
   garamEgressCIDR: 0.0.0.0/0
+  # garamMachine is garam's machine listener, where a garam-owned Bot long-polls its mailbox for its
+  # tasks (garam's pollBotMailbox): url as a Bot's Pod dials it, and origin garam's machine origin, which
+  # every proof and message signature names. The manager gives them, and garamRoot, to garam-owned Bots
+  # alone, through proxy where it is set. The chart refuses one set without the other, and either with
+  # garam or the connector off. Unset, a garam-owned Bot is given no task.
+  garamMachine:
+    url: ""
+    origin: ""
   # registrationToken is the Secret you create holding the one-time registration token, under key.
   # It is read only while the cluster is not registered, and may be deleted after.
   registrationToken:
@@ -135,7 +143,8 @@ workspaces:
     egress: []
 
 # proxy is the forward proxy the connector reaches garam through. Where url is set, the connector's
-# egress to garam goes to cidr:port alone.
+# egress to garam goes to cidr:port alone, and a garam-owned Bot's Pod reaches garam's mailbox through it
+# too, and the connector's Service and the cluster's own names directly.
 proxy:
   url: ""
   cidr: ""

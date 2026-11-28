@@ -20,8 +20,8 @@ func (b Bot) String() string { return b.Namespace + "/" + b.Name }
 // GRN is a bot's garam GRN, grn:<org>/iam/bot/<declaration id>.
 type GRN string
 
-// botGRN is the GRN of the bot declared by id in the organization of the cluster record.
-func botGRN(record, id string) (GRN, error) {
+// BotGRN is the GRN of the bot declared by id in the organization of the cluster record.
+func BotGRN(record, id string) (GRN, error) {
 	rest, ok := strings.CutPrefix(record, "grn:")
 	org, kind, found := strings.Cut(rest, "/")
 	if !ok || !found || org == "" || !strings.HasPrefix(kind, "iam/cluster/") {

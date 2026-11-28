@@ -184,6 +184,20 @@ func main() {
 	flag.StringVar(&bots.workspaceAudience, "workspace-audience", "garam-workspace",
 		"The audience of the ServiceAccount token projected into every Bot's Pod for the connector's "+
 			"workspace access (interface 7). It matches the connector's --workspace-audience.")
+	flag.StringVar(&bots.mailbox.URL, "mailbox-url", "",
+		"garam's machine listener as a Bot's Pod dials it, which a garam-owned Bot long-polls its mailbox at for its "+
+			"tasks. Unset gives a garam-owned Bot no task. Given with mailbox-origin and garam-root-configmap.")
+	flag.StringVar(&bots.mailbox.Origin, "mailbox-origin", "",
+		"garam's machine origin, which a mailbox poll's proofs name and every message's signature is issued by.")
+	flag.StringVar(&bots.mailbox.RootConfigMap, "garam-root-configmap", "",
+		"The ConfigMap in release-namespace holding the root garam's certificate chains to, copied to each "+
+			"garam-owned Bot given a mailbox.")
+	flag.StringVar(&bots.mailbox.RootKey, "garam-root-key", "ca.crt", "The key of garam-root-configmap holding the root.")
+	flag.StringVar(&bots.mailbox.Proxy, "bot-https-proxy", "",
+		"The proxy a garam-owned Bot's Pod reaches garam's machine listener through, its HTTPS_PROXY. Unset, it "+
+			"dials garam directly.")
+	flag.StringVar(&bots.mailbox.NoProxy, "bot-no-proxy", "",
+		"What a garam-owned Bot's Pod reaches directly where bot-https-proxy is set, its NO_PROXY.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -546,6 +560,7 @@ func servedKinds(config *rest.Config) (served, error) {
 type botOptions struct {
 	image, watchNamespaces, releaseNamespace, releaseName, connectorURL, trustConfigMap, audience string
 	workspaceAudience                                                                             string
+	mailbox                                                                                       controller.Mailbox
 }
 
 // trustKey is the key of the connector's trust ConfigMap its serving certificates are published under.
@@ -583,8 +598,20 @@ func setupBots(mgr ctrl.Manager, bots botOptions) error {
 		return errors.New("bot-image, release-namespace and release-name are required wherever the Bot kind " +
 			"is served")
 	}
-	return (&controller.BotReconciler{
+	var mailbox *controller.Mailbox
+	switch m := bots.mailbox; {
+	case m.URL == "" && m.Origin == "" && m.RootConfigMap == "":
+	case m.URL == "" || m.Origin == "" || m.RootConfigMap == "" || bots.connectorURL == "":
+		return errors.New("mailbox-url, mailbox-origin and garam-root-configmap are given together, and with connector-url")
+	default:
+		mailbox = &m
+	}
+	if mailbox == nil && (bots.mailbox.Proxy != "" || bots.mailbox.NoProxy != "") {
+		return errors.New("bot-https-proxy and bot-no-proxy need mailbox-url")
+	}
+	r := &controller.BotReconciler{
 		Client:            mgr.GetClient(),
+		Mailbox:           mailbox,
 		Scheme:            mgr.GetScheme(),
 		Image:             bots.image,
 		Release:           bots.releaseNamespace + "/" + bots.releaseName,
@@ -594,5 +621,30 @@ func setupBots(mgr ctrl.Manager, bots botOptions) error {
 		ConnectorURL:      bots.connectorURL,
 		Audience:          bots.audience,
 		WorkspaceAudience: bots.workspaceAudience,
-	}).SetupWithManager(mgr)
+	}
+	if mailbox != nil {
+		// garam's root is read and watched through a cache of its own, holding that ConfigMap alone, as
+		// the manager's cache holds one ConfigMap of the release namespace already.
+		options := rootCacheOptions(bots)
+		options.Scheme, options.Mapper = mgr.GetScheme(), mgr.GetRESTMapper()
+		root, err := cache.New(mgr.GetConfig(), options)
+		if err != nil {
+			return fmt.Errorf("garam's root cache: %w", err)
+		}
+		if err := mgr.Add(root); err != nil {
+			return err
+		}
+		r.Reader, r.RootCache = root, root
+	}
+	return r.SetupWithManager(mgr)
+}
+
+// rootCacheOptions narrow the cache of garam's root to that one ConfigMap, by a field selector on its
+// name that RBAC applies resourceNames to.
+func rootCacheOptions(bots botOptions) cache.Options {
+	return cache.Options{
+		DefaultNamespaces: map[string]cache.Config{bots.releaseNamespace: {
+			FieldSelector: fields.OneTermEqualSelector("metadata.name", bots.mailbox.RootConfigMap),
+		}},
+	}
 }

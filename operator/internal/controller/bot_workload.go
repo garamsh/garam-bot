@@ -48,6 +48,10 @@ const (
 	// connector's bound refuses beyond is an hour, and the kubelet replaces it at 80 % (ADR 0097).
 	credentialLifetime = 600
 
+	// garamRootName is garam's root in the trust copy, beside the connector's trust, for a Bot that
+	// polls its garam mailbox.
+	garamRootName = "garam-root.crt"
+
 	// botFileMode lets the Pod's group read a mounted file and nobody write it.
 	botFileMode = 0o440
 )
@@ -86,8 +90,12 @@ func applyServiceAccount(bot *botv1.Bot, account *corev1.ServiceAccount) {
 // applyStatefulSet makes set the Bot's StatefulSet of one, running the runtime on the Bot file and,
 // where connector is set, on the trust copy and interface 7's projected credential, which reach the
 // Bot's workspace through the connector, and where garamOwned is set also on interface 6's, which
-// obtains the bot's garam token (ADR 0090 decision 3, ADR 0097, ADR 0099 decision 12).
-func (r *BotReconciler) applyStatefulSet(bot *botv1.Bot, set *appsv1.StatefulSet, connector, garamOwned bool) {
+// obtains the bot's garam token (ADR 0090 decision 3, ADR 0097, ADR 0099 decision 12). Where mailbox is
+// given, the runtime also long-polls the bot's garam mailbox for its tasks, through the release's
+// proxy where it names one (garam-bot ADR 0043 decision 7).
+func (r *BotReconciler) applyStatefulSet(bot *botv1.Bot, set *appsv1.StatefulSet, connector, garamOwned bool,
+	mailbox *botMailbox,
+) {
 	labels := botLabels(bot)
 	set.Labels = labels
 	if set.CreationTimestamp.IsZero() {
@@ -117,6 +125,13 @@ func (r *BotReconciler) applyStatefulSet(bot *botv1.Bot, set *appsv1.StatefulSet
 		if garamOwned {
 			args = append(args, "--credential-file", path.Join(credentialDir, credentialName))
 		}
+		if mailbox != nil {
+			args = append(args,
+				"--mailbox-url", r.Mailbox.URL,
+				"--mailbox-origin", r.Mailbox.Origin,
+				"--garam-root-file", path.Join(trustDir, garamRootName),
+				"--bot-grn", mailbox.grn)
+		}
 		mounts = append(mounts,
 			corev1.VolumeMount{Name: trustVolume, MountPath: trustDir, ReadOnly: true},
 			corev1.VolumeMount{Name: credentialVolume, MountPath: credentialDir, ReadOnly: true})
@@ -135,10 +150,21 @@ func (r *BotReconciler) applyStatefulSet(bot *botv1.Bot, set *appsv1.StatefulSet
 		LivenessProbe:   probe.DeepCopy(),
 		SecurityContext: workload.ContainerSecurityContext(),
 		VolumeMounts:    mounts,
+		Env:             r.proxyEnv(mailbox),
 		// Where the runtime writes a failed start's reason, which the Bot's condition reads.
 		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
 		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 	}}
+}
+
+// proxyEnv is the proxy a Bot's Pod reaches its garam mailbox through, where the release names one, and
+// what it reaches directly: the connector's Service and the cluster's own names. The runtime's clients
+// of the connector go through no proxy whatever the environment says.
+func (r *BotReconciler) proxyEnv(mailbox *botMailbox) []corev1.EnvVar {
+	if mailbox == nil || r.Mailbox.Proxy == "" {
+		return nil
+	}
+	return []corev1.EnvVar{{Name: "HTTPS_PROXY", Value: r.Mailbox.Proxy}, {Name: "NO_PROXY", Value: r.Mailbox.NoProxy}}
 }
 
 // connectorVolumes are the trust copy and the ServiceAccount tokens projected for the connector:

@@ -160,6 +160,25 @@ func TestRun_RefusesToStartOnAnInvalidBotOrConfiguration(t *testing.T) {
 		{name: "a workspace credential file without a connector", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
 			o.WorkspaceCredentialFile = "/token"
 		}},
+		{name: "the control: a Bot with its mailbox starts", setup: valid, edit: func(o *bot.Options) {
+			o.ConnectorURL, o.ConnectorTrustFile, o.CredentialFile = "https://connector.test", "/ca.crt", "/token"
+			o.MailboxURL, o.MailboxOrigin, o.GaramRootFile, o.BotGRN = "https://garam.test", "https://garam.test", "/garam.crt", "grn:acme/iam/bot/d1"
+		}},
+		{name: "a mailbox without its root file", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
+			o.ConnectorURL, o.ConnectorTrustFile, o.CredentialFile = "https://connector.test", "/ca.crt", "/token"
+			o.MailboxURL, o.MailboxOrigin, o.GaramRootFile, o.BotGRN = "https://garam.test", "https://garam.test", "/garam.crt", "grn:acme/iam/bot/d1"
+			o.GaramRootFile = ""
+		}},
+		{name: "a mailbox without the bot's garam identity", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
+			o.ConnectorURL, o.ConnectorTrustFile, o.CredentialFile = "https://connector.test", "/ca.crt", "/token"
+			o.MailboxURL, o.MailboxOrigin, o.GaramRootFile, o.BotGRN = "https://garam.test", "https://garam.test", "/garam.crt", "grn:acme/iam/bot/d1"
+			o.CredentialFile, o.WorkspaceCredentialFile = "", "/token"
+		}},
+		{name: "a mailbox and an inbox", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
+			o.ConnectorURL, o.ConnectorTrustFile, o.CredentialFile = "https://connector.test", "/ca.crt", "/token"
+			o.MailboxURL, o.MailboxOrigin, o.GaramRootFile, o.BotGRN = "https://garam.test", "https://garam.test", "/garam.crt", "grn:acme/iam/bot/d1"
+			o.InboxDir = "/inbox"
+		}},
 		{name: "a negative heartbeat interval", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
 			o.HeartbeatInterval = -time.Second
 		}},

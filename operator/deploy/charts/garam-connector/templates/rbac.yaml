@@ -8,7 +8,9 @@ verbs its own work calls (ADR 0091 decision 2, as ADR 0097 and ADR 0098 amend it
 {{- $root := . -}}
 # The manager, in the release namespace: its leader-election Lease and the events it records, and the
 # connector's trust bundle, by name, which it copies to each Bot. Its cache reads that ConfigMap alone
-# there, by a field selector RBAC applies resourceNames to.
+# there, by a field selector RBAC applies resourceNames to. Where garam's mailbox is on, it also gets
+# garam's root, by name, which it copies to each garam-owned Bot, through a cache of its own narrowed the
+# same way.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -27,6 +29,12 @@ rules:
     resources: [configmaps]
     resourceNames: [{{ include "garam-connector.trustConfigMap" . }}]
     verbs: [get, list, watch]
+  {{- if include "garam-connector.mailboxOn" . }}
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [{{ .Values.connector.garamRoot.configMap }}]
+    verbs: [get, list, watch]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

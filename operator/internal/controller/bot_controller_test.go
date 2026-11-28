@@ -89,7 +89,25 @@ func newBotReconciler() *BotReconciler {
 		Image: botImage, Release: botRelease,
 		TrustNamespace: botReleaseNS, TrustConfigMap: botTrustConfigMap, TrustKey: trustKeyForTest,
 		ConnectorURL: botConnectorURL, Audience: botConnectorAudien, WorkspaceAudience: botWorkspaceAud,
+		Reader: k8sClient,
 	}
+}
+
+const (
+	botGaramRootMap  = "garam-root"
+	botGaramRoot     = "-----BEGIN CERTIFICATE-----\nMIIC\n-----END CERTIFICATE-----\n"
+	botMailboxURL    = "https://machine.garam.test"
+	botMailboxOrigin = "https://machine.garam.test:443"
+	botProxy         = "http://proxy.example:3128"
+)
+
+// withMailbox gives r garam's mailbox, its root in botGaramRootMap, published.
+func withMailbox(r *BotReconciler) *BotReconciler {
+	GinkgoHelper()
+	root := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: botGaramRootMap, Namespace: botReleaseNS}}
+	Expect(createOrUpdate(root, func() { root.Data = map[string]string{trustKeyForTest: botGaramRoot} })).To(Succeed())
+	r.Mailbox = &Mailbox{URL: botMailboxURL, Origin: botMailboxOrigin, RootConfigMap: botGaramRootMap, RootKey: trustKeyForTest}
+	return r
 }
 
 // createMira creates the Bot mira in namespace, garam-owned as the connector applies one.
@@ -232,6 +250,103 @@ var _ = Describe("Bot Controller", func() {
 		Expect(set.Spec.Template.Spec.Volumes).To(HaveLen(1), "the Bot file alone")
 		Expect(absentIn(namespace, "mira-connector-trust", &corev1.ConfigMap{})).To(BeTrue())
 		Expect(runningOf(namespace, "mira").Reason).To(Equal(reasonStarting), "it waits for no connector's trust")
+	})
+
+	It("gives a garam-owned Bot its garam mailbox, garam's root beside the connector's trust, and no proxy where the release names none", func() {
+		namespace := newBotNamespace(botRelease, nil)
+		bot := createMira(namespace)
+		r := withMailbox(newBotReconciler())
+
+		reconcileBot(r, bot)
+
+		Expect(getIn(namespace, "mira-connector-trust", &corev1.ConfigMap{}).Data).To(Equal(map[string]string{
+			trustKeyForTest: botTrustBundle, "garam-root.crt": botGaramRoot,
+		}))
+		container := getIn(namespace, "mira", &appsv1.StatefulSet{}).Spec.Template.Spec.Containers[0]
+		Expect(container.Args).To(Equal(append(botFileArgs(),
+			"--connector-url", botConnectorURL,
+			"--connector-trust-file", "/etc/garam-bot/connector/ca.crt",
+			"--workspace-credential-file", "/var/run/secrets/garam-connector/workspace-token",
+			"--credential-file", "/var/run/secrets/garam-connector/token",
+			"--mailbox-url", botMailboxURL,
+			"--mailbox-origin", botMailboxOrigin,
+			"--garam-root-file", "/etc/garam-bot/connector/garam-root.crt",
+			"--bot-grn", "grn:acme/iam/bot/decl-mira",
+		)))
+		Expect(container.Env).To(BeEmpty(), "it dials garam directly")
+	})
+
+	It("gives a garam-owned Bot's Pod the release's proxy to garam, and the connector and the cluster's names beside it", func() {
+		namespace := newBotNamespace(botRelease, nil)
+		bot := createMira(namespace)
+		r := withMailbox(newBotReconciler())
+		r.Mailbox.Proxy = botProxy
+		r.Mailbox.NoProxy = "garam-connector.garam-system.svc,.svc,.cluster.local,localhost,127.0.0.1"
+
+		reconcileBot(r, bot)
+
+		container := getIn(namespace, "mira", &appsv1.StatefulSet{}).Spec.Template.Spec.Containers[0]
+		Expect(container.Env).To(Equal([]corev1.EnvVar{
+			{Name: "HTTPS_PROXY", Value: botProxy},
+			{Name: "NO_PROXY", Value: "garam-connector.garam-system.svc,.svc,.cluster.local,localhost,127.0.0.1"},
+		}))
+	})
+
+	It("gives a cluster-owned Bot no garam mailbox, root or proxy", func() {
+		namespace := newBotNamespace(botRelease, nil)
+		bot := createBotOwned(namespace, "local", false)
+		r := withMailbox(newBotReconciler())
+		r.Mailbox.Proxy = botProxy
+
+		reconcileBot(r, bot)
+
+		container := getIn(namespace, "local", &appsv1.StatefulSet{}).Spec.Template.Spec.Containers[0]
+		Expect(container.Args).NotTo(ContainElement("--mailbox-url"))
+		Expect(container.Env).To(BeEmpty())
+		Expect(getIn(namespace, "local-connector-trust", &corev1.ConfigMap{}).Data).To(Equal(map[string]string{trustKeyForTest: botTrustBundle}))
+	})
+
+	It("builds no Pod for a garam-owned Bot while the release has published no garam root", func() {
+		namespace := newBotNamespace(botRelease, nil)
+		bot := createMira(namespace)
+		r := withMailbox(newBotReconciler())
+		for name, data := range map[string]map[string]string{"unpublished-root": nil, "empty-root": {trustKeyForTest: ""}} {
+			if data != nil {
+				root := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: botReleaseNS}}
+				Expect(createOrUpdate(root, func() { root.Data = data })).To(Succeed())
+			}
+			r.Mailbox.RootConfigMap = name
+
+			reconcileBot(r, bot)
+
+			Expect(absentIn(namespace, "mira", &appsv1.StatefulSet{})).To(BeTrue(), name)
+			Expect(runningOf(namespace, "mira").Reason).To(Equal(reasonWaitingForGaramRoot), name)
+		}
+
+		r.Mailbox.RootConfigMap = botGaramRootMap
+		reconcileBot(r, bot)
+		Expect(absentIn(namespace, "mira", &appsv1.StatefulSet{})).To(BeFalse(), "it starts once the root is published")
+		Expect(runningOf(namespace, "mira").Reason).To(Equal(reasonStarting))
+	})
+
+	It("copies garam's root again once it changes, and is woken by its change", func() {
+		namespace := newBotNamespace(botRelease, nil)
+		bot := createMira(namespace)
+		r := withMailbox(newBotReconciler())
+		reconcileBot(r, bot)
+		root := getIn(botReleaseNS, botGaramRootMap, &corev1.ConfigMap{})
+		replaced := botGaramRoot + botGaramRoot
+		Expect(createOrUpdate(root, func() { root.Data = map[string]string{trustKeyForTest: replaced} })).To(Succeed())
+		DeferCleanup(func() {
+			Expect(createOrUpdate(root, func() { root.Data = map[string]string{trustKeyForTest: botGaramRoot} })).To(Succeed())
+		})
+
+		reconcileBot(r, bot)
+
+		Expect(getIn(namespace, "mira-connector-trust", &corev1.ConfigMap{}).Data["garam-root.crt"]).To(Equal(replaced))
+		Expect(r.botsOfTrust(ctx, root)).To(ContainElement(reconcile.Request{NamespacedName: client.ObjectKeyFromObject(bot)}),
+			"a change of garam's root wakes the Bot")
+		Expect(newBotReconciler().botsOfTrust(ctx, root)).To(BeEmpty(), "control: with no mailbox, garam's root wakes nothing")
 	})
 
 	It("changes nothing when it reconciles the same Bot twice", func() {
