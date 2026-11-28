@@ -20,6 +20,8 @@ github.com/fxamacker/cbor/v2 v2.9.0 h1:NpKPmjDBgUfBms6tr6JZkTHtfFGcMKsw3eGcmD/sa
 github.com/fxamacker/cbor/v2 v2.9.0/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/garamsh/garam-bot/api v0.0.0-20261128023818-394c702dab9f h1:9rYasXtTNauTsL7fciS/tsZz2hd82IElbqB99EtCDLU=
 github.com/garamsh/garam-bot/api v0.0.0-20261128023818-394c702dab9f/go.mod h1:Qxkz05MhRDNUYaZ7mYiVb0UxQ7/s1XDvXTYVa82IR+0=
+github.com/garamsh/naru/lib/machineapi v0.0.0-20261128022846-81d78696bf5f h1:Jx/vO5p7TgZ3w4S+jvCEQgeaDgs5wjI3Uft895sqNmE=
+github.com/garamsh/naru/lib/machineapi v0.0.0-20261128022846-81d78696bf5f/go.mod h1:weQo9k6m2qn5apvT7JKHyWnZmTzvjJh3DJmQur7C4sM=
 github.com/go-jose/go-jose/v4 v4.1.9 h1:pKfeQkig1NmgK4hJrZYXLEYURXfoJB61Larw0uIW4gY=
 github.com/go-jose/go-jose/v4 v4.1.9/go.mod h1:x4oUasVrzR7071A4TnHLGSPpNOm2a21K9Kf04k1rs08=
 github.com/go-logr/logr v1.4.4 h1:tG4xh9yMsRCAiodLVTxyrkzSZ9+o0L1Kg/+cPVcbP/8=
