@@ -4,8 +4,8 @@ go 1.27.4
 
 require (
 	github.com/distribution/reference v0.6.0
-	github.com/garamsh/garam-bot v0.11.2-0.20261128044044-4a99ab7bc5b3
-	github.com/garamsh/garam-bot/api v0.0.0-20261128023818-394c702dab9f
+	github.com/garamsh/garam-bot v0.11.2-0.20261128065958-4ad5ebacf4f8
+	github.com/garamsh/garam-bot/api v0.0.0-20261128065958-4ad5ebacf4f8
 	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/go-logr/logr v1.4.4
 	github.com/golang-migrate/migrate/v4 v4.20.1
@@ -70,6 +70,7 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa // indirect
@@ -85,6 +86,7 @@ require (
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.3.3 // indirect
 	github.com/moby/moby/client v0.5.0 // indirect
+	github.com/moby/spdystream v0.5.1 // indirect
 	github.com/moby/sys/sequential v0.7.0 // indirect
 	github.com/moby/sys/user v0.4.1 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect

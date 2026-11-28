@@ -40,7 +40,10 @@ type Config struct {
 	Invalidate func(token string)
 	// DNSNames are the names the serving certificate is issued for.
 	DNSNames []string
-	Log      *slog.Logger
+	// Beside answers every request that is not interface 6's, on the same listener and certificate:
+	// interface 7's calls (ADR 0099 decision 1). Nil, such a request is answered 404.
+	Beside http.Handler
+	Log    *slog.Logger
 	// Now, Validity and Propagation default to the clock, 90 days and 10 minutes.
 	Now         func() time.Time
 	Validity    time.Duration

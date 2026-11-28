@@ -33,7 +33,14 @@ func (s *service) handler() http.Handler {
 		}
 		s.refuse(w, bot, obtained, err)
 	})
-	return s.recoverPanics(mux)
+	if s.cfg.Beside == nil {
+		return s.recoverPanics(mux)
+	}
+	// The other interface answers its own refusals, a panic's among them, in its own codes.
+	outer := http.NewServeMux()
+	outer.Handle(Path, s.recoverPanics(mux))
+	outer.Handle("/", s.cfg.Beside)
+	return outer
 }
 
 func (s *service) refuse(w http.ResponseWriter, bot Bot, obtained answer, err error) {

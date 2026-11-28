@@ -34,6 +34,8 @@ import (
 	"github.com/garamsh/garam-bot/operator/internal/clusteridentity/secret"
 	"github.com/garamsh/garam-bot/operator/internal/declaration"
 	kubeobjects "github.com/garamsh/garam-bot/operator/internal/declaration/kube"
+	"github.com/garamsh/garam-bot/operator/internal/workspaceaccess"
+	workspacekube "github.com/garamsh/garam-bot/operator/internal/workspaceaccess/kube"
 )
 
 // version is the connector's version, sent at registration; a release build sets it with -ldflags -X.
@@ -58,6 +60,7 @@ type options struct {
 	botTokenAudience string
 	trustConfigMap   string
 	naru             naruOptions
+	workspaces       workspaceOptions
 }
 
 // trustKey is the key of the trust ConfigMap the serving certificates are published under.
@@ -92,7 +95,9 @@ func main() {
 		"The ConfigMap in the release namespace the serving certificates are published to, under "+trustKey+
 			". The chart creates it empty.")
 	o.naru.register(flag.CommandLine)
+	o.workspaces.register(flag.CommandLine)
 	flag.Parse()
+	o.workspaces.visit(flag.CommandLine)
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -155,6 +160,31 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	release := workspaceaccess.Release{Namespace: o.releaseNamespace, Name: o.releaseName}
+	workspaceRest, workspaceKube, err := workspaceClients(restConfig)
+	if err != nil {
+		return err
+	}
+	env := workspaceEnv{
+		rest: workspaceRest, kube: workspaceKube, release: release, namespaces: namespaces,
+		keys: workspaceKeys{botkube.Keys{Kube: kube}}, pods: workspacekube.Pods{Kube: workspaceKube},
+		bots: workspacekube.Bots{
+			Reader: objects.Reader(), Claims: objects, Release: o.releaseNamespace + "/" + o.releaseName,
+		},
+		service: o.botTokenService, address: o.botTokenAddress, log: log,
+	}
+	if naru != nil {
+		env.naru = naru
+	}
+	workspaces, err := workspaceAccess(ctx, o.workspaces, env)
+	if err != nil {
+		return err
+	}
+	var beside http.Handler
+	if workspaces != nil {
+		beside = workspaces.Handler()
+		log.Info("interface 7 is served", "workspaceNamespace", o.workspaces.namespace)
+	}
 	declarations := declaration.NewService(declaration.Config{
 		BaseURL:    o.garamURL,
 		HTTP:       connection.Client(),
@@ -179,6 +209,7 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		Actor:      connection.Token,
 		Invalidate: connection.Invalidate,
 		DNSNames:   serviceNames(o.botTokenService, o.releaseNamespace),
+		Beside:     beside,
 		Log:        log,
 	})
 	listener, err := net.Listen("tcp", o.botTokenAddress)
@@ -204,6 +235,14 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		}
 		return tokens.Serve(ctx, listener)
 	})
+	if workspaces != nil {
+		group.Go(func() error {
+			if !objects.WaitForCacheSync(ctx) {
+				return ctx.Err()
+			}
+			return workspaces.Run(ctx)
+		})
+	}
 	return group.Wait()
 }
 
@@ -215,6 +254,16 @@ type appliedBots struct {
 func (a appliedBots) Applied(bot bottoken.Bot) (bottoken.Applied, bool) {
 	applied, ok := a.declarations.Bot(bot.Namespace, bot.Name)
 	return bottoken.Applied{DeclarationID: applied.DeclarationID, UID: applied.UID}, ok
+}
+
+// workspaceKeys are the API server's keys for interface 7, read as interface 6 reads them.
+type workspaceKeys struct {
+	keys botkube.Keys
+}
+
+func (k workspaceKeys) Keys(ctx context.Context) (workspaceaccess.Issuer, error) {
+	read, err := k.keys.Keys(ctx)
+	return workspaceaccess.Issuer{URL: read.URL, Keys: read.Keys}, err
 }
 
 // serviceNames are the DNS names a Service is reached by from another namespace.

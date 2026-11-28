@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -434,4 +435,24 @@ func TestServe_RefusesAnAuthorizationWithoutTheBearerScheme(t *testing.T) {
 	_ = response.Body.Close()
 
 	assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
+}
+
+func TestServe_AnswersEveryOtherPathFromBesideAndInterface6sOwnAlone(t *testing.T) {
+	s := start(t, func(c *bottoken.Config) {
+		c.Beside = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Beside", r.URL.Path)
+			w.WriteHeader(http.StatusTeapot)
+		})
+	})
+	base := strings.TrimSuffix(s.url, bottoken.Path)
+
+	response, err := s.client.Get(base + "/v1alpha1/workspaces/main")
+	require.NoError(t, err)
+	_ = response.Body.Close()
+	assert.Equal(t, http.StatusTeapot, response.StatusCode)
+	assert.Equal(t, "/v1alpha1/workspaces/main", response.Header.Get("X-Beside"))
+
+	// Control: interface 6's path is still interface 6's.
+	answered := s.obtain(t, s.api.credentialFor(t, watched, mira), newProcess(t))
+	assert.Equal(t, http.StatusOK, answered.status)
 }

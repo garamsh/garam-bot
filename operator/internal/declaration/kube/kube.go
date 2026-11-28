@@ -108,6 +108,9 @@ func (o *Objects) WaitForCacheSync(ctx context.Context) bool {
 	return o.cache.WaitForCacheSync(ctx)
 }
 
+// Reader reads the declared kinds and the claims from the cache Start runs, never from the API server.
+func (o *Objects) Reader() client.Reader { return o.client }
+
 func (o *Objects) signal() {
 	select {
 	case o.changed <- struct{}{}:
