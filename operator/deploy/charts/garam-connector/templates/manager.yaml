@@ -1,0 +1,90 @@
+{{- $watched := include "garam-connector.watched" . | fromJsonArray -}}
+{{- $selector := dict "root" . "program" "manager" -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+---
+# The manager runs each Bot of a watched namespace claimed for this release (ADR 0090, ADR 0098). It
+# needs no garam connection.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+    {{- include "garam-connector.selector" $selector | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "garam-connector.selector" $selector | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "garam-connector.selector" $selector | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-manager
+      securityContext:
+        {{- include "garam-connector.podSecurity" . | nindent 8 }}
+      containers:
+        - name: manager
+          image: {{ include "garam-connector.image" (dict "name" "manager" "ref" .Values.images.manager) }}
+          imagePullPolicy: Always
+          args:
+            - --leader-elect
+            - --health-probe-bind-address=:8081
+            {{- if .Values.metrics.enabled }}
+            - --metrics-bind-address=:{{ .Values.metrics.port }}
+            - --metrics-secure=false
+            {{- else }}
+            - --metrics-bind-address=0
+            {{- end }}
+            - --watch-namespaces={{ join "," $watched }}
+            - --release-namespace={{ .Release.Namespace }}
+            - --release-name={{ .Release.Name }}
+            - --bot-image={{ include "garam-connector.image" (dict "name" "runtime" "ref" .Values.images.runtime) }}
+            - --connector-url=https://{{ include "garam-connector.serviceName" . }}.{{ .Release.Namespace }}.svc:{{ include "garam-connector.botTokenPort" . }}
+            - --trust-configmap={{ include "garam-connector.trustConfigMap" . }}
+            - --bot-token-audience={{ include "garam-connector.audience" . }}
+          ports:
+            - name: health
+              containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+          resources:
+            {{- toYaml .Values.manager.resources | nindent 12 }}
+          securityContext:
+            {{- include "garam-connector.containerSecurity" . | nindent 12 }}
+---
+# The manager admits no ingress but its metrics where they are on, and reaches the API server alone.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "garam-connector.selector" $selector | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  {{- if .Values.metrics.enabled }}
+  ingress:
+    {{- include "garam-connector.metricsIngress" . | nindent 4 }}
+  {{- else }}
+  ingress: []
+  {{- end }}
+  egress:
+    {{- include "garam-connector.apiServerEgress" . | nindent 4 }}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"strings"
@@ -15,7 +16,10 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/discovery"
@@ -23,6 +27,7 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -504,12 +509,12 @@ type served struct {
 
 // servedKinds asks the API server's discovery which of Agent and Bot it serves.
 func servedKinds(config *rest.Config) (served, error) {
-	client, err := discovery.NewDiscoveryClientForConfig(config)
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
 	if err != nil {
 		return served{}, fmt.Errorf("build the discovery client: %w", err)
 	}
 	serves := func(groupVersion, kind string) (bool, error) {
-		resources, err := client.ServerResourcesForGroupVersion(groupVersion)
+		resources, err := discoveryClient.ServerResourcesForGroupVersion(groupVersion)
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
@@ -541,11 +546,14 @@ type botOptions struct {
 // trustKey is the key of the connector's trust ConfigMap its serving certificates are published under.
 const trustKey = "ca.crt"
 
-// cacheOptions restricts the cache to the watched namespaces and the release namespace, where
-// watch-namespaces is set.
+// cacheOptions is what the manager caches. It reads one Lease of a namespace, its claim. Where
+// watch-namespaces is set, it caches those namespaces alone, and the connector's trust ConfigMap in the
+// release namespace, so each program's Roles name all it reads (ADR 0091 decision 1).
 func cacheOptions(bots botOptions) cache.Options {
+	claim := fields.OneTermEqualSelector("metadata.name", controller.ClaimLeaseName)
+	options := cache.Options{ByObject: map[client.Object]cache.ByObject{&coordinationv1.Lease{}: {Field: claim}}}
 	if bots.watchNamespaces == "" {
-		return cache.Options{}
+		return options
 	}
 	namespaces := map[string]cache.Config{}
 	for name := range strings.SplitSeq(bots.watchNamespaces, ",") {
@@ -553,10 +561,15 @@ func cacheOptions(bots botOptions) cache.Options {
 			namespaces[name] = cache.Config{}
 		}
 	}
-	if bots.releaseNamespace != "" {
-		namespaces[bots.releaseNamespace] = cache.Config{}
+	options.DefaultNamespaces = namespaces
+	if _, watched := namespaces[bots.releaseNamespace]; bots.releaseNamespace != "" && !watched {
+		configMaps := maps.Clone(namespaces)
+		configMaps[bots.releaseNamespace] = cache.Config{
+			FieldSelector: fields.OneTermEqualSelector("metadata.name", bots.trustConfigMap),
+		}
+		options.ByObject[&corev1.ConfigMap{}] = cache.ByObject{Namespaces: configMaps}
 	}
-	return cache.Options{DefaultNamespaces: namespaces}
+	return options
 }
 
 // setupBots sets the Bot reconciler up with mgr. It needs no garam address or key (ADR 0090 decision 1).

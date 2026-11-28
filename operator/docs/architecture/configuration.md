@@ -28,14 +28,14 @@ How this project's binaries are configured, and which repository owns each value
 | `--trust-configmap`, `--bot-token-audience` | The connector's names for its trust bundle and its credential's audience, `garam-connector-trust` and `garam-connector` by default, the same as the connector's own flags of those names (ADR 0097). A chart that renames one renames both. |
 | `--agent-adapter-image` | Names a registry, a repository and a build of `garam`'s image, as `--agent-image` does of `sherlock`'s. Which build of the adapter a cluster runs is that cluster's, and it has to match the `garam` that cluster talks to. Unset is a Pod with no adapter, which is the correct state for a base with no environment behind it. |
 
-- **The connector chart owns the Bot reconciler's flags that name its release** (ADR 0098), and sets them only where the `Bot` kind is served. The manager refuses to start a Bot reconciler without the first four.
+- **The connector chart, `deploy/charts/garam-connector/`, owns the Bot reconciler's flags that name its release** (ADR 0098), and sets them from its release and values; its `values.yaml` describes each value. The manager refuses to start a Bot reconciler without the first four.
 
 | Flag | What it names |
 |---|---|
 | `--bot-image` | The garam-bot runtime image every Bot's Pod runs, by digest. |
 | `--release-namespace`, `--release-name` | The chart's release. A Bot is built only in a namespace whose claim names `<release-namespace>/<release-name>`, and the connector publishes its trust bundle in the release namespace. |
 | `--connector-url` | The connector's bot token server as a Bot's runtime reaches it, the Service in the release namespace. |
-| `--watch-namespaces` | The namespaces the manager caches and acts in, beside the release namespace. Unset caches every namespace, as the manager does in our own system. |
+| `--watch-namespaces` | The namespaces the manager caches and acts in. In the release namespace, unless it is one of them, it caches the trust ConfigMap alone, so the chart's Roles name all it reads. Unset caches every namespace, as the manager does in our own system. Among Leases it caches the claim alone either way. |
 
 - **The overlay for a cluster belongs in the repository that reconciles that cluster; where nothing reconciles it, the overlay lives here under `config/overlays/<environment>/`, and it is removed when something takes it.** A repository that reconciles a cluster does not thereby reconcile this operator in it, and `garamsh/gitops` did not until `garamsh/gitops#239` landed. It does now, so `admin@garam-dev`'s values are that repository's and this repository holds no overlay. Read on `admin@garam-dev` on 2026-09-05: an Argo CD `Application` named `gagent-operator` tracks this repository's `config/default` by path and revision, reports `Synced` and `Healthy`, and holds the manager's Deployment in its resource tree, where `argocd.argoproj.io/tracking-id` names that `Application`. On 2026-09-28 the `Application` tracking it is named `garam-agent-operator`. The annotation is what tells an owner from an applier; `app.kubernetes.io/managed-by: kustomize` is not, because Argo CD renders the same `config/` with the same kustomize and the label is present under either.
 - **An image this project does not build is referenced the same way as one it does — `<repository>:<tag>@sha256:<digest>` — and where the registry holds no index, the platform manifest's digest is taken and the architecture it pins is recorded rather than left implicit.** That binds whoever sets `--agent-image`, `--agent-workspace-image` or `--agent-adapter-image`, in whichever repository holds the overlay: a reference with no index above it pins one architecture, so the overlay records which, and a node of another fails to pull rather than mismatching silently. `--agent-copy-image` is the base's and does have an index, so it carries the index digest instead.
@@ -48,7 +48,7 @@ How this project's binaries are configured, and which repository owns each value
 
 ### The connector
 
-- **The connector is configured by flags, and by nothing else.** `cmd/connector/main.go` declares every flag and its default. The chart that sets them is #445's, and no chart sets them yet.
+- **The connector is configured by flags, and by nothing else.** `cmd/connector/main.go` declares every flag and its default. The connector chart sets them from its release and values (#1253).
 - **No secret value is a flag.** The registration token is read from the file `--registration-token-file` names, and only while the cluster is not registered. The key is generated in the connector and kept in the Secret `--identity-secret` names, and never in a file (ADR 0093). The serving key of the bot token server exists in the connector's process alone (ADR 0097).
 
 | Flag | What it names | Default |

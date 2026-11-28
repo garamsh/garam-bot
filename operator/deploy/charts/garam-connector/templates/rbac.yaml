@@ -1,0 +1,185 @@
+{{- /*
+Roles in named namespaces alone, and no ClusterRole (ADR 0091 decision 1). The connector reads the API
+server's ServiceAccount issuer and keys through the default system:service-account-issuer-discovery
+binding, which every ServiceAccount holds, so it needs none (ADR 0097). Each program holds only the
+verbs its own work calls (ADR 0091 decision 2, as ADR 0097 and ADR 0098 amend it).
+*/ -}}
+{{- $watched := include "garam-connector.watched" . | fromJsonArray -}}
+{{- $root := . -}}
+# The manager, in the release namespace: its leader-election Lease and the events it records, and the
+# connector's trust bundle, by name, which it copies to each Bot. Its cache reads that ConfigMap alone
+# there, by a field selector RBAC applies resourceNames to.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, create, update]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [{{ include "garam-connector.trustConfigMap" . }}]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-manager
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-manager
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-manager
+    namespace: {{ .Release.Namespace }}
+{{- if .Values.connector.enabled }}
+---
+# The connector, in the release namespace: its identity Secret and its trust ConfigMap, each by name.
+# It creates neither, because RBAC cannot narrow create by name.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-connector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ include "garam-connector.identitySecret" . }}]
+    verbs: [get, update]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [{{ include "garam-connector.trustConfigMap" . }}]
+    verbs: [get, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-connector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-connector
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-connector
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- range $namespace := $watched }}
+---
+# The manager, in a watched namespace, under its own name since the release namespace may be watched
+# too: each Bot and its status, and what it builds for it (ADR 0098).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $root.Release.Name }}-manager-watched
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "garam-connector.labels" $root | nindent 4 }}
+rules:
+  - apiGroups: [bot.garam.sh]
+    resources: [bots]
+    verbs: [get, list, watch]
+  - apiGroups: [bot.garam.sh]
+    resources: [bots/status]
+    verbs: [update]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    verbs: [get, list, watch, create, update]
+  - apiGroups: [""]
+    resources: [configmaps, serviceaccounts]
+    verbs: [get, list, watch, create, update]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    resourceNames: [{{ include "garam-connector.claimName" $root }}]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $root.Release.Name }}-manager-watched
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "garam-connector.labels" $root | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $root.Release.Name }}-manager-watched
+subjects:
+  - kind: ServiceAccount
+    name: {{ $root.Release.Name }}-manager
+    namespace: {{ $root.Release.Namespace }}
+{{- if $root.Values.connector.enabled }}
+---
+# The connector, in a watched namespace: interface 1's four kinds, which it applies; the claim, by
+# name; and the Pods and StatefulSets a bot's credential is bound to (connector.md §Rights).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $root.Release.Name }}-connector-watched
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "garam-connector.labels" $root | nindent 4 }}
+rules:
+  - apiGroups: [bot.garam.sh]
+    resources: [bots, workspaces, workspaceclasses, botpools]
+    verbs: [list, watch, create, patch, delete]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    resourceNames: [{{ include "garam-connector.claimName" $root }}]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $root.Release.Name }}-connector-watched
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "garam-connector.labels" $root | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $root.Release.Name }}-connector-watched
+subjects:
+  - kind: ServiceAccount
+    name: {{ $root.Release.Name }}-connector
+    namespace: {{ $root.Release.Namespace }}
+{{- end }}
+---
+# The claim of a watched namespace for this release (ADR 0089 decision 8, CLAIM-1). Both programs only
+# read it. A second release rendering it in a namespace this release claimed fails at install, because
+# Helm refuses to adopt an object another release owns.
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: {{ include "garam-connector.claimName" $root }}
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "garam-connector.labels" $root | nindent 4 }}
+spec:
+  holderIdentity: {{ include "garam-connector.release" $root }}
+{{- end }}

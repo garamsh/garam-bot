@@ -340,7 +340,23 @@ verify-build-context: ## Fail when .dockerignore leaves out a file Go source emb
 # it is the one step that needs the network, and a contributor who cannot reach
 # github.com cannot push what the rest of the set just cleared either.
 .PHONY: ci
-ci: verify-tidy lint-config lint fmt test build verify-build-context verify-pins ## Run the whole check set — module tidiness, lint, format, test, build, the image build context, the action pins.
+ci: verify-tidy lint-config lint fmt test build verify-build-context chart-check verify-pins ## Run the whole check set — module tidiness, lint, format, test, build, the image build context, the connector chart, the action pins.
+
+# The connector chart. Its crds/ are interface 1's CRDs, copied from the api module go.mod pins, so
+# `helm install --skip-crds` leaves them out; chart-check fails where the copies differ.
+CHART = deploy/charts/garam-connector
+
+.PHONY: chart-crds
+chart-crds: ## Copy interface 1's CRDs from the pinned api module into the connector chart.
+	cp "$$(go list -m -f '{{.Dir}}' github.com/garamsh/garam-bot/api)"/declaration/v1alpha1/crds/*.yaml $(CHART)/crds/
+	chmod 644 $(CHART)/crds/*.yaml
+
+# Renders the connector chart with the pinned helm, checks what it renders, and installs it into
+# envtest's API server (test/chart).
+.PHONY: chart-check
+chart-check: helm setup-envtest ## Render and install the connector chart, and check its rights, inbound paths, Pods and claims.
+	HELM="$(HELM)" KUBEBUILDER_ASSETS="$$("$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
+		go test -tags chart -count=1 ./test/chart/
 
 ##@ Build
 
@@ -378,10 +394,17 @@ CONTROL_IMG ?= control:latest
 docker-build-control: ## Build docker image with the control service.
 	$(CONTAINER_TOOL) build --build-arg REVISION=$$(git rev-parse HEAD) -f build/control.Dockerfile -t ${CONTROL_IMG} .
 
-# The two images this project publishes, built for publishing and pushed by nothing
-# here (delivery.md, ADR 0051): the manager's from Dockerfile and the control
-# service's from build/control.Dockerfile, each one linux/amd64 manifest, tagged
-# locally garam-bot/operator-manager:<REVISION> and garam-bot/operator-control:<REVISION>
+# The connector's image, from build/connector.Dockerfile, built as the control service's is.
+CONNECTOR_IMG ?= connector:latest
+
+.PHONY: docker-build-connector
+docker-build-connector: ## Build docker image with the connector.
+	$(CONTAINER_TOOL) build --build-arg REVISION=$$(git rev-parse HEAD) -f build/connector.Dockerfile -t ${CONNECTOR_IMG} .
+
+# The three images this project publishes, built for publishing and pushed by nothing
+# here (delivery.md, ADR 0051): the manager's from Dockerfile, the control service's
+# from build/control.Dockerfile and the connector's from build/connector.Dockerfile,
+# each one linux/amd64 manifest, tagged locally garam-bot/operator-<image>:<REVISION>
 # and labelled with REVISION. The release workflow and the manual procedure for a
 # development image both build through this target, then tag and push what it built.
 #
@@ -396,10 +419,11 @@ REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
 IMAGE_PLATFORM = linux/amd64
 
 .PHONY: build-images
-build-images: ## Build the manager's and the control service's images to publish, one linux/amd64 manifest each, and push nothing.
+build-images: ## Build the manager's, the control service's and the connector's images to publish, one linux/amd64 manifest each, and push nothing.
 	@test -n "$(REVISION)" || { echo "build-images: REVISION is empty; pass one: make build-images REVISION=<commit>"; exit 1; }
 	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -t garam-bot/operator-manager:$(REVISION) .
 	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -f build/control.Dockerfile -t garam-bot/operator-control:$(REVISION) .
+	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -f build/connector.Dockerfile -t garam-bot/operator-connector:$(REVISION) .
 
 # Refuses IMAGE_REF where ADR 0078's tag rule forbids its push: under
 # garam-bot/operator-<image>, a release version tag (0.1.0-dev.N, 0.1.0-rc.N or 0.1.0, ADR 0081)
@@ -588,6 +612,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+HELM ?= $(LOCALBIN)/helm
 
 ## Tool Versions
 # The PM moves the three pins below and reviews them when the Kubernetes
@@ -612,6 +637,14 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
 # review: no Kubernetes release bears on it, so it moves when a Go release or a
 # lint failure requires it.
 GOLANGCI_LINT_VERSION ?= v2.15.0
+
+# The PM moves this pin too. chart-check renders and installs the connector chart with it.
+HELM_VERSION ?= v4.3.1
+
+.PHONY: helm
+helm: $(HELM) ## Download helm locally if necessary.
+$(HELM): $(LOCALBIN)
+	$(call go-install-tool,$(HELM),helm.sh/helm/v4/cmd/helm,$(HELM_VERSION))
 
 .PHONY: kind
 kind: $(KIND) ## Download kind locally if necessary.

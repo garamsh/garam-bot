@@ -1,0 +1,6 @@
+apiVersion: v2
+name: garam-connector
+description: Connects a cluster to garam. It installs interface 1's CRDs, the manager, which runs each Bot, and the connector, which holds the cluster's garam identity (ADR 0087, ADR 0090).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
