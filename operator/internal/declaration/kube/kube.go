@@ -117,6 +117,9 @@ func (o *Objects) signal() {
 
 func (o *Objects) Changed() <-chan struct{} { return o.changed }
 
+// Reader reads the watched namespaces' declared kinds and claims from the cache, and nothing else.
+func (o *Objects) Reader() client.Reader { return o.client }
+
 func (o *Objects) Claim(ctx context.Context, namespace string) (string, bool, error) {
 	var claim coordinationv1.Lease
 	err := o.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: declaration.ClaimName}, &claim)

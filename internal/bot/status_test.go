@@ -10,6 +10,8 @@ import (
 	"github.com/garamsh/garam-bot/internal/bot"
 )
 
+var start = time.Date(2026, 11, 24, 0, 0, 0, 0, time.UTC)
+
 func TestProbe_PassesOnlyARunningStatusWithAFreshHeartbeat(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "status.json")
 	running := bot.Status{State: bot.StateRunning, Heartbeat: start, Bot: bot.BotRef{Name: "mira"}}

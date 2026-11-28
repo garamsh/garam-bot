@@ -39,7 +39,7 @@ How this project's binaries are configured, and which repository owns each value
 ### The connector
 
 - **The connector is configured by flags, and by nothing else.** `cmd/connector/main.go` declares every flag and its default. The chart that sets them is #445's, and no chart sets them yet.
-- **No secret value is a flag.** The registration token is read from the file `--registration-token-file` names, and only while the cluster is not registered. The key is generated in the connector and kept in the Secret `--identity-secret` names, and never in a file (ADR 0093).
+- **No secret value is a flag.** The registration token is read from the file `--registration-token-file` names, and only while the cluster is not registered. The key is generated in the connector and kept in the Secret `--identity-secret` names, and never in a file (ADR 0093). The serving key of the bot token server exists in the connector's process alone (ADR 0097).
 
 | Flag | What it names | Default |
 |---|---|---|
@@ -52,6 +52,10 @@ How this project's binaries are configured, and which repository owns each value
 | `--report-only` | Apply and delete nothing, and still report (DECL-15) | `false` |
 | `--identity-secret` | The Secret in the release namespace holding the cluster's key and record. It must exist: the chart creates it empty, and the connector never creates it | `garam-connector-identity` |
 | `--rotation-period` | How long the cluster's key signs before the connector rotates it. 0 or less is refused at start (ADR 0094) | `720h` |
+| `--bot-token-address` | The address the bot token server listens on, for the bots' processes of the watched namespaces (ADR 0097) | `:8443` |
+| `--bot-token-service` | The Service in the release namespace the bots' processes reach that server by. The serving certificate names `<service>.<release-namespace>.svc` and `<service>.<release-namespace>.svc.cluster.local` | `garam-connector` |
+| `--bot-token-audience` | The audience a Bot's projected ServiceAccount token names for that server | `garam-connector` |
+| `--trust-configmap` | The ConfigMap in the release namespace the serving certificates are published to, under `ca.crt`. It must exist: the chart creates it empty, and the connector never creates it | `garam-connector-trust` |
 
 ### The control service
 

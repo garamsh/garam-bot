@@ -14,8 +14,9 @@ import (
 
 // Service runs one Bot.
 type Service interface {
-	// Run reads the Bot and the token, then runs the Bot until ctx ends. It returns nil when ctx
-	// ends, and an error wrapping ErrBotInvalid or ErrTokenUnreadable for a start that failed.
+	// Run reads the Bot, then runs the Bot until ctx ends, obtaining its garam token where a connector is
+	// configured. It returns nil when ctx ends, and an error wrapping ErrBotInvalid for a Bot file that
+	// failed the start.
 	Run(ctx context.Context) error
 }
 
@@ -23,13 +24,15 @@ type Service interface {
 type Options struct {
 	// BotFile is the path of the file holding the one Bot to run.
 	BotFile string
-	// TokenFile is the path of the file holding the bot's garam token. Empty runs the bot with no
-	// garam identity.
-	TokenFile string
+	// ConnectorURL is the base URL of the place's connector, which answers the bot's garam token
+	// (interface 6). Empty runs the bot with no garam identity.
+	ConnectorURL string
+	// ConnectorTrustFile holds the certificates the connector is trusted by, read again as it changes.
+	ConnectorTrustFile string
+	// CredentialFile holds the place's credential naming the bot, read again for each request.
+	CredentialFile string
 	// StatusFile is the path the status contract's file is written at.
 	StatusFile string
-	// TokenInterval is how often the token file is read again.
-	TokenInterval time.Duration
 	// HeartbeatInterval is how often the status file is rewritten.
 	HeartbeatInterval time.Duration
 	// Now is the clock.
@@ -54,18 +57,27 @@ func (s *service) Run(ctx context.Context) error {
 	if o.HeartbeatInterval <= 0 {
 		return fmt.Errorf("heartbeat interval %s: want a positive duration", o.HeartbeatInterval)
 	}
-	if o.TokenInterval <= 0 {
-		return fmt.Errorf("token interval %s: want a positive duration", o.TokenInterval)
-	}
 	bot, err := readBot(o.BotFile)
 	if err != nil {
 		return err
 	}
-	var token *TokenFile
-	if o.TokenFile != "" {
-		if token, err = ReadTokenFile(o.TokenFile, o.Now()); err != nil {
+	var token *TokenSource
+	if o.ConnectorURL != "" {
+		if token, err = NewTokenSource(o.ConnectorURL, o.ConnectorTrustFile, o.CredentialFile, o.Now); err != nil {
 			return err
 		}
+		ctx, stop := context.WithCancel(ctx)
+		done := make(chan struct{})
+		defer func() {
+			stop()
+			<-done
+		}()
+		go func() {
+			defer close(done)
+			token.Run(ctx, func(err error) {
+				o.Logger.Warn("garam token not obtained; keeping the token held", "error", err)
+			})
+		}()
 	}
 	ref := BotRef{Namespace: bot.Namespace, Name: bot.Name, Generation: bot.Generation}
 	write := func(state State) error {
@@ -85,12 +97,6 @@ func (s *service) Run(ctx context.Context) error {
 
 	heartbeat := time.NewTicker(o.HeartbeatInterval)
 	defer heartbeat.Stop()
-	var refresh <-chan time.Time
-	if token != nil {
-		ticker := time.NewTicker(o.TokenInterval)
-		defer ticker.Stop()
-		refresh = ticker.C
-	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -101,14 +107,6 @@ func (s *service) Run(ctx context.Context) error {
 			if err := write(StateRunning); err != nil {
 				// A heartbeat that cannot be written lets the status go stale, which the probe reports.
 				o.Logger.Error("status not written", "error", err)
-			}
-		case <-refresh:
-			changed, err := token.Refresh(o.Now())
-			switch {
-			case err != nil:
-				o.Logger.Warn("token not read again; keeping the token last read", "error", err)
-			case changed:
-				o.Logger.Info("token read again", "file", o.TokenFile)
 			}
 		}
 	}

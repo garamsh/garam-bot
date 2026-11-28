@@ -59,6 +59,10 @@ type Connection interface {
 	Cluster() GRN
 	// Client carries the record's token on every request, and exchanges once more on a 401 (AUTH-1, AUTH-3).
 	Client() *http.Client
+	// Token answers the record's token, for a request that carries it in its body rather than in its
+	// header: the bot token exchange's actor_token. TokenURL is where that exchange is made.
+	Token(ctx context.Context) (string, error)
+	TokenURL() string
 	// Rotate replaces the record's key now (ROT-1 to ROT-5). One rotation runs at a time.
 	Rotate(ctx context.Context) error
 	// Run resolves a rotation a restart interrupted (ROT-5), then rotates the key every 30 days, until ctx

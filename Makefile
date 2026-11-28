@@ -1,4 +1,4 @@
-.PHONY: lint format format-fix test test-privileged build build-tools build-images toolchain-image proto generate ci hooks
+.PHONY: lint format format-fix test test-privileged build build-tools build-images toolchain-image proto generate ci hooks conformance-bot-token
 
 # The toolchain floor every go command below runs under: `go install tool@version`
 # and `go run tool@version` take the toolchain from the tool's own `go.mod` rather
@@ -326,7 +326,30 @@ toolchain-image:
 	@test "$(words $(toolchain_image))" = 1 || { echo "$(TOOLCHAIN_DOCKERFILE): want exactly one 'FROM <image> AS build' line, read [$(toolchain_image)]"; exit 1; }
 	@echo "$(toolchain_image)"
 
-ci: lint format generate test build
+# Interface 6's server suite against its reference server
+# (api/bot-token/v1alpha1/conformance.md), which serves from a directory of
+# its own and is stopped when the suite ends. The count is read off the suite's
+# verbose output, so a run that reached no test says so rather than passing.
+BOT_TOKEN_REFERENCE = $(CURDIR)/.cache/bot-token-reference
+
+conformance-bot-token:
+	cd api && go build -o "$(BOT_TOKEN_REFERENCE)" ./bot-token/v1alpha1/reference/cmd/bot-token-reference
+	@dir=$$(mktemp -d); status=0; \
+	"$(BOT_TOKEN_REFERENCE)" --dir "$$dir" serve >"$$dir/ready" 2>"$$dir/server.log" & pid=$$!; \
+	trap 'kill $$pid 2>/dev/null; rm -r -- "$${dir:?}"' EXIT; \
+	for _ in $$(seq 100); do [ -s "$$dir/ready" ] && break; sleep 0.1; done; \
+	[ -s "$$dir/ready" ] || { cat "$$dir/server.log" >&2; exit 1; }; \
+	cd api || exit 1; \
+	CONFORMANCE_BASE_URL="$$(cat "$$dir/url")" CONFORMANCE_TRUST_FILE="$$dir/ca.pem" \
+	CONFORMANCE_FIXTURE="$(BOT_TOKEN_REFERENCE) --dir $$dir" \
+		go test -tags=conformance ./bot-token/v1alpha1/conformance/server/ -v -count=1 2>&1 | tee "$$dir/log" || status=$$?; \
+	passed=$$(grep -c '^    --- PASS' "$$dir/log"); \
+	echo "conformance-bot-token: conformance.md's server suite against the reference server:" \
+		"$$passed passed, $$(grep -c '^    --- FAIL' "$$dir/log") failed"; \
+	test "$$passed" -gt 0 || exit 1; \
+	exit $$status
+
+ci: lint format generate test build conformance-bot-token
 
 proto:
 	buf lint

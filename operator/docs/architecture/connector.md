@@ -2,7 +2,7 @@
 
 How a user's own cluster is connected to garam: the chart a user installs, the connector program in it, its registration and identity, the declarations it syncs both ways, the rights it holds in the cluster, and what garam owes on its side.
 
-Registration and identity are built, in `cmd/connector` and `internal/clusteridentity` (#440), except registering again after a key is lost (#450). Applying declarations and reporting are built, in `internal/declaration` (#441, #442). The rest is not built yet. This document states what is decided. Goal #436 lists the implementation issues, and each section names the decision it holds.
+Registration and identity are built, in `cmd/connector` and `internal/clusteridentity` (#440), except registering again after a key is lost (#450). Applying declarations and reporting are built, in `internal/declaration` (#441, #442). Bots' tokens are built, in `internal/bottoken` (garam-bot#1255). The rest is not built yet. This document states what is decided. Goal #436 lists the implementation issues, and each section names the decision it holds.
 
 ## Current decisions
 
@@ -85,11 +85,34 @@ How the connector applies them (#441):
     - Nothing is sent before the wait ends, neither for a pass nor for the 5-minute timer. A pass that ends during the wait is held, and the latest view is sent when the wait ends.
 - **A tombstone** deletes the record's objects for its identifier, in the claimed namespaces. A full set read after it drops it, so what it named and did not delete is reported `orphaned`. garam cannot yet tell that orphan from one it never asked to delete (#453).
 
+### Bots' tokens
+
+These follow [ADR 0097](adr/0097-give-a-garam-owned-bots-process-its-token-from-the-connector-over-tls-on-its-projected-serviceaccount-token.md) and garam-bot's ADR 0042. The protocol is garam-bot's interface 6, `api/bot-token/v1alpha1/`.
+
+- **A garam-owned Bot's process obtains its token from the connector.** Every bot token is bound to a key the bot's process holds (garam ADR-0191). The process sends its proof, and the connector makes garam's exchange with it and answers the token. The connector never holds the key, signs no proof, writes no Secret, and keeps no token past its answer.
+- **Who is served.** A Bot that is garam-owned, applied by this record and in a watched namespace. Any other Bot, a cluster-owned one among them, is answered `unknown_bot` before garam is asked.
+- **The exchange.** garam's token endpoint, the `tokenUrl` the record holds, with `grant_type` token exchange, the cluster's token as `actor_token`, the bot's GRN `grn:<org>/iam/bot/<declaration id>` as `subject_token`, no `scope`, and the process's proof unchanged as `DPoP`.
+  - It is sent over the client that verifies garam against `--garam-root-file`, without the cluster's bearer header.
+  - The connector keeps the `DPoP-Nonce` garam last answered, and answers it to a process whose proof carries none.
+  - garam's refusal of the bot is `refused`, its 429 is relayed with `Retry-After`, and its 5xx or no answer is `temporarily_unavailable`. A refusal of the proof is relayed as garam gave it.
+- **The place's credential is the Bot's projected ServiceAccount token.**
+  - **The ServiceAccount.** Its name is the Bot's, in the Bot's namespace, and it holds no rights. The manager creates it with the Bot's workload (#1254).
+  - **The token.** Its audience is `--bot-token-audience`, `garam-connector`, and it lives 10 minutes.
+  - **The check.** It is verified against the keys and issuer the API server publishes at `/openid/v1/jwks` and `/.well-known/openid-configuration`, read through the default `system:service-account-issuer-discovery` binding. The keys are read again every 5 minutes, or sooner for a key not held.
+  - **Single use.** A token that obtained a garam token is refused afterwards, whatever key signs the proof. Requests carrying one token at once obtain at most one garam token.
+- **TLS the connector makes.**
+  - **The certificate.** The connector serves on `--bot-token-address`, `:8443`, behind the Service `--bot-token-service`, with a P-256 key in its process alone and a certificate that key signs itself, valid 90 days.
+  - **Publishing.** It publishes the certificate to `ca.crt` of the ConfigMap `--trust-configmap` before serving.
+  - **Replacement.** At two thirds of the validity it publishes the next beside it, and serves the next 10 minutes later. A restart makes a new one.
+  - **Reaching the bots.** The manager copies the bundle into each watched namespace where it places a garam-owned Bot, and mounts it into the bot's Pod (#1254).
+- **What is logged.** Each answer, with the Bot's namespace and name and the outcome. Never the credential, the proof or the token.
+
 ### Rights in the user's cluster
 
 These follow [ADR 0091](adr/0091-hold-only-namespaced-rights-in-a-users-cluster-open-no-inbound-port-and-keep-secrets-in-it.md).
 
 - **Rights:** Roles and RoleBindings in the release namespace and in each watched namespace, and no ClusterRole at runtime. Caches are restricted to those namespaces. RBAC cannot narrow Secret access below a namespace, so each program can read every Secret of a watched namespace, and a watched namespace holds only the bots' objects and the Secrets they reference.
+- **The trust ConfigMap is the chart's to create, empty, and the connector's to write**, as the identity Secret is: `get` and `update` on that one ConfigMap by `resourceNames`, and no `create`, `list` or `watch`. Every write carries the `resourceVersion` read. The connector reads the API server's ServiceAccount issuer and keys through the default `system:service-account-issuer-discovery` binding, and holds no other right for it (ADR 0097).
 - **The identity Secret is the chart's to create, empty, and the connector's to write.** The connector never creates a Secret, because RBAC cannot narrow `create` by name. Its Role grants `get` and `update` on that one Secret by `resourceNames`, and no `create`, `list` or `watch`. The chart never writes the Secret's data after creating it, so an upgrade keeps the key. The chart is #445's.
 - **The connector's Role in each watched namespace** grants `list`, `watch`, `create`, `patch` and `delete` on interface 1's four kinds, and `get`, `list` and `watch` on Leases with `resourceNames: [garam-connector-claim]`.
   - Every read goes through the cache, which lists and watches, so no `get` is needed on the four kinds. Server-side apply and both JSON patches are `patch`.
@@ -97,7 +120,7 @@ These follow [ADR 0091](adr/0091-hold-only-namespaced-rights-in-a-users-cluster-
   - It never writes a Lease (CLAIM-2).
   - `internal/declaration/kube`'s tests run every read and write as a ServiceAccount bound to exactly this Role. The chart is #445's.
 - **CRDs:** installed by Helm with the installer's rights, and the only cluster-scoped objects the chart renders.
-- **No inbound path:** no LoadBalancer or NodePort Service, no Ingress, no webhook. A NetworkPolicy admits no ingress. Egress goes to the configured proxy, or else to garam on 443, plus DNS, plus the API server's range given as a value.
+- **No inbound path from outside the cluster:** no LoadBalancer or NodePort Service, no Ingress, no webhook. A NetworkPolicy admits no ingress to the manager. The connector's admits ingress to its bot token port alone, from the watched namespaces alone (ADR 0097). Egress goes to the configured proxy, or else to garam on 443, plus DNS, plus the API server's range given as a value.
 - **Metrics:** off by default, and plain HTTP inside the cluster when turned on.
 - **Secrets:** no Secret or ConfigMap is ever reported, and no credential reaches a log, metric, event, status or report. A report does carry two free-text fields of a cluster-owned object as written, `spec.persona.instructions` and a status condition's `message` (REP-2, REP-9), so it holds no credential only while nobody types one into them.
 - **Images:** pinned by digest in the chart. A user can set the connector to report only.
@@ -116,7 +139,7 @@ These are obligations on `garamsh/garam`, for that repository to decide and buil
 | Write a bot or workspace declaration placed on a cluster and namespace, with an identifier, a generation and a tombstone on delete | ADR 0089 |
 | Refuse a declaration that names an image, carries a secret value, or takes a name a cluster-owned object holds in the latest report | ADR 0089, ADR 0091 |
 | Show a cluster's reported objects, read-only where cluster-owned, with each declaration's outcome and `lastContactAt` | ADR 0089 |
-| Let a cluster's token mint the garam tokens of a garam-owned bot placed on that cluster by a live declaration, and no other bot's, and reach no other operation (AUTH-4, AUTH-5) | ADR 0090, ADR 0088 |
+| Let a cluster's token mint the garam tokens of a garam-owned bot placed on that cluster by a live declaration, and no other bot's, and reach no other operation (AUTH-4, AUTH-5), each bound to the key of the proof the bot's process signed (garam ADR-0191) | ADR 0090, ADR 0088, ADR 0097 |
 | Treat a report as untrusted input: refuse undeclared kinds, ignore what names another record's declarations, and render cluster-owned specs as text only (REP-7 to REP-9) | ADR 0089 |
 
 ## Rationale
@@ -127,6 +150,7 @@ These are obligations on `garamsh/garam`, for that repository to decide and buil
 - **Why every cluster, aurora included:** the owner's direction of 2026-11-24, recorded in ADR 0093. Its precedents are GitHub Actions runners and Actions Runner Controller, and the Rancher agent.
 - **Why one owner per object:** the 11-21 decision's managed-by (ADR 0089). The precedent is argocd-agent's managed and autonomous modes, chosen here per object.
 - **Why two programs:** ADR 0090. ADR 0079's seam keeps identity provisioning outside the manager, and it keeps the key and the right to build workloads in different Pods.
+- **Why the bot's process calls the connector for its token:** ADR 0097. The token is bound to a key only the process holds, so the process has to sign the proof and the connector has to make the exchange. Meeting through the Kubernetes API instead needs a Role per Bot and a token at rest.
 - **Why namespaced rights and no images in declarations:** ADR 0091. They bound what a compromised garam or a stolen cluster token can do in a user's cluster.
 - **Why an interface with suites:** ADR 0092. It is the owner's interfaces-first principle and `convention-driven-project`'s interfaces.md.
 

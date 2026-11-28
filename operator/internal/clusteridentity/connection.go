@@ -48,6 +48,16 @@ func (c *connection) Client() *http.Client {
 	return &http.Client{Transport: bearer{c: c, base: c.s.transport()}, CheckRedirect: c.s.cfg.HTTP.CheckRedirect}
 }
 
+func (c *connection) Token(ctx context.Context) (string, error) {
+	_, source := c.current()
+	return source.Token(ctx)
+}
+
+func (c *connection) TokenURL() string {
+	state, _ := c.current()
+	return state.Record.TokenURL
+}
+
 // set replaces the state held, and the source with it where the key changed.
 func (c *connection) set(state State) {
 	c.mu.Lock()

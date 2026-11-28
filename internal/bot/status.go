@@ -41,10 +41,12 @@ type BotRef struct {
 	Generation int64  `json:"generation,omitempty"`
 }
 
-// TokenStatus is when the token was last read, and whether the latest read failed.
+// TokenStatus is when the garam token held was obtained and when it expires, both absent before the
+// first, and whether the latest attempt to obtain one failed.
 type TokenStatus struct {
-	ReadAt time.Time `json:"readAt"`
-	Stale  bool      `json:"stale"`
+	ObtainedAt time.Time `json:"obtainedAt,omitzero"`
+	ExpiresAt  time.Time `json:"expiresAt,omitzero"`
+	Stale      bool      `json:"stale"`
 }
 
 // ErrNotRunning is returned by Probe for a process that is not running its Bot.

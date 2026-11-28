@@ -1,6 +1,6 @@
-// Command garam-bot runs one Bot of interface 1 v1alpha1: "garam-bot run" reads the Bot and the
-// bot's garam token from files and runs it, and "garam-bot probe" answers the status contract a
-// container's probe asks (ADR 0033).
+// Command garam-bot runs one Bot of interface 1 v1alpha1: "garam-bot run" reads the Bot from a file,
+// obtains the bot's garam token from its place's connector and runs it, and "garam-bot probe" answers
+// the status contract a container's probe asks (ADR 0033, ADR 0042).
 package main
 
 import (
@@ -74,9 +74,10 @@ func newRunCommand() *cobra.Command {
 	}
 	flags := command.Flags()
 	flags.StringVar(&options.BotFile, "bot-file", "", "file holding the one Bot to run (required)")
-	flags.StringVar(&options.TokenFile, "token-file", "", "file holding the bot's garam token; unset runs the bot with no garam identity")
+	flags.StringVar(&options.ConnectorURL, "connector-url", "", "base URL of the place's connector, which answers the bot's garam token; unset runs the bot with no garam identity")
+	flags.StringVar(&options.ConnectorTrustFile, "connector-trust-file", "", "file holding the certificates the connector is trusted by, read again as it changes")
+	flags.StringVar(&options.CredentialFile, "credential-file", "", "file holding the place's credential naming the bot, read again for each request")
 	flags.StringVar(&options.StatusFile, "status-file", defaultStatusFile, "file the status is written to")
-	flags.DurationVar(&options.TokenInterval, "token-interval", 10*time.Second, "how often the token file is read again")
 	flags.StringVar(&terminationLog, "termination-log", "/dev/termination-log", "file a failed start writes its reason to")
 
 	return command

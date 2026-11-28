@@ -1,7 +1,8 @@
 // Command connector connects a user's cluster to garam: it registers the cluster once with a registration
 // token, keeps the key it generated in one Secret, and rotates that key itself (ADR 0088, ADR 0090). It
 // applies garam's declarations to the namespaces it watches, one owner per object, and reports what they
-// hold (ADR 0089).
+// hold (ADR 0089). It gives each garam-owned Bot's process the bot's garam token, bound to the key the
+// process holds (ADR 0097).
 package main
 
 import (
@@ -12,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,6 +27,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/garamsh/garam-bot/operator/internal/bottoken"
+	botkube "github.com/garamsh/garam-bot/operator/internal/bottoken/kube"
 	"github.com/garamsh/garam-bot/operator/internal/clusteridentity"
 	"github.com/garamsh/garam-bot/operator/internal/clusteridentity/secret"
 	"github.com/garamsh/garam-bot/operator/internal/declaration"
@@ -48,7 +52,14 @@ type options struct {
 	watchNamespaces  string
 	reportOnly       bool
 	rotationPeriod   time.Duration
+	botTokenAddress  string
+	botTokenService  string
+	botTokenAudience string
+	trustConfigMap   string
 }
+
+// trustKey is the key of the trust ConfigMap the serving certificates are published under.
+const trustKey = "ca.crt"
 
 func main() {
 	var o options
@@ -68,6 +79,14 @@ func main() {
 		"How long the cluster's key signs before the connector rotates it, more than 0 (ADR 0094).")
 	flag.StringVar(&o.identitySecret, "identity-secret", "garam-connector-identity",
 		"The Secret in the release namespace that holds the cluster's key and record. The chart creates it empty.")
+	flag.StringVar(&o.botTokenAddress, "bot-token-address", ":8443",
+		"The address the bot token server listens on, for the bots' processes of the watched namespaces (interface 6).")
+	flag.StringVar(&o.botTokenService, "bot-token-service", "garam-connector",
+		"The Service in the release namespace the bots' processes reach the bot token server by. The serving certificate names it.")
+	flag.StringVar(&o.botTokenAudience, "bot-token-audience", bottoken.DefaultAudience,
+		"The audience a Bot's projected ServiceAccount token names for the bot token server.")
+	flag.StringVar(&o.trustConfigMap, "trust-configmap", "garam-connector-trust",
+		"The ConfigMap in the release namespace the serving certificates are published to, under "+trustKey+". The chart creates it empty.")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
@@ -132,6 +151,23 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		Objects:    objects,
 		Log:        log,
 	})
+	tokens := bottoken.NewService(bottoken.Config{
+		Record:     string(connection.Cluster()),
+		Namespaces: namespaces,
+		Audience:   o.botTokenAudience,
+		Keys:       botkube.Keys{Kube: kube},
+		Bots:       botkube.Bots{Reader: objects.Reader()},
+		Trust:      botkube.TrustStore{Kube: kube, Namespace: o.releaseNamespace, Name: o.trustConfigMap, Key: trustKey},
+		HTTP:       garam,
+		TokenURL:   connection.TokenURL(),
+		Actor:      connection.Token,
+		DNSNames:   serviceNames(o.botTokenService, o.releaseNamespace),
+		Log:        log,
+	})
+	listener, err := net.Listen("tcp", o.botTokenAddress)
+	if err != nil {
+		return fmt.Errorf("listen for the bots' processes: %w", err)
+	}
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error { return connection.Run(ctx) })
 	group.Go(func() error { return objects.Start(ctx) })
@@ -141,7 +177,19 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		}
 		return declarations.Run(ctx)
 	})
+	group.Go(func() error {
+		if !objects.WaitForCacheSync(ctx) {
+			_ = listener.Close()
+			return ctx.Err()
+		}
+		return tokens.Serve(ctx, listener)
+	})
 	return group.Wait()
+}
+
+// serviceNames are the DNS names a Service is reached by from another namespace.
+func serviceNames(service, namespace string) []string {
+	return []string{service + "." + namespace + ".svc", service + "." + namespace + ".svc.cluster.local"}
 }
 
 // watchedNamespaces reads --watch-namespaces: each name once, without blanks.
