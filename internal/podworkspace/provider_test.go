@@ -16,6 +16,7 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/garamsh/garam-bot/api/workspace/v1alpha1"
 )
@@ -69,11 +70,12 @@ func newFixture(t *testing.T, egress, snapshots bool) *fixture {
 
 	return &fixture{
 		provider: &Provider{
-			cfg:       Config{Namespace: testNamespace, HelperImage: testHelper, Egress: egress},
+			cfg:       Config{Namespace: testNamespace, HelperImage: testHelper, Egress: egress, AdmitTimeout: 20 * time.Millisecond},
 			kube:      kube,
 			dynamic:   dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()),
 			discovery: discovery,
 			guest:     guest,
+			pollEvery: time.Millisecond,
 		},
 		kube:  kube,
 		guest: guest,
@@ -293,6 +295,13 @@ func TestPodHoldsTheWorkspaceToItsSpec(t *testing.T) {
 	assert.False(t, *pod.Spec.AutomountServiceAccountToken, "a workspace holds no cluster credential")
 	assert.False(t, *main.SecurityContext.AllowPrivilegeEscalation)
 	assert.Equal(t, []corev1.Capability{"ALL"}, main.SecurityContext.Capabilities.Drop)
+	assert.True(t, *pod.Spec.SecurityContext.RunAsNonRoot, "PodSecurity restricted asks for it on the pod")
+	assert.Equal(t, corev1.SeccompProfileTypeRuntimeDefault, pod.Spec.SecurityContext.SeccompProfile.Type)
+	for _, c := range append(pod.Spec.InitContainers, main) {
+		assert.True(t, *c.SecurityContext.RunAsNonRoot, "container %s", c.Name)
+		assert.False(t, *c.SecurityContext.AllowPrivilegeEscalation, "container %s", c.Name)
+		assert.Equal(t, []corev1.Capability{"ALL"}, c.SecurityContext.Capabilities.Drop, "container %s", c.Name)
+	}
 
 	var helperMount, dataMount *corev1.VolumeMount
 	for i := range main.VolumeMounts {
@@ -329,4 +338,24 @@ func TestPolicyAdmitsNothingInAndOnlyTheRulesOut(t *testing.T) {
 	assert.Equal(t, int32(90), *rules[0].Ports[0].EndPort)
 	assert.Equal(t, corev1.ProtocolUDP, *rules[1].Ports[0].Protocol, "a rule with no ports still names its protocol")
 	assert.Nil(t, rules[1].Ports[0].Port)
+}
+
+func TestCreateRefusesAnImageThatRunsAsRoot(t *testing.T) {
+	f := newFixture(t, false, false)
+	f.kube.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		pod := action.(k8stesting.CreateAction).GetObject().(*corev1.Pod).DeepCopy()
+		pod.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: containerName, State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{
+			Reason: "CreateContainerConfigError", Message: "container has runAsNonRoot and image will run as root (pod: \"one_workspaces(uid)\", container: workspace)",
+		}}}}
+
+		return true, pod, f.kube.Tracker().Create(corev1.SchemeGroupVersion.WithResource("pods"), pod, testNamespace)
+	})
+
+	_, created, err := f.provider.Create(t.Context(), "one", testSpec())
+
+	require.ErrorIs(t, err, v1alpha1.ErrInvalid)
+	assert.Contains(t, err.Error(), "runAsNonRoot")
+	assert.False(t, created)
+	_, err = f.provider.Get(t.Context(), "one")
+	assert.ErrorIs(t, err, v1alpha1.ErrNotFound, "a refused Create leaves nothing behind")
 }

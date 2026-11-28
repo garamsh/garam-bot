@@ -67,9 +67,66 @@ func (p *Provider) Create(ctx context.Context, name v1alpha1.Name, spec v1alpha1
 	if err := p.ensureChildren(ctx, name, spec, true); err != nil {
 		return v1alpha1.Workspace{}, false, err
 	}
+	if err := p.refuseRootImage(ctx, name); err != nil {
+		return v1alpha1.Workspace{}, false, err
+	}
 	ws, err := p.Get(ctx, name)
 
 	return ws, err == nil, err
+}
+
+// refuseRootImage waits for the kubelet to start the workspace's container or to refuse it. The
+// Pod must run as non-root (PodSecurity restricted), so an image that runs as root never starts:
+// the kubelet says so in the container's waiting state, and Create answers it as ErrInvalid and
+// removes what it made. A container still waiting for anything else when AdmitTimeout ends is
+// not refused: its reason is the workspace's status.
+func (p *Provider) refuseRootImage(ctx context.Context, name v1alpha1.Name) error {
+	timeout, every := p.cfg.AdmitTimeout, p.pollEvery
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	if every <= 0 {
+		every = 250 * time.Millisecond
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	for {
+		pod, err := p.kube.CoreV1().Pods(p.cfg.Namespace).Get(ctx, string(name), metav1.GetOptions{})
+		if err != nil && !isNotFound(err) {
+			return fmt.Errorf("get pod %s: %w", name, err)
+		}
+		if err == nil {
+			if workspaceRunning(pod) {
+				return nil
+			}
+			if reason := rootImageReason(pod); reason != "" {
+				if err := p.Delete(ctx, name); err != nil {
+					return fmt.Errorf("remove refused workspace %s: %w", name, err)
+				}
+
+				return fmt.Errorf("%w: the image cannot run as non-root, which every workspace must: %s", v1alpha1.ErrInvalid, reason)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return nil
+		case <-time.After(every):
+		}
+	}
+}
+
+// rootImageReason is the kubelet's refusal of a workspace container whose image runs as root (or
+// names a user it cannot check), or "".
+func rootImageReason(pod *corev1.Pod) string {
+	for _, c := range pod.Status.ContainerStatuses {
+		if w := c.State.Waiting; c.Name == containerName && w != nil && w.Reason == "CreateContainerConfigError" && strings.Contains(w.Message, "runAsNonRoot") {
+			return w.Message
+		}
+	}
+
+	return ""
 }
 
 // createAgain answers a Create of a name that has a claim: the same spec is the same workspace,

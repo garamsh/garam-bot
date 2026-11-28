@@ -93,6 +93,7 @@ func podFor(name v1alpha1.Name, spec v1alpha1.Spec, ns, helperImage string) *cor
 		corev1.ResourceMemory: *resource.NewQuantity(int64(spec.Resources.MemoryBytes), resource.BinarySI),
 	}
 	locked := &corev1.SecurityContext{
+		RunAsNonRoot:             ptr.To(true),
 		AllowPrivilegeEscalation: ptr.To(false),
 		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 	}
@@ -103,7 +104,7 @@ func podFor(name v1alpha1.Name, spec v1alpha1.Spec, ns, helperImage string) *cor
 			RestartPolicy:                corev1.RestartPolicyAlways,
 			AutomountServiceAccountToken: ptr.To(false),
 			EnableServiceLinks:           ptr.To(false),
-			SecurityContext:              &corev1.PodSecurityContext{SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
+			SecurityContext:              &corev1.PodSecurityContext{RunAsNonRoot: ptr.To(true), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
 			InitContainers: []corev1.Container{{
 				Name:            "helper",
 				Image:           helperImage,

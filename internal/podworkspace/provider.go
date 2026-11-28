@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/discovery"
@@ -32,6 +33,9 @@ type Config struct {
 	// SnapshotClass is the VolumeSnapshotClass a snapshot names. Empty, the cluster's default for
 	// the volume's driver applies.
 	SnapshotClass string
+	// AdmitTimeout bounds how long Create waits for the kubelet to start the workspace's
+	// container, which is when a root image is refused. Zero is 30 seconds.
+	AdmitTimeout time.Duration
 }
 
 var helperImagePattern = regexp.MustCompile(`^[^@\s]+@sha256:[0-9a-f]{64}$`)
@@ -43,6 +47,8 @@ type Provider struct {
 	dynamic   dynamic.Interface
 	discovery discovery.DiscoveryInterface
 	guest     guest
+	// pollEvery is how often Create looks at the Pod it made; zero is 250 milliseconds.
+	pollEvery time.Duration
 }
 
 var _ v1alpha1.Provider = (*Provider)(nil)
