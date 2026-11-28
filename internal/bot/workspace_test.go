@@ -8,8 +8,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -182,7 +184,13 @@ func drive(t *testing.T, p *place, credentialFile string, waits *sleeps) (*bot.W
 }
 
 // written waits until the session's tokens are written, and answers when.
-func written(t *testing.T, w *bot.Workspace) time.Time {
+// written answers the adapter's token the workspace last wrote.
+func written(w *bot.Workspace) string {
+	token, _ := w.AdapterTokens()
+	return token
+}
+
+func writtenAt(t *testing.T, w *bot.Workspace) time.Time {
 	t.Helper()
 	require.Eventually(t, func() bool { return !w.Status().TokensWrittenAt.IsZero() }, 10*time.Second, 5*time.Millisecond)
 	return w.Status().TokensWrittenAt
@@ -194,17 +202,22 @@ func TestWorkspace_AcquiresTheWorkspaceWritesItsTokensAndDialsTheAdapter(t *test
 	waits := &sleeps{}
 	w, _ := drive(t, p, credential, waits)
 
-	written(t, w)
+	writtenAt(t, w)
 
 	assert.Equal(t, workspace.PhaseRunning, w.Status().Phase)
 	adapter := p.file(uid, agent.TokenPath)
 	require.True(t, adapter.Exists, "the adapter's token is written")
-	assert.Equal(t, w.AdapterToken(), string(adapter.Content), "the token the process holds is the one written")
+	assert.Equal(t, written(w), string(adapter.Content), "the token the process holds is the one written")
 	assert.GreaterOrEqual(t, len(adapter.Content), 32, "at least 128 random bits (AUTH-1)")
 	model := p.file(uid, bot.ModelTokenPath)
 	assert.True(t, model.Exists && strings.HasPrefix(string(model.Content), "reference_model_"), "the model token is written")
 	search := p.file(uid, bot.ToolTokenPath(tool))
 	assert.True(t, search.Exists && strings.HasPrefix(string(search.Content), "reference_tool_"), "the tool's token is written")
+	space, ready := w.Session()
+	assert.True(t, ready, "the session is ready once its tokens are written")
+	assert.NotEmpty(t, space.Model.BaseURL, "the session's model gateway, as the connector answered it")
+	require.Len(t, space.Tools, 1)
+	assert.Equal(t, tool, space.Tools[0].Name)
 	require.Eventually(t, func() bool { return len(waits.recorded()) > 0 }, 5*time.Second, 5*time.Millisecond)
 	assert.Equal(t, 40*time.Minute, waits.recorded()[0], "the tokens are written again in 40 minutes (TOK-2)")
 
@@ -231,7 +244,7 @@ func TestWorkspace_WaitsAfterEach401FromOneSecondDoublingTo60AndNotOnceAnswered(
 	}
 	w, r := drive(t, p, credential, waits)
 
-	written(t, w)
+	writtenAt(t, w)
 
 	second := time.Second
 	want := []time.Duration{second, 2 * second, 4 * second, 8 * second, 16 * second, 32 * second, time.Minute, time.Minute}
@@ -247,11 +260,16 @@ func TestWorkspace_ReadsAPendingWorkspaceNoSoonerThanItsRetryAfter(t *testing.T)
 	uid, _, credential := p.bot()
 	waits := &sleeps{}
 	w, _ := drive(t, p, credential, waits)
-	first := written(t, w)
+	first := writtenAt(t, w)
 	p.fixture(nil, "workspace", uid, attachment, "--pending")
 	from := len(waits.recorded())
+	var readyWhilePending atomic.Bool
 	waits.mu.Lock()
 	waits.hook = func(n int, _ time.Duration) {
+		if n == from+1 {
+			_, ready := w.Session()
+			readyWhilePending.Store(ready)
+		}
 		if n == from+4 {
 			p.fixture(nil, "workspace", uid, attachment, "--running")
 		}
@@ -268,14 +286,17 @@ func TestWorkspace_ReadsAPendingWorkspaceNoSoonerThanItsRetryAfter(t *testing.T)
 	require.GreaterOrEqual(t, len(got), len(want)+1)
 	assert.Equal(t, want, got[:len(want)], "WS-3: each pending read waits its Retry-After")
 	assert.Equal(t, 40*time.Minute, got[len(want)], "once it runs, the tokens are written and stand")
+	assert.False(t, readyWhilePending.Load(), "the session is not ready while the workspace is acquired again")
+	_, ready := w.Session()
+	assert.True(t, ready, "control: the session is ready again once the tokens are written")
 }
 
 func TestWorkspace_WritesItsTokensAgainAfterAnAcquireThatStartedTheWorkspace(t *testing.T) {
 	p := startPlace(t)
 	uid, _, credential := p.bot()
 	w, _ := drive(t, p, credential, &sleeps{})
-	first := written(t, w)
-	before := w.AdapterToken()
+	first := writtenAt(t, w)
+	before := written(w)
 	p.fixture(nil, "workspace", uid, attachment, "--stopped")
 	require.False(t, p.file(uid, agent.TokenPath).Exists, "control: a stop leaves no token in the workspace (WS-1)")
 
@@ -285,8 +306,8 @@ func TestWorkspace_WritesItsTokensAgainAfterAnAcquireThatStartedTheWorkspace(t *
 	require.Eventually(t, func() bool { return w.Status().TokensWrittenAt.After(first) }, 10*time.Second, 5*time.Millisecond)
 	adapter := p.file(uid, agent.TokenPath)
 	assert.True(t, adapter.Exists, "the acquire that started the workspace is followed by a write")
-	assert.Equal(t, w.AdapterToken(), string(adapter.Content))
-	assert.NotEqual(t, before, w.AdapterToken(), "a fresh adapter token")
+	assert.Equal(t, written(w), string(adapter.Content))
+	assert.NotEqual(t, before, written(w), "a fresh adapter token")
 	assert.True(t, p.file(uid, bot.ModelTokenPath).Exists)
 	assert.True(t, p.file(uid, bot.ToolTokenPath(tool)).Exists)
 	assert.Equal(t, workspace.PhaseRunning, w.Status().Phase)
@@ -302,10 +323,14 @@ func TestWorkspace_WritesTheAdapterTokenAndWaitsForThePlacesGateway(t *testing.T
 	assert.True(t, p.file(uid, agent.TokenPath).Exists, "the adapter's token is written while the session waits")
 	assert.False(t, p.file(uid, bot.ModelTokenPath).Exists, "no model token without an issuer")
 	assert.Equal(t, string(access.CodeWaitingForGateway), w.Status().Refusal)
+	_, ready := w.Session()
+	assert.False(t, ready, "the session is not ready before its model and tool tokens are written")
 
 	p.fixture(nil, "issuer", "--on")
 
-	written(t, w)
+	writtenAt(t, w)
+	_, ready = w.Session()
+	assert.True(t, ready, "control: the session is ready once they are")
 	assert.False(t, w.Status().WaitingForGateway)
 	assert.True(t, p.file(uid, bot.ModelTokenPath).Exists)
 }
@@ -345,6 +370,11 @@ func TestRun_DrivesTheBotsWorkspaceWithNoGaramIdentityAndReportsItWithNoToken(t 
 	for _, secret := range []string{string(adapter.Content), "reference_model_", "reference_tool_"} {
 		assert.NotContains(t, string(data), secret, "the status carries no token")
 	}
+	// The driver dials the adapter's port, which at the reference echoes and answers no interface 2.
+	require.Eventually(t, func() bool {
+		status := readStatus(t, f.status)
+		return status.Session != nil && status.Session.Reason == bot.ReasonAdapterUnavailable
+	}, 10*time.Second, 10*time.Millisecond, "the session is not reported")
 
 	// Control: the same Bot with no attachment runs with no workspace.
 	f2 := newFiles(t)
@@ -354,5 +384,65 @@ func TestRun_DrivesTheBotsWorkspaceWithNoGaramIdentityAndReportsItWithNoToken(t 
 	stop2 := runInBackground(t, o2)
 	require.Eventually(t, func() bool { _, err := os.Stat(f2.status); return err == nil }, 5*time.Second, 10*time.Millisecond)
 	assert.Nil(t, readStatus(t, f2.status).Workspace)
+	assert.Nil(t, readStatus(t, f2.status).Session, "no session is driven with no workspace")
 	require.NoError(t, stop2())
+}
+
+func TestWorkspace_WritesTheAdapterTokenAgainAtOnceWhenAskedWithOrWithoutTheSessionsTokens(t *testing.T) {
+	p := startPlace(t)
+	uid, _, credential := p.bot()
+	p.fixture(nil, "issuer", "--off")
+	waits := &sleeps{}
+	w, _ := drive(t, p, credential, waits)
+	require.Eventually(t, func() bool { return w.Status().WaitingForGateway }, 10*time.Second, 5*time.Millisecond)
+	before := written(w)
+	require.NotEmpty(t, before)
+	_, writing := w.AdapterTokens()
+	assert.Empty(t, writing, "control: no write is under way once one was answered")
+
+	// No issuer: the session's tokens are refused, and the adapter's is written again regardless, as a
+	// restarted adapter needs.
+	w.Rewrite()
+	require.Eventually(t, func() bool { return written(w) != before }, 10*time.Second, 5*time.Millisecond)
+	assert.Equal(t, written(w), string(p.file(uid, agent.TokenPath).Content), "the new token is the one in the workspace")
+
+	// With an issuer, a Rewrite writes every token again well before the 40 minutes they stand.
+	p.fixture(nil, "issuer", "--on")
+	first := writtenAt(t, w)
+	require.Eventually(t, func() bool { return slices.Contains(waits.recorded(), 40*time.Minute) }, 10*time.Second, 5*time.Millisecond)
+	token := written(w)
+	w.Rewrite()
+	require.Eventually(t, func() bool { return w.Status().TokensWrittenAt.After(first) }, 10*time.Second, 5*time.Millisecond)
+	assert.NotEqual(t, token, written(w))
+}
+
+func TestWorkspace_AnswersTheTokenOfAWriteThatFailedBesideTheOneWritten(t *testing.T) {
+	p := startPlace(t)
+	uid, _, credential := p.bot()
+	waits := &sleeps{}
+	w, _ := drive(t, p, credential, waits)
+	writtenAt(t, w)
+	held := written(w)
+
+	// A write whose answer is a failure may have written its adapter token: FILE-1 keeps the files
+	// before a failure. Both tokens are answered until a write is answered.
+	var seen atomic.Value
+	waits.mu.Lock()
+	waits.hook = func(_ int, d time.Duration) {
+		if d <= time.Minute && seen.Load() == nil {
+			done, writing := w.AdapterTokens()
+			seen.Store([2]string{done, writing})
+		}
+	}
+	waits.mu.Unlock()
+	p.fixture(nil, "workspace", uid, attachment, "--stopped")
+	w.Rewrite()
+	require.Eventually(t, func() bool { return seen.Load() != nil }, 10*time.Second, 5*time.Millisecond)
+	tokens := seen.Load().([2]string)
+	assert.Equal(t, held, tokens[0], "the token last written stands while the write failed")
+	assert.NotEmpty(t, tokens[1], "the failed write's token is not answered")
+	assert.NotEqual(t, held, tokens[1])
+	// Control: once a write is answered, no token is being written.
+	require.Eventually(t, func() bool { _, writing := w.AdapterTokens(); return writing == "" && written(w) != held },
+		10*time.Second, 5*time.Millisecond)
 }

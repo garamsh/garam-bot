@@ -16,7 +16,7 @@ import (
 type Service interface {
 	// Run reads the Bot, then runs the Bot until ctx ends, obtaining its garam token where a connector
 	// and a credential file are configured, and driving its first attachment's workspace where a
-	// connector and a workspace credential file are. It returns nil when ctx ends, and an error wrapping ErrBotInvalid for a Bot file that
+	// connector and a workspace credential file are, its adapter's session with it. It returns nil when ctx ends, and an error wrapping ErrBotInvalid for a Bot file that
 	// failed the start.
 	Run(ctx context.Context) error
 }
@@ -36,6 +36,9 @@ type Options struct {
 	// WorkspaceCredentialFile holds the place's credential naming the bot for interface 7, read again
 	// for each request. Empty, or for a Bot with no attachment, the bot runs with no workspace.
 	WorkspaceCredentialFile string
+	// InboxDir is the directory of message files the bot's workspace is given tasks from, one task per
+	// file, until G4. Empty, its session is opened and given no task.
+	InboxDir string
 	// Sleep waits d, or until ctx ends. Time's own where nil.
 	Sleep func(ctx context.Context, d time.Duration) error
 	// StatusFile is the path the status contract's file is written at.
@@ -97,12 +100,21 @@ func (s *service) Run(ctx context.Context) error {
 			})
 		})
 	}
+	var driver *Driver
 	if space != nil {
 		background(func(ctx context.Context) {
 			space.Run(ctx, func(err error) {
 				o.Logger.Warn("workspace not ready; retrying", "attachment", space.cfg.Attachment, "error", err)
 			})
 		})
+		var messages MessageSource
+		if o.InboxDir != "" {
+			messages = NewInbox(o.InboxDir, 0, o.Sleep, o.Logger)
+		}
+		if driver, err = NewDriver(DriverConfig{Bot: bot, Place: space, Messages: messages, Sleep: o.Sleep, Logger: o.Logger}); err != nil {
+			return err
+		}
+		background(driver.Run)
 	}
 	ref := BotRef{Namespace: bot.Namespace, Name: bot.Name, Generation: bot.Generation}
 	write := func(state State) error {
@@ -114,6 +126,8 @@ func (s *service) Run(ctx context.Context) error {
 		if space != nil {
 			spaceStatus := space.Status()
 			status.Workspace = &spaceStatus
+			sessionStatus := driver.Status()
+			status.Session = &sessionStatus
 		}
 
 		return WriteStatus(o.StatusFile, status)

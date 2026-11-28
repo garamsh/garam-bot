@@ -4,8 +4,8 @@ go 1.27.4
 
 require (
 	github.com/distribution/reference v0.6.0
-	github.com/garamsh/garam-bot v0.11.2-0.20261128065958-4ad5ebacf4f8
-	github.com/garamsh/garam-bot/api v0.0.0-20261128065958-4ad5ebacf4f8
+	github.com/garamsh/garam-bot v0.11.2-0.20261128115427-3f4a6e6b328c
+	github.com/garamsh/garam-bot/api v0.0.0-20261128095648-ff0732e10ae0
 	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/go-logr/logr v1.4.4
 	github.com/golang-migrate/migrate/v4 v4.20.1

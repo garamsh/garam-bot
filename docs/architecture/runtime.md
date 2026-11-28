@@ -22,14 +22,36 @@ Governs the runtime that runs one Bot: what `garam-bot run` reads, the status co
   - **No issuer.** While the connector answers `waiting_for_gateway`, the adapter's token is written, the status says `waitingForGateway`, and the session tokens are asked for again after the back-off.
   - **Not running.** A write or a dial answered `not_running` makes it acquire again.
   - **Waits.** After a 401 it waits before its next request from 1 second, doubling to 60, until an answer is not 401 (AUTH-2). A 429 or 503 with `Retry-After` waits at least that, at most 60 seconds (REN-1). Any other failure waits from 1 second, doubling to 60, and the bot goes on running.
-  - **The dial.** `Workspace.Dial` opens one connection to the adapter's port, offering HTTP/1.1 alone (DIAL-1). Nothing dials it yet: dialling again after a broken connection (DIAL-2) is interface 2's caller's.
+  - **The dial.** `Workspace.Dial` opens one connection to the adapter's port, offering HTTP/1.1 alone (DIAL-1). The driver below dials through it.
   - **Confinement.** No token, credential, proof or file content reaches a log line, error or the status. The status names a refusal by its code alone.
-- **What the bot does.** It holds its Bot until SIGTERM, which exits 0. It has no work source yet.
-- **What it is to do: drive its adapter** (ADR 0043, decided and to build under garam-bot#1281).
-  - **The session.** It writes the adapter's token, checks the adapter's `info` against `spec.agent.harness`, writes the session's model and tool tokens, and opens the session `bot` with `spec.persona.instructions`.
-  - **Tasks.** It starts a task per message, from G4's long poll once garam serves it and from `--inbox-dir` until then. It long-polls the events, skipping a type it does not know.
-  - **Failures.** A workspace, adapter or gateway that fails leaves it running, with the reason in the status file, `waitingForGateway` while no model token is issued.
-  - **Confinement.** No input, event content, file content or token reaches a log line or the status file.
+- **What the bot does.** It holds its Bot until SIGTERM, which exits 0. With a workspace, it drives its adapter.
+- **Driving its adapter** (ADR 0043 decision 7, interface 2 `api/agent/v1alpha1/`). It is `Driver` in `internal/bot`, interface 2's caller, and it starts with the workspace.
+  - **The connection.** Each request goes over a connection `Workspace.Dial` opens, at most two at once. It carries the adapter token the workspace last wrote, read again for each request (AUTH-1). Where the adapter answers 401, the request is made once more with the token a write under way carries, or one whose write's answer was lost.
+  - **The session.**
+    - Once the adapter's token is written, it checks the adapter's `info` against `spec.agent.harness`, and opens no session on another harness. So a mismatch is reported while the session's tokens still wait for the place's gateway.
+    - Once the session's tokens are written, it opens the session `bot` with the Bot's name, `spec.persona.instructions`, the workspace's model gateway and tools, and the token file of each.
+    - A session the adapter holds under another spec, from an earlier process or generation, is deleted and opened again.
+    - While the workspace is not ready, it looks again every half second.
+  - **Messages.** The tasks come from a `MessageSource`, one message at a time: the driver asks for the next only once the last is acknowledged, and never twice at once.
+    - A message's identifier, stable across its deliveries, is its task's identifier, so a message delivered twice runs once (TASK-1).
+    - A source that asks to be polled later is polled again after the time it asks, at most 60 seconds. One that fails is polled again after a back-off from 1 second, doubling to 60.
+    - Until garam's mailbox serves the bot, the source is `Inbox` over `--inbox-dir`:
+      - each regular file is one message, given in the order of the names, its name the identifier and its content the input;
+      - a name starting with `.` is skipped, so a writer can rename a file into place, and so is a name that is no task identifier;
+      - a file is removed once its task is done;
+      - a file larger than 1 MiB, or a message rejected, is set aside as `.<name>.rejected`.
+    - Without `--inbox-dir`, the session is opened and given no task.
+  - **Events.** It long-polls the session's events, holding up to 50 seconds (`MaxWait`), from the last it read, and skips a type it does not know (VER-2). It keeps the end of every task the events show.
+    - A task is done at its `taskDone`, read now or earlier: one that ended while another task was current, or that an earlier process gave, is not waited on.
+    - A task refused `busy` waits for the session's running task to end, reading its events, and is given after it.
+  - **Rejection.** A message the adapter refuses as invalid, or as conflicting with another task of its identifier, three times is rejected and acknowledged, so the messages after it are given. So is a message whose identifier is no task identifier.
+  - **Dialling again.**
+    - A connection the adapter breaks, or a dial that fails, is dialled again after a back-off from 1 second, doubling to 60, reset by a dial answered 101 (DIAL-2).
+    - It reads on from the last event it read, and gives the current task again, which the adapter runs once (TASK-1). Nothing repeats where the connector restarted.
+    - A restarted workspace or adapter holds no session, and the current task is given to the session opened again, so it runs a second time: delivery is at least once.
+  - **A restarted adapter.** An adapter that refuses both tokens, as one restarted with an empty token directory does, has the workspace write its tokens again at once, rather than when they are due in up to 40 minutes. It then has the session opened again. The adapter's token is written even while the session's tokens wait for the place's gateway.
+  - **Failures.** Any other failure, a refusal or the harness mismatch among them, leaves it running. It is tried again after a back-off from 1 second, doubling to 60, reset once a task is given or an event read. The status file names the reason.
+  - **Confinement.** No input, event content, file content, adapter message or token reaches a log line or the status file. The log names task identifiers, event types and outcomes alone.
 
 ### The status contract
 
@@ -39,6 +61,7 @@ Governs the runtime that runs one Bot: what `garam-bot run` reads, the status co
   - `bot`: namespace, name and generation;
   - `token`: when the token held was obtained (`obtainedAt`) and when it expires (`expiresAt`), both absent before the first, and whether the latest attempt failed (`stale`). It is absent for a bot with no garam identity.
   - `workspace`: the `attachment`, its `phase` and `reason` as the connector last answered, `waitingForGateway`, when the session's tokens were last written (`tokensWrittenAt`), and the code of the latest refusal (`refusal`). It is absent for a bot with no workspace.
+  - `session`: the session's `state`, the `reason` no task runs where none can (`waitingForWorkspace`, `harnessMismatch`, `adapterUnavailable` or `messageSourceUnavailable`), the last task's `id` and `outcome` (`lastTask`), and how many messages were `completed`, `failed`, `stopped` and `rejected`. It is absent for a bot with no workspace.
 - **`garam-bot probe`** exits 0 only while the file says `Running` and its heartbeat is at most 30 seconds old. Otherwise it exits 1 and prints why. The Pod declares it as the container's readiness probe and liveness probe, so the kubelet reports the answer on the Pod, and nothing dials the container.
 - **A failed start** exits 1 and writes `<Reason>: <message>` to `--termination-log`, `/dev/termination-log` by default, which the kubelet reports as the container's termination message. `Reason` is `BotInvalid` or `Failed`, the second for a start the first does not name, such as a `--connector-url` without its files.
 - **How a manager reads it.** A Bot's `Running` condition (interface 1 STA-1) is `True` while the container is ready and `False` otherwise. While the container is not ready, the condition's reason is the termination message's reason where the container last terminated, and `Starting` otherwise. Writing the condition is the manager's.
