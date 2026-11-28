@@ -24,7 +24,7 @@ The interface is the Go interface `Provider` in this package, a driver API: an i
 | Implementation | Backend | Places | State |
 |---|---|---|---|
 | `workspacefake` | memory | the conformance suite | the reference implementation, built, passing the suite |
-| naru Machine | naru's Machine API `machines/v1alpha1` | a naru host | first production implementation; to build |
+| naru Machine | naru's Machine API `machines/v1alpha1` | a naru host | first production implementation; built (`pkg/naruworkspace`), passing the suite against naru's `machineapifake`; the run against orch is pending |
 | Pod | the Kubernetes API | a cluster | built (`internal/podworkspace`), passing the suite against a kind cluster |
 | container | a container engine's API: Docker or Podman, or Apple's container framework | a Linux PC, a Mac | to build |
 | mvmd | mvmd's runtime API `v1alpha2` | a Linux PC | to build |
@@ -85,12 +85,12 @@ Every refusal is one of the sentinels in `errors.go`, wrapped with `%w`, read wi
 
 ## Mapping onto naru's Machine API
 
-The naru Machine provider is a client of `machines/v1alpha1` (`garamsh/naru` `lib/machineapi` at `87c616bc9e7feb034bcce15db9fd9f80b3f858d4`, `docs/architecture/machines.md` §The API), linked by the program that runs bots at the place, the cluster connector first. It holds a `caller` certificate that it gets by registering once with a one-time token and a key it makes on site, and renews itself (`garamsh/naru#409`). One workspace is one Machine, named by the workspace's name.
+The naru Machine provider is a client of `machines/v1alpha1` (`garamsh/naru` `lib/machineapi` at `81d78696bf5fc61d9e30eee5f5d38c034a6aa08c`, `docs/architecture/machines.md` §The API), linked by the program that runs bots at the place, the cluster connector first. It holds a `caller` certificate that it gets by registering once with a one-time token and a key it makes on site, and renews itself (`garamsh/naru#409`). One workspace is one Machine, named by the workspace's name.
 
 - **Idempotency is naru's.** Every field of a spec reaches the Machine API as written (`cpu` is whole CPUs on both sides), so naru's create comparison is `SameSpec`'s, and the provider compares nothing itself.
-- **A read is the provider's own record.** naru answers env values as `<set>` and file content not at all, so the provider answers `Get` from the spec it created with, its env redacted as LIFE-2 requires, and naru's status.
-- **Status is followed, not polled.** naru's `machines.md` §The first user has a use "follow `GET .../events` for status, not polling". The provider follows the event log itself and answers `Get` and `List` from what it learned, listing again on `cursor-expired`. A caller's `Get` reaches no naru call.
-- **`Dial` needs naru-proxy,** which naru#378 builds and which serves a service to whoever reaches it. The adapter's own token (interface 2's AUTH-1) is what refuses anyone else. A proxy route open to the Machine's caller alone is an addition naru may make.
+- **A read is the provider's own record.** naru answers env values as `<set>` and file content not at all, so the provider answers `Get` from the spec as naru's read answers it, which is the spec it created with, its env redacted as LIFE-2 requires, and naru's status. It lists the Machines when it starts, so a restart keeps the record.
+- **Status is followed, not polled.** naru's `machines.md` §The first user has a use "follow `GET .../events` for status, not polling". The provider follows the event log itself and answers `Get` and `List` from what it learned, listing again on `cursor-expired`. naru's `GET .../events` answers at once, holding nothing open, so the provider asks again a second after a page that held no event. A caller's `Get` reaches no naru call.
+- **`Dial` goes through naru-proxy** (naru `docs/architecture/proxy.md`), which serves a service to whoever reaches it. The adapter's own token (interface 2's AUTH-1) is what refuses anyone else. A proxy route open to the Machine's caller alone is an addition naru may make.
 
 | Provider | Machine API |
 |---|---|
@@ -108,7 +108,7 @@ The naru Machine provider is a client of `machines/v1alpha1` (`garamsh/naru` `li
 | `Delete` | `DELETE .../machines/{name}`, 202. Its volumes go, its snapshots stay, and the name is held until the volumes are gone |
 | `Exec` | `POST .../machines/{name}/exec`: `command`, `timeoutSeconds`. The Machine API takes no input (naru ADR 0118), so `Capabilities.Stdin` is false and a non-empty `Stdin` is `ErrUnsupported` (EXEC-2). `Timeout` is rounded up to whole seconds, and 0 is naru's bound, 600 seconds; above it the 422 `invalid` is `ErrInvalid`. A command ended at its timeout or by a signal is a result: its `exitCode` is 128 plus the signal |
 | `ReadFile`, `WriteFile` | `GET`, `PUT .../machines/{name}/files?path=` |
-| `Dial(port)` | TLS to naru-proxy with the SNI `p<port>--<id>.<zone>`, the service's stable name (`address.name` with the service in front, naru ADR 0112), then plain TCP to the Machine. naru-proxy is not built yet (naru#378) |
+| `Dial(port)` | TLS to naru-proxy with the SNI `p<port>--<id>.<zone>`, the service's stable name (`address.name` with the service in front, naru ADR 0112), then plain TCP to the Machine |
 | `Snapshot(name, of)` | `PUT .../snapshots/{name}` with `machine`. Phases map one to one, and `DiskBytes` is the snapshot spec's one volume's `sizeBytes` |
 | `GetSnapshot`, `DeleteSnapshot` | `GET`, `DELETE .../snapshots/{name}` |
 | `Capabilities.Snapshot` | true: `capabilities.snapshot` always holds `volumes` |
