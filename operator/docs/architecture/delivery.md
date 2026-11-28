@@ -4,15 +4,21 @@ What this project publishes, where its output lands in a cluster, and who owns e
 
 ## Current decisions
 
-- This project builds three images and publishes all three, each to one ECR repository of its own in AWS account `486152169996`, region `ap-northeast-2`. A repository is named `garam-bot/operator-<image>` and holds that image's release and development images, told apart by tag (ADR 0078, garam-bot ADR 0041). This project publishes no other image and reaches no other registry.
+- This project builds four images and publishes them, the model gateway's once its repository exists (below), each to one ECR repository of its own in AWS account `486152169996`, region `ap-northeast-2`. A repository is named `garam-bot/operator-<image>` and holds that image's release and development images, told apart by tag (ADR 0078, garam-bot ADR 0041). This project publishes no other image and reaches no other registry.
 
 | Image | Entry point | Dockerfile | Repository |
 |---|---|---|---|
 | Manager | `cmd/main.go` | `Dockerfile` | `garam-bot/operator-manager` |
 | Control service | `cmd/control/main.go` | `build/control.Dockerfile` | `garam-bot/operator-control` |
 | Connector | `cmd/connector` | `build/connector.Dockerfile` | `garam-bot/operator-connector` |
+| Model gateway | `cmd/model-gateway` | `build/model-gateway.Dockerfile` | `garam-bot/operator-model-gateway` |
 
 - **The connector's image is built and published like the other two** (ADR 0090, #1253). `make build-images` builds it beside them, and `make docker-build-connector` builds it alone, as `make docker-build-control` builds the control service's. Its repository, `garam-bot/operator-connector`, is `garamsh/aurora`'s to create, and `operator-release.yml` fails on it as on any missing repository until it exists. The workflow takes it as one more name in the loops that verify the reference, push and read back, with no branch of its own.
+
+- **The model gateway's image is built like the connector's, and not yet published** (garam-bot ADR 0044, garam-bot#1211). `make build-images` builds it beside the other three, and `make docker-build-model-gateway` builds it alone.
+  - Its repository, `garam-bot/operator-model-gateway`, is `garamsh/aurora`'s to create.
+  - Its name in `operator-release.yml`'s loops is garam-bot#1305's, a draft until that repository exists.
+  - Until both land, no release pushes it, and the workflow below names three images.
 
 - **The manager's and the control service's repositories are `garamsh/aurora`'s, created under `garamsh/aurora#866` as the PM relayed it; the connector's is created on the same footing and no one here has read it back.** Creating any repository is `garamsh/aurora`'s. This document names where the images go; no one here has read the repositories back, and no release has pushed to them yet. `operator-release.yml` fails on a repository that is missing.
 - **`garamsh/aurora#711` moves what is already published.** It copies each tag by digest, so a pin keeps its tag and digest and changes only its repository, then repoints the references and retires the old repositories under `garam/` and `garam-dev/` with the owner's approval. Those repositories hold every image published so far until the copy is done.
@@ -62,8 +68,8 @@ What this project publishes, where its output lands in a cluster, and who owns e
   - **Until `garamsh/aurora#711` is applied, this procedure cannot be completed.** The build and `make verify-image-ref` run today. The push and the read-back need the repositories to exist and a person's write into them.
   - Authenticate to ECR for account `486152169996` in `ap-northeast-2`.
   - Check out the commit being published and confirm the tree is unmodified. Nothing downstream will check this.
-  - Run `make build-images`, which builds the three images for that commit as one `linux/amd64` manifest each, tagged locally `garam-bot/operator-<image>:<commit>`, and pushes nothing.
-  - For each image, `manager`, `control` and `connector`, run `make verify-image-ref IMAGE_REF=<reference>` on `486152169996.dkr.ecr.ap-northeast-2.amazonaws.com/garam-bot/operator-<image>:<12-hex abbreviated commit hash>`, then tag the image with that reference and push it. Push no `dev-` tag (ADR 0067), and no version tag: that form is the release workflow's.
+  - Run `make build-images`, which builds the four images for that commit as one `linux/amd64` manifest each, tagged locally `garam-bot/operator-<image>:<commit>`, and pushes nothing.
+  - For each image, `manager`, `control`, `connector` and `model-gateway`, run `make verify-image-ref IMAGE_REF=<reference>` on `486152169996.dkr.ecr.ap-northeast-2.amazonaws.com/garam-bot/operator-<image>:<12-hex abbreviated commit hash>`, then tag the image with that reference and push it. Push no `dev-` tag (ADR 0067), and no version tag: that form is the release workflow's.
   - Read each digest back from the registry, not from the build's output: the registry is what a deployment pulls from, so only it shows the image is there. Give the deployment the tag and that digest together. Which repository owns the value that carries it is `configuration.md`'s; this document says what the value must look like.
 - **A release is cut from `main`** (`integration.md`). After a promotion, a person tags `main`'s tip `operator/v0.1.0-dev.N`, `operator/v0.1.0-rc.N` or, at launch, `operator/v0.1.0` and pushes the tag, and the workflow publishes it. The last release is `v0.1.0-dev.5`, tagged in garam-bot-operator, whose tags stay there (ADR 0095), so the next is `operator/v0.1.0-dev.6`. Not every promotion is released, and a tag on a commit only `dev` holds is refused. The workflow does not create the GitHub release: the person who pushes the tag creates it, marked pre-release for `-dev` and `-rc` (ADR 0081).
 - **Neither path has run against the repositories above.** The hand procedure was run end to end for the manager before ADR 0066 split the repositories. The prior `garam/gagent-operator-dev` (18 images) and `garam/gagent-operator` (empty) repositories were emptied and removed on 2026-09-25. The release workflow has run three times, for the tags now named `v0.1.0-dev.1`, `v0.1.0-dev.2` and `v0.1.0-dev.3`, each on a commit `main` held (`d6a7e76`, `dbe85d4`, `f3841de`). Each run ended `success` after pushing both images to their repositories under `garam/` and reading each digest back from the registry, so what those repositories hold is one `linux/amd64` manifest under each tag. The workflow's first run against the repositories above is the next release after they exist.

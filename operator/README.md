@@ -49,6 +49,7 @@ Each image is published to one repository, holding its release and development i
 | Manager | `Dockerfile` | `garam-bot/operator-manager` |
 | Control service | `build/control.Dockerfile` | `garam-bot/operator-control` |
 | Connector | `build/connector.Dockerfile` | `garam-bot/operator-connector` |
+| Model gateway | `build/model-gateway.Dockerfile` | `garam-bot/operator-model-gateway` |
 
 A deployment references an image as `<repository>:<tag>@sha256:<digest>`. `docs/architecture/delivery.md` states the tag forms, how each image is published, and whether these repositories exist yet. This file claims no tag in them. `gh release list -R garamsh/garam-agent-operator` lists the releases.
 
