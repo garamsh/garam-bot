@@ -19,6 +19,11 @@ type errorBody struct {
 func (s *service) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+Path, func(w http.ResponseWriter, r *http.Request) {
+		if s.cfg.TokenURL == nil {
+			s.cfg.Log.Info("bot token refused: garam is off")
+			writeJSON(w, http.StatusForbidden, errorBody{Error: "unknown_bot"})
+			return
+		}
 		// A header without the Bearer scheme carries no credential.
 		credential, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !bearer {

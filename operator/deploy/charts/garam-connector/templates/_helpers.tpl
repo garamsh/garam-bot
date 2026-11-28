@@ -98,6 +98,22 @@ capabilities:
 
 
 {{/*
+garamOn answers "true" where the connector connects to garam: connector.garamURL and
+connector.garamRoot.configMap are set together. Neither set, garam is off: the connector registers
+nothing and reaches no garam (ADR 0099 decision 3), so a proxy to garam is refused.
+*/}}
+{{- define "garam-connector.garamOn" -}}
+{{- $c := .Values.connector -}}
+{{- if and $c.garamURL $c.garamRoot.configMap -}}
+true
+{{- else if or $c.garamURL $c.garamRoot.configMap -}}
+{{- fail "connector.garamURL and connector.garamRoot.configMap are set together, or neither is and garam is off" -}}
+{{- else if .Values.proxy.url -}}
+{{- fail "proxy.url is set where garam is off: the proxy is how the connector reaches garam" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 workspaceEgress renders a workspaces.<provider>.egress list as the connector's
 <cidr>/<protocol>/<port>[-<port>] rules, and refuses one without a rule to port 53, so a workspace
 resolves its URLs' names (ADR 0099 decision 7). The argument is a dict of name and rules.

@@ -69,7 +69,9 @@ const trustKey = "ca.crt"
 func main() {
 	var o options
 	flag.StringVar(&o.garamURL, "garam-url", "",
-		"The cluster-connection base URL garam serves, without /cluster-connection/v1alpha1.")
+		"The cluster-connection base URL garam serves, without /cluster-connection/v1alpha1. Unset with "+
+			"--garam-root-file and --registration-token-file, garam is off: nothing is registered, declared or "+
+			"reported, and interface 6 answers every call 403 unknown_bot.")
 	flag.StringVar(&o.rootFile, "garam-root-file", "",
 		"PEM file holding the root garam's certificate chains to. Nothing an answer carries is trusted (T-2).")
 	flag.StringVar(&o.tokenFile, "registration-token-file", "",
@@ -110,17 +112,21 @@ func main() {
 
 func run(ctx context.Context, o options, log *slog.Logger) error {
 	namespaces := watchedNamespaces(o.watchNamespaces)
-	if o.garamURL == "" || o.rootFile == "" || o.tokenFile == "" || o.releaseNamespace == "" || o.releaseName == "" ||
-		len(namespaces) == 0 {
-		return errors.New("--garam-url, --garam-root-file, --registration-token-file, --release-namespace, " +
-			"--release-name and --watch-namespaces are all required")
+	if o.releaseNamespace == "" || o.releaseName == "" || len(namespaces) == 0 {
+		return errors.New("--release-namespace, --release-name and --watch-namespaces are all required")
+	}
+	garamOn, err := garamGiven(o)
+	if err != nil {
+		return err
 	}
 	if o.rotationPeriod <= 0 {
 		return fmt.Errorf("--rotation-period is %v, and must be more than 0", o.rotationPeriod)
 	}
-	garam, err := garamClient(o.rootFile)
-	if err != nil {
-		return err
+	var garam *http.Client
+	if garamOn {
+		if garam, err = garamClient(o.rootFile); err != nil {
+			return err
+		}
 	}
 	restConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		clientcmd.NewDefaultClientConfigLoadingRules(), &clientcmd.ConfigOverrides{}).ClientConfig()
@@ -141,21 +147,6 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		}
 		log.Info("the naru Machine provider is established")
 	}
-	identity := clusteridentity.NewService(clusteridentity.Config{
-		BaseURL:        o.garamURL,
-		HTTP:           garam,
-		TokenFile:      o.tokenFile,
-		Version:        version,
-		Store:          secret.New(kube, o.releaseNamespace, o.identitySecret),
-		Log:            log,
-		RequestTimeout: requestTimeout,
-		RotationPeriod: o.rotationPeriod,
-	})
-	connection, err := identity.Establish(ctx)
-	if err != nil {
-		return err
-	}
-	log.Info("connected", "cluster", connection.Cluster())
 	objects, err := kubeobjects.New(restConfig, namespaces)
 	if err != nil {
 		return err
@@ -189,49 +180,34 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		beside = workspaces.Handler()
 		log.Info("interface 7 is served", "workspaceNamespace", o.workspaces.namespace)
 	}
-	declarations := declaration.NewService(declaration.Config{
-		BaseURL:    o.garamURL,
-		HTTP:       connection.Client(),
-		Record:     string(connection.Cluster()),
-		Release:    o.releaseNamespace + "/" + o.releaseName,
-		Namespaces: namespaces,
-		ReportOnly: o.reportOnly,
-		Version:    version,
-		Objects:    objects,
-		Log:        log,
-	})
-	tokens := bottoken.NewService(bottoken.Config{
-		Record:     string(connection.Cluster()),
+	tokenConfig := bottoken.Config{
 		Namespaces: namespaces,
 		Audience:   o.botTokenAudience,
 		Keys:       botkube.Keys{Kube: kube},
-		Bots:       appliedBots{declarations},
 		Pods:       botkube.Pods{Kube: kube},
 		Trust:      botkube.TrustStore{Kube: kube, Namespace: o.releaseNamespace, Name: o.trustConfigMap, Key: trustKey},
-		HTTP:       garam,
-		TokenURL:   connection.TokenURL,
-		Actor:      connection.Token,
-		Invalidate: connection.Invalidate,
 		DNSNames:   serviceNames(o.botTokenService, o.releaseNamespace),
 		Beside:     beside,
 		Log:        log,
-	})
+	}
+	group, ctx := errgroup.WithContext(ctx)
+	if garam != nil {
+		env := garamEnv{http: garam, kube: kube, objects: objects, namespaces: namespaces, log: log}
+		if err := connectGaram(ctx, o, env, &tokenConfig, group); err != nil {
+			return err
+		}
+	} else {
+		log.Info("garam is off: nothing is registered, declared or reported")
+	}
+	tokens := bottoken.NewService(tokenConfig)
 	listener, err := net.Listen("tcp", o.botTokenAddress)
 	if err != nil {
 		return fmt.Errorf("listen for the bots' processes: %w", err)
 	}
-	group, ctx := errgroup.WithContext(ctx)
-	group.Go(func() error { return connection.Run(ctx) })
 	group.Go(func() error { return objects.Start(ctx) })
 	if naru != nil {
 		group.Go(func() error { return naru.Run(ctx) })
 	}
-	group.Go(func() error {
-		if !objects.WaitForCacheSync(ctx) {
-			return ctx.Err()
-		}
-		return declarations.Run(ctx)
-	})
 	group.Go(func() error {
 		if !objects.WaitForCacheSync(ctx) {
 			_ = listener.Close()
@@ -248,6 +224,81 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		})
 	}
 	return group.Wait()
+}
+
+// garamGiven answers whether garam is on: --garam-url, --garam-root-file and --registration-token-file
+// are given together, or none of them is and garam is off (ADR 0099 decision 3).
+func garamGiven(o options) (bool, error) {
+	given := 0
+	for _, value := range []string{o.garamURL, o.rootFile, o.tokenFile} {
+		if value != "" {
+			given++
+		}
+	}
+	switch given {
+	case 0:
+		return false, nil
+	case 3:
+		return true, nil
+	default:
+		return false, errors.New("--garam-url, --garam-root-file and --registration-token-file are given together " +
+			"or not at all")
+	}
+}
+
+// garamEnv is what the garam side of the connector is built from.
+type garamEnv struct {
+	// http reaches garam, trusting the configured root alone.
+	http       *http.Client
+	kube       kubernetes.Interface
+	objects    *kubeobjects.Objects
+	namespaces []string
+	log        *slog.Logger
+}
+
+// connectGaram establishes the cluster's identity, builds the declarations domain, points interface 6
+// at garam through tokens, and starts both in group.
+func connectGaram(ctx context.Context, o options, env garamEnv, tokens *bottoken.Config, group *errgroup.Group) error {
+	identity := clusteridentity.NewService(clusteridentity.Config{
+		BaseURL:        o.garamURL,
+		HTTP:           env.http,
+		TokenFile:      o.tokenFile,
+		Version:        version,
+		Store:          secret.New(env.kube, o.releaseNamespace, o.identitySecret),
+		Log:            env.log,
+		RequestTimeout: requestTimeout,
+		RotationPeriod: o.rotationPeriod,
+	})
+	connection, err := identity.Establish(ctx)
+	if err != nil {
+		return err
+	}
+	env.log.Info("connected", "cluster", connection.Cluster())
+	declarations := declaration.NewService(declaration.Config{
+		BaseURL:    o.garamURL,
+		HTTP:       connection.Client(),
+		Record:     string(connection.Cluster()),
+		Release:    o.releaseNamespace + "/" + o.releaseName,
+		Namespaces: env.namespaces,
+		ReportOnly: o.reportOnly,
+		Version:    version,
+		Objects:    env.objects,
+		Log:        env.log,
+	})
+	tokens.Record = string(connection.Cluster())
+	tokens.Bots = appliedBots{declarations}
+	tokens.HTTP = env.http
+	tokens.TokenURL = connection.TokenURL
+	tokens.Actor = connection.Token
+	tokens.Invalidate = connection.Invalidate
+	group.Go(func() error { return connection.Run(ctx) })
+	group.Go(func() error {
+		if !env.objects.WaitForCacheSync(ctx) {
+			return ctx.Err()
+		}
+		return declarations.Run(ctx)
+	})
+	return nil
 }
 
 // appliedBots answers the bot token domain from the Bots the declarations domain applied (ADR 0097).

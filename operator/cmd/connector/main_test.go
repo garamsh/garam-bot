@@ -141,3 +141,44 @@ func TestRun_RefusesARotationPeriodOfZeroOrLess(t *testing.T) {
 	require.Error(t, err, "control: the absent root file still stops it")
 	assert.NotContains(t, err.Error(), "--rotation-period", "control: a period over 0 is taken")
 }
+
+func TestGaramGiven_TakesTheGaramFlagsTogetherOrNotAtAll(t *testing.T) {
+	all := options{garamURL: "https://garam.example", rootFile: "root.pem", tokenFile: "token"}
+	on, err := garamGiven(all)
+	require.NoError(t, err)
+	assert.True(t, on, "all three given: garam is on")
+	off, err := garamGiven(options{})
+	require.NoError(t, err)
+	assert.False(t, off, "none given: garam is off")
+
+	for name, partial := range map[string]options{
+		"the URL alone":              {garamURL: all.garamURL},
+		"the root alone":             {rootFile: all.rootFile},
+		"the token alone":            {tokenFile: all.tokenFile},
+		"no URL":                     {rootFile: all.rootFile, tokenFile: all.tokenFile},
+		"no root":                    {garamURL: all.garamURL, tokenFile: all.tokenFile},
+		"no registration token file": {garamURL: all.garamURL, rootFile: all.rootFile},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := garamGiven(partial)
+			require.ErrorContains(t, err, "together or not at all")
+		})
+	}
+}
+
+func TestRun_RequiresTheReleaseAndWatchedNamespacesWithGaramOff(t *testing.T) {
+	log := slog.New(slog.DiscardHandler)
+	for name, o := range map[string]options{
+		"no release namespace": {releaseName: offReleaseName, watchNamespaces: offWatched},
+		"no release name":      {releaseNamespace: offRelease, watchNamespaces: offWatched},
+		"no watched namespace": {releaseNamespace: offRelease, releaseName: offReleaseName},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.ErrorContains(t, run(context.Background(), o, log), "are all required")
+		})
+	}
+	// Control: given them, garam off passes the flag checks and stops only at the rotation period.
+	err := run(context.Background(), options{releaseNamespace: offRelease, releaseName: offReleaseName,
+		watchNamespaces: offWatched}, log)
+	require.ErrorContains(t, err, "--rotation-period")
+}
