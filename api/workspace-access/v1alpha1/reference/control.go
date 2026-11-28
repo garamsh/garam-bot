@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"strconv"
+	"strings"
 	"time"
 
 	workspace "github.com/garamsh/garam-bot/api/workspace/v1alpha1"
@@ -37,7 +39,7 @@ func (p *place) control() http.Handler {
 // controlled are the subcommands control serves.
 var controlled = map[string]bool{
 	"bot": true, "remake": true, "remove": true, "instance": true, "restart": true, "end": true,
-	"workspace": true, "file": true, "link": true, "exists": true, "issuer": true, "max-dials": true, "clock": true,
+	"workspace": true, "seed": true, "file": true, "link": true, "exists": true, "issuer": true, "max-dials": true, "clock": true,
 	"limits": true,
 }
 
@@ -137,6 +139,8 @@ func (p *place) run(name string, args []string) (any, error) {
 		return InstanceAnswer{Instance: inst.id}, nil
 	case "workspace":
 		return p.moveSpace(args)
+	case "seed":
+		return p.seedSpace(args)
 	case "file", "link", "exists":
 		return p.reachSpace(name, args)
 	case "issuer":
@@ -251,6 +255,23 @@ func (p *place) moveSpace(args []string) (any, error) {
 	default:
 		return nil, errors.New("workspace takes --stopped, --failed, --pending, --deleting or --running")
 	}
+	return done{}, nil
+}
+
+// seedSpace writes a file on a workspace's data volume, as the bot's work there does. The caller
+// holds mu.
+func (p *place) seedSpace(args []string) (any, error) {
+	if len(args) != 4 {
+		return nil, errors.New("seed takes UID ATTACHMENT PATH CONTENT")
+	}
+	sp, ok := p.spaces[spaceKey(args[0], args[1])]
+	if !ok {
+		return nil, errors.New("no such workspace")
+	}
+	if path.Clean(args[2]) != args[2] || !strings.HasPrefix(args[2], workspace.DataPath+"/") {
+		return nil, fmt.Errorf("seed writes a clean path under %s/ alone", workspace.DataPath)
+	}
+	sp.files[args[2]] = entry{content: []byte(args[3])}
 	return done{}, nil
 }
 
