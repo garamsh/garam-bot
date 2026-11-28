@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -18,6 +20,8 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/client-go/transport/spdy"
 	utilexec "k8s.io/client-go/util/exec"
+	"k8s.io/streaming/pkg/httpstream"
+	httpstreamspdy "k8s.io/streaming/pkg/httpstream/spdy"
 
 	"github.com/garamsh/garam-bot/api/workspace/v1alpha1"
 )
@@ -145,6 +149,8 @@ type clusterGuest struct {
 	rest      *rest.Config
 	kube      kubernetes.Interface
 	namespace string
+	// dialTimeout bounds a dial, defaultDialTimeout where zero.
+	dialTimeout time.Duration
 }
 
 func (g *clusterGuest) exec(ctx context.Context, pod string, command []string, stdin []byte) (v1alpha1.ExecResult, error) {
@@ -169,35 +175,29 @@ func (g *clusterGuest) exec(ctx context.Context, pod string, command []string, s
 	return v1alpha1.ExecResult{}, fmt.Errorf("exec in %s: %w", pod, err)
 }
 
+// defaultDialTimeout bounds a dial's connect, upgrade and streams, whatever ctx allows.
+const defaultDialTimeout = 30 * time.Second
+
 // dial opens the port-forward streams of one port and bridges them to one end of an in-memory
 // pipe, which it returns the other end of: that end takes deadlines as a socket does, and nothing
-// listens on the caller's host.
-func (g *clusterGuest) dial(_ context.Context, pod string, port uint16) (net.Conn, error) {
-	transport, upgrader, err := spdy.RoundTripperFor(g.rest)
+// listens on the caller's host. ctx, and the guest's dial timeout, bound the connect, the upgrade
+// and the streams' creation: an API server that never answers is left, its connection closed. The
+// connection returned outlives ctx.
+func (g *clusterGuest) dial(ctx context.Context, pod string, port uint16) (net.Conn, error) {
+	timeout := g.dialTimeout
+	if timeout == 0 {
+		timeout = defaultDialTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	session, err := g.forward(ctx, pod)
 	if err != nil {
 		return nil, fmt.Errorf("port-forward to %s: %w", pod, err)
 	}
-	req := g.kube.CoreV1().RESTClient().Post().Resource("pods").Namespace(g.namespace).Name(pod).SubResource("portforward")
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, req.URL())
-	session, _, err := dialer.Dial(portforward.PortForwardProtocolV1Name)
+	errStream, dataStream, err := openStreams(ctx, session, port)
 	if err != nil {
+		session.Close()
 		return nil, fmt.Errorf("port-forward to %s: %w", pod, err)
-	}
-	headers := http.Header{}
-	headers.Set(corev1.PortHeader, strconv.Itoa(int(port)))
-	headers.Set(corev1.PortForwardRequestIDHeader, "0")
-	headers.Set(corev1.StreamType, corev1.StreamTypeError)
-	errStream, err := session.CreateStream(headers)
-	if err != nil {
-		session.Close()
-		return nil, fmt.Errorf("port-forward to %s: error stream: %w", pod, err)
-	}
-	_ = errStream.Close()
-	headers.Set(corev1.StreamType, corev1.StreamTypeData)
-	dataStream, err := session.CreateStream(headers)
-	if err != nil {
-		session.Close()
-		return nil, fmt.Errorf("port-forward to %s: data stream: %w", pod, err)
 	}
 
 	caller, bridge := net.Pipe()
@@ -226,4 +226,107 @@ func (g *clusterGuest) dial(_ context.Context, pod string, port uint16) (net.Con
 	}()
 
 	return caller, nil
+}
+
+// openStreams creates the error and data streams of port on session. A stream's creation waits for
+// the kubelet's reply up to the session's own 30 seconds and not for a closed session, so it is made
+// aside and left where ctx ends first; it ends at that timeout at the latest.
+func openStreams(ctx context.Context, session httpstream.Connection, port uint16) (httpstream.Stream, httpstream.Stream, error) {
+	type opened struct {
+		errStream, dataStream httpstream.Stream
+		err                   error
+	}
+	done := make(chan opened, 1)
+	go func() {
+		headers := http.Header{}
+		headers.Set(corev1.PortHeader, strconv.Itoa(int(port)))
+		headers.Set(corev1.PortForwardRequestIDHeader, "0")
+		headers.Set(corev1.StreamType, corev1.StreamTypeError)
+		errStream, err := session.CreateStream(headers)
+		if err != nil {
+			done <- opened{err: fmt.Errorf("error stream: %w", err)}
+			return
+		}
+		_ = errStream.Close()
+		headers.Set(corev1.StreamType, corev1.StreamTypeData)
+		dataStream, err := session.CreateStream(headers)
+		if err != nil {
+			done <- opened{err: fmt.Errorf("data stream: %w", err)}
+			return
+		}
+		done <- opened{errStream: errStream, dataStream: dataStream}
+	}()
+	select {
+	case got := <-done:
+		return got.errStream, got.dataStream, got.err
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	}
+}
+
+// forward upgrades a port-forward request of pod to a SPDY session, its connection closed if ctx
+// ends before the session is made. The upgrade dials the API server itself and reads its answer
+// with no regard for ctx, so its round tripper is given a transport whose dial records the
+// connection, to be closed.
+func (g *clusterGuest) forward(ctx context.Context, pod string) (httpstream.Connection, error) {
+	tlsConfig, err := rest.TLSConfigFor(g.rest)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		mu     sync.Mutex
+		conns  []net.Conn
+		closed bool
+	)
+	var connector net.Dialer
+	upgrade := &http.Transport{
+		TLSClientConfig: tlsConfig,
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			conn, err := connector.DialContext(ctx, network, address)
+			if err != nil {
+				return nil, err
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if closed { // ctx ended while the connect was answered
+				_ = conn.Close()
+				return nil, context.Cause(ctx)
+			}
+			conns = append(conns, conn)
+			return conn, nil
+		},
+	}
+	upgrader, err := httpstreamspdy.NewRoundTripperWithConfig(httpstreamspdy.RoundTripperConfig{
+		PingPeriod: 5 * time.Second, UpgradeTransport: upgrade,
+	})
+	if err != nil {
+		return nil, err
+	}
+	wrapped, err := rest.HTTPWrappersForConfig(g.rest, upgrader)
+	if err != nil {
+		return nil, err
+	}
+	stop := context.AfterFunc(ctx, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		closed = true
+		for _, conn := range conns {
+			_ = conn.Close()
+		}
+	})
+	defer stop()
+	url := g.kube.CoreV1().RESTClient().Post().Resource("pods").Namespace(g.namespace).Name(pod).SubResource("portforward").URL()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	session, _, err := spdy.NegotiateStreaming(spdy.NewUpgraderForStreaming(upgrader), &http.Client{Transport: wrapped}, req,
+		portforward.PortForwardProtocolV1Name)
+	if ctx.Err() != nil {
+		if session != nil {
+			_ = session.Close()
+		}
+		return nil, ctx.Err()
+	}
+	return session, err
 }
