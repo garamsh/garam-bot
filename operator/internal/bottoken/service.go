@@ -34,6 +34,8 @@ type Config struct {
 	// HTTP reaches garam's token endpoint, TokenURL, trusting the configured root alone and presenting
 	// nothing. TokenURL is read for each exchange, as a rotation may change it. Actor answers the
 	// cluster's own token, the exchange's actor_token, and Invalidate drops one garam answered 401 to.
+	// All four nil, garam is off: no Bot holds a garam identity, so every call is answered 403
+	// unknown_bot before its credential is read (ADR 0099 decision 3).
 	HTTP       *http.Client
 	TokenURL   func() string
 	Actor      func(ctx context.Context) (string, error)

@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -212,7 +213,7 @@ metadata: {name: allowed}
 }
 
 // valueSets are the renders every invariant is checked on: the full values, the connector off, a
-// proxy, metrics on, the release namespace watched alone, naru, and the bots' workspaces.
+// proxy, metrics on, the release namespace watched alone, naru, the bots' workspaces, and garam off.
 var valueSets = map[string][]string{
 	"full":          nil,
 	"connector off": {"--set=connector.enabled=false"},
@@ -225,6 +226,8 @@ var valueSets = map[string][]string{
 	"naru":                    naruValues,
 	"workspaces":              workspaceValues,
 	"naru workspaces":         naruWorkspaceValues,
+	"garam off":               garamOffValues,
+	"garam off workspaces":    append(slices.Clone(garamOffValues), workspaceValues...),
 }
 
 // naruValues turn the naru Machine provider on, with every value it requires.
@@ -320,9 +323,9 @@ func TestChart_RunsOneConnectorAndReplacesItWithNoOverlap(t *testing.T) {
 }
 
 func TestChart_LeavesTheManagerAloneWhereTheConnectorIsOff(t *testing.T) {
-	// The connector's required values are unset, so a render that still reaches its templates fails.
-	objects := render(t, "--set=connector.enabled=false", "--set=connector.garamURL=",
-		"--set=connector.garamRoot.configMap=")
+	// garam's URL is unset and its root is not, which a render that still reaches the connector's
+	// templates refuses.
+	objects := render(t, "--set=connector.enabled=false", "--set=connector.garamURL=")
 	for _, object := range objects {
 		if strings.Contains(object.GetName(), "connector") && object.GetName() != claimName {
 			t.Errorf("%s %s/%s rendered with the connector off", object.GetKind(), object.GetNamespace(), object.GetName())

@@ -45,7 +45,8 @@ subjects:
     namespace: {{ .Release.Namespace }}
 {{- if .Values.connector.enabled }}
 ---
-# The connector, in the release namespace: its identity Secret and its trust ConfigMap, each by name.
+# The connector, in the release namespace: its identity Secret where garam is on, and its trust
+# ConfigMap, each by name.
 # It creates neither, because RBAC cannot narrow create by name. Where the naru Machine provider is on,
 # also its caller Secret by name, and the Warning Events it raises on the connector's Deployment.
 apiVersion: rbac.authorization.k8s.io/v1
@@ -56,10 +57,12 @@ metadata:
   labels:
     {{- include "garam-connector.labels" . | nindent 4 }}
 rules:
+  {{- if include "garam-connector.garamOn" . }}
   - apiGroups: [""]
     resources: [secrets]
     resourceNames: [{{ include "garam-connector.identitySecret" . }}]
     verbs: [get, update]
+  {{- end }}
   - apiGroups: [""]
     resources: [configmaps]
     resourceNames: [{{ include "garam-connector.trustConfigMap" . }}]
@@ -149,9 +152,10 @@ metadata:
   labels:
     {{- include "garam-connector.labels" $root | nindent 4 }}
 rules:
+  # It applies garam's declarations only where garam is on (ADR 0099 decision 3).
   - apiGroups: [bot.garam.sh]
     resources: [bots, workspaces, workspaceclasses, botpools]
-    verbs: [list, watch, create, patch, delete]
+    verbs: [list, watch{{ if include "garam-connector.garamOn" $root }}, create, patch, delete{{ end }}]
   {{- if include "garam-connector.workspacesOn" $root }}
   # The deletion sweep reads a Bot live, past the cache, before it deletes its workspace (ADR 0099
   # decision 6).

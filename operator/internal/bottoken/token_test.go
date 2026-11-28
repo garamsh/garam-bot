@@ -456,3 +456,30 @@ func TestServe_AnswersEveryOtherPathFromBesideAndInterface6sOwnAlone(t *testing.
 	answered := s.obtain(t, s.api.credentialFor(t, watched, mira), newProcess(t))
 	assert.Equal(t, http.StatusOK, answered.status)
 }
+
+func TestServe_AnswersUnknownBotToEveryCallWhileGaramIsOff(t *testing.T) {
+	garamOff := func(c *bottoken.Config) {
+		c.HTTP, c.TokenURL, c.Actor, c.Invalidate = nil, nil, nil, nil
+		c.Beside = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	}
+	// Control: with garam on, the Bot the connector applied obtains a token.
+	on := start(t)
+	require.Equal(t, http.StatusOK, on.obtain(t, on.api.credentialFor(t, watched, mira), newProcess(t)).status)
+
+	s := start(t, garamOff)
+	for name, credential := range map[string]string{
+		"an applied Bot's credential":       s.api.credentialFor(t, watched, mira),
+		"a credential that does not verify": "not-a-credential",
+	} {
+		t.Run(name, func(t *testing.T) {
+			refused := s.obtain(t, credential, newProcess(t))
+			assert.Equal(t, http.StatusForbidden, refused.status)
+			assert.Equal(t, "unknown_bot", refused.code())
+		})
+	}
+	assert.Empty(t, s.mint.read(), "garam is asked nothing")
+	response, err := s.client.Get(strings.TrimSuffix(s.url, bottoken.Path) + "/v1alpha1/workspaces/main")
+	require.NoError(t, err)
+	_ = response.Body.Close()
+	assert.Equal(t, http.StatusTeapot, response.StatusCode, "interface 7 is still served beside it")
+}

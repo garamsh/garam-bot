@@ -22,7 +22,8 @@ helm install garam operator/deploy/charts/garam-connector --namespace garam-syst
 `values.yaml` describes every value. The chart refuses an image not given as `<repository>:<tag>@sha256:<digest>`.
 
 - **`--skip-crds`** installs without interface 1's CRDs, for a cluster whose CRDs another owner applies.
-- **`connector.enabled=false`** installs the manager alone, which needs no garam connection.
+- **Garam off**: leave `connector.garamURL` and `connector.garamRoot.configMap` unset, and skip the registration token's Secret and garam's root. The connector registers nothing and serves the bots' workspaces alone, so this is the cluster mode that needs no garam. The chart refuses one of the two values without the other, and `proxy.url` with garam off.
+- **`connector.enabled=false`** installs the manager alone. Its Bots get no workspace.
 - **`connector.reportOnly=true`** applies and deletes nothing garam sends, and still reports.
 - **`connector.naru.enabled=true`** runs the naru Machine provider in the connector, as a naru fleet's Machine API caller. Create its registration token's Secret (`connector.naru.registrationToken`) and the ConfigMap holding orch's root first, and set `connector.naru.url`, `root.configMap`, `proxyAddress`, `rootDiskBytes` and `egress`. The chart refuses a render without them.
 - **`workspaces.namespace=<name>`** serves the bots' workspaces from the connector (ADR 0099). The chart renders that namespace, labelled for this release and enforcing PodSecurity `restricted`, and gives the connector the Pod provider's rights there alone. It refuses the release namespace or a watched one, and Helm refuses a second release naming the same one. Set `images.workspaceHelper`, one `images.agents.<harness>` per harness, `workspaces.pod.modelGatewayURL`, `toolProxyURL` and `egress`, the last with a rule to port 53; where `connector.naru` is on, the same three under `workspaces.naru`. The chart refuses a render without them.
