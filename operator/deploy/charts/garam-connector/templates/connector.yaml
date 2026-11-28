@@ -20,6 +20,19 @@ metadata:
   labels:
     {{- include "garam-connector.labels" . | nindent 4 }}
 type: Opaque
+{{- if $c.naru.enabled }}
+---
+# The naru caller's key and certificate, which the connector writes and nothing else does. The chart
+# creates it empty and never writes its data, so an upgrade keeps the pair (garam-bot#1209).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "garam-connector.naruCallerSecret" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+type: Opaque
+{{- end }}
 ---
 # The connector's serving certificates, which it publishes under ca.crt and the manager copies to each
 # Bot. The chart creates it empty (ADR 0097).
@@ -74,6 +87,23 @@ spec:
             - --bot-token-service={{ include "garam-connector.serviceName" . }}
             - --bot-token-audience={{ include "garam-connector.audience" . }}
             - --trust-configmap={{ include "garam-connector.trustConfigMap" . }}
+            {{- with $c.naru }}
+            {{- if .enabled }}
+            - --naru-url={{ required "connector.naru.url is required where connector.naru is enabled" .url }}
+            - --naru-root-file=/etc/garam-connector/naru-root/{{ .root.key }}
+            - --naru-registration-token-file=/etc/garam-connector/naru-registration/{{ .registrationToken.key }}
+            - --naru-caller-secret={{ include "garam-connector.naruCallerSecret" $ }}
+            - --naru-proxy-address={{ required "connector.naru.proxyAddress is required where connector.naru is enabled" .proxyAddress }}
+            {{- if .proxyRoot.configMap }}
+            - --naru-proxy-root-file=/etc/garam-connector/naru-proxy-root/{{ .proxyRoot.key }}
+            {{- end }}
+            {{- if not .rootDiskBytes }}
+            {{- fail "connector.naru.rootDiskBytes is required where connector.naru is enabled" }}
+            {{- end }}
+            - --naru-root-disk-bytes={{ .rootDiskBytes | int64 }}
+            - --connector-deployment={{ $.Release.Name }}-connector
+            {{- end }}
+            {{- end }}
           {{- if .Values.proxy.url }}
           env:
             - name: HTTPS_PROXY
@@ -96,6 +126,19 @@ spec:
             - name: registration
               mountPath: /etc/garam-connector/registration
               readOnly: true
+            {{- if $c.naru.enabled }}
+            - name: naru-root
+              mountPath: /etc/garam-connector/naru-root
+              readOnly: true
+            - name: naru-registration
+              mountPath: /etc/garam-connector/naru-registration
+              readOnly: true
+            {{- if $c.naru.proxyRoot.configMap }}
+            - name: naru-proxy-root
+              mountPath: /etc/garam-connector/naru-proxy-root
+              readOnly: true
+            {{- end }}
+            {{- end }}
       volumes:
         - name: garam-root
           configMap:
@@ -105,6 +148,21 @@ spec:
           secret:
             secretName: {{ $c.registrationToken.secret }}
             optional: true
+        {{- if $c.naru.enabled }}
+        - name: naru-root
+          configMap:
+            name: {{ required "connector.naru.root.configMap is required where connector.naru is enabled" $c.naru.root.configMap }}
+        # Read only while the connector holds no caller certificate, so it may be deleted after.
+        - name: naru-registration
+          secret:
+            secretName: {{ $c.naru.registrationToken.secret }}
+            optional: true
+        {{- if $c.naru.proxyRoot.configMap }}
+        - name: naru-proxy-root
+          configMap:
+            name: {{ $c.naru.proxyRoot.configMap }}
+        {{- end }}
+        {{- end }}
 ---
 # The bot token server, which the bots' processes of the watched namespaces reach (ADR 0097 decision 4).
 apiVersion: v1
@@ -125,7 +183,7 @@ spec:
 ---
 # The connector admits the bots' processes of the watched namespaces on its bot token port alone, and
 # reaches garam, through the proxy where one is set, cluster DNS and the API server (ADR 0091 decision
-# 4, ADR 0097 decision 4).
+# 4, ADR 0097 decision 4), and orch and naru-proxy where the naru Machine provider is on.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -167,6 +225,19 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+    {{- end }}
+    {{- if $c.naru.enabled }}
+    {{- if not $c.naru.egress }}
+    {{- fail "connector.naru.egress is required where connector.naru is enabled" }}
+    {{- end }}
+    {{- range $c.naru.egress }}
+    - to:
+        - ipBlock:
+            cidr: {{ required "each connector.naru.egress entry needs a cidr" .cidr }}
+      ports:
+        - protocol: TCP
+          port: {{ required "each connector.naru.egress entry needs a port" .port }}
+    {{- end }}
     {{- end }}
     {{- include "garam-connector.dnsEgress" . | nindent 4 }}
     {{- include "garam-connector.apiServerEgress" . | nindent 4 }}

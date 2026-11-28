@@ -222,6 +222,17 @@ var valueSets = map[string][]string{
 		`--set-json=metrics.from=[{"namespaceSelector":{"matchLabels":{"kubernetes.io/metadata.name":"monitoring"}}}]`,
 	},
 	"release namespace alone": {"--set-json=watchNamespaces=[]"},
+	"naru":                    naruValues,
+}
+
+// naruValues turn the naru Machine provider on, with every value it requires.
+var naruValues = []string{
+	"--set=connector.naru.enabled=true",
+	"--set=connector.naru.url=https://orch.example:7600",
+	"--set=connector.naru.root.configMap=naru-root",
+	"--set=connector.naru.proxyAddress=proxy.example:443",
+	"--set=connector.naru.rootDiskBytes=4294967296",
+	`--set-json=connector.naru.egress=[{"cidr":"10.20.0.0/24","port":7600},{"cidr":"10.20.1.0/24","port":443}]`,
 }
 
 func TestChart_RendersNoClusterRightAndNoInboundPathFromOutside(t *testing.T) {

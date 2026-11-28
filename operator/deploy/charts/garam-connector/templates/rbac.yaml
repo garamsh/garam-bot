@@ -46,7 +46,8 @@ subjects:
 {{- if .Values.connector.enabled }}
 ---
 # The connector, in the release namespace: its identity Secret and its trust ConfigMap, each by name.
-# It creates neither, because RBAC cannot narrow create by name.
+# It creates neither, because RBAC cannot narrow create by name. Where the naru Machine provider is on,
+# also its caller Secret by name, and the Warning Events it raises on the connector's Deployment.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -63,6 +64,15 @@ rules:
     resources: [configmaps]
     resourceNames: [{{ include "garam-connector.trustConfigMap" . }}]
     verbs: [get, update]
+  {{- if .Values.connector.naru.enabled }}
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ include "garam-connector.naruCallerSecret" . }}]
+    verbs: [get, update]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

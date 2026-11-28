@@ -24,6 +24,7 @@ helm install garam operator/deploy/charts/garam-connector --namespace garam-syst
 - **`--skip-crds`** installs without interface 1's CRDs, for a cluster whose CRDs another owner applies.
 - **`connector.enabled=false`** installs the manager alone, which needs no garam connection.
 - **`connector.reportOnly=true`** applies and deletes nothing garam sends, and still reports.
+- **`connector.naru.enabled=true`** runs the naru Machine provider in the connector, as a naru fleet's Machine API caller. Create its registration token's Secret (`connector.naru.registrationToken`) and the ConfigMap holding orch's root first, and set `connector.naru.url`, `root.configMap`, `proxyAddress`, `rootDiskBytes` and `egress`. The chart refuses a render without them.
 - **Do not install with `--take-ownership`.** It adopts another release's claim of a watched namespace (`connector.md` §Declarations and ownership).
 
 ## Checks
