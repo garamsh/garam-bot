@@ -31,6 +31,7 @@ const (
 	botImage           = "example.com/garam-bot/runtime@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	botConnectorURL    = "https://garam-connector.garam-system.svc:8443"
 	botConnectorAudien = "garam-connector"
+	botWorkspaceAud    = "garam-workspace"
 )
 
 var botNamespaces atomic.Int32
@@ -87,7 +88,7 @@ func newBotReconciler() *BotReconciler {
 		Client: k8sClient, Scheme: k8sClient.Scheme(),
 		Image: botImage, Release: botRelease,
 		TrustNamespace: botReleaseNS, TrustConfigMap: botTrustConfigMap, TrustKey: trustKeyForTest,
-		ConnectorURL: botConnectorURL, Audience: botConnectorAudien,
+		ConnectorURL: botConnectorURL, Audience: botConnectorAudien, WorkspaceAudience: botWorkspaceAud,
 	}
 }
 
@@ -186,43 +187,51 @@ var _ = Describe("Bot Controller", func() {
 		container := spec.Containers[0]
 		Expect(container.Image).To(Equal(botImage))
 		Expect(container.ImagePullPolicy).To(Equal(corev1.PullAlways))
-		Expect(container.Args).To(Equal([]string{"run",
-			"--bot-file", "/etc/garam-bot/bot/bot.yaml",
+		Expect(container.Args).To(Equal(append(botFileArgs(),
 			"--connector-url", botConnectorURL,
 			"--connector-trust-file", "/etc/garam-bot/connector/ca.crt",
+			"--workspace-credential-file", "/var/run/secrets/garam-connector/workspace-token",
 			"--credential-file", "/var/run/secrets/garam-connector/token",
-		}))
+		)))
 		Expect(container.ReadinessProbe.Exec.Command).To(Equal([]string{"/garam-bot", "probe"}))
 		Expect(container.LivenessProbe.Exec.Command).To(Equal([]string{"/garam-bot", "probe"}))
-		var projected *corev1.ServiceAccountTokenProjection
-		for _, volume := range spec.Volumes {
-			if volume.Projected != nil {
-				projected = volume.Projected.Sources[0].ServiceAccountToken
-			}
-		}
-		Expect(projected).To(Equal(&corev1.ServiceAccountTokenProjection{
-			Audience: botConnectorAudien, ExpirationSeconds: ptr.To[int64](600), Path: "token",
-		}))
+		Expect(projectedTokens(spec)).To(Equal([]corev1.ServiceAccountTokenProjection{
+			{Audience: botWorkspaceAud, ExpirationSeconds: ptr.To[int64](600), Path: "workspace-token"},
+			{Audience: botConnectorAudien, ExpirationSeconds: ptr.To[int64](600), Path: "token"},
+		}), "interface 7's credential, and interface 6's for a garam-owned Bot")
 	})
 
-	It("builds a cluster-owned Bot's Pod with no connector, no credential and no trust copy", func() {
+	It("builds a cluster-owned Bot's Pod with the trust copy and the workspace credential, and no garam credential", func() {
 		namespace := newBotNamespace(botRelease, nil)
 		bot := createBotOwned(namespace, "local", false)
+
+		reconcileBot(newBotReconciler(), bot)
+
+		set := getIn(namespace, "local", &appsv1.StatefulSet{})
+		Expect(set.Spec.Template.Spec.Containers[0].Args).To(Equal(append(botFileArgs(),
+			"--connector-url", botConnectorURL,
+			"--connector-trust-file", "/etc/garam-bot/connector/ca.crt",
+			"--workspace-credential-file", "/var/run/secrets/garam-connector/workspace-token",
+		)), "no --credential-file: it has no garam identity")
+		Expect(projectedTokens(set.Spec.Template.Spec)).To(Equal([]corev1.ServiceAccountTokenProjection{
+			{Audience: botWorkspaceAud, ExpirationSeconds: ptr.To[int64](600), Path: "workspace-token"},
+		}), "no token of interface 6's audience is projected")
+		Expect(getIn(namespace, "local-connector-trust", &corev1.ConfigMap{}).Data).To(Equal(map[string]string{"ca.crt": botTrustBundle}))
+	})
+
+	It("builds a Bot's Pod that reaches no connector, and waits for no trust, where the manager has none", func() {
+		namespace := newBotNamespace(botRelease, nil)
+		bot := createMira(namespace)
 		r := newBotReconciler()
-		r.TrustConfigMap = "unpublished"
+		r.ConnectorURL, r.TrustConfigMap = "", "unpublished"
 
 		reconcileBot(r, bot)
 
-		set := getIn(namespace, "local", &appsv1.StatefulSet{})
-		Expect(set.Spec.Template.Spec.Containers[0].Args).To(Equal([]string{"run", "--bot-file", "/etc/garam-bot/bot/bot.yaml"}))
+		set := getIn(namespace, "mira", &appsv1.StatefulSet{})
+		Expect(set.Spec.Template.Spec.Containers[0].Args).To(Equal(botFileArgs()))
 		Expect(set.Spec.Template.Spec.Volumes).To(HaveLen(1), "the Bot file alone")
-		Expect(absentIn(namespace, "local-connector-trust", &corev1.ConfigMap{})).To(BeTrue())
-		Expect(runningOf(namespace, "local").Reason).To(Equal(reasonStarting), "it waits for no connector's trust")
-
-		// Control: a garam-owned Bot beside it, with the same unpublished trust, waits for it.
-		garamOwned := createMira(namespace)
-		reconcileBot(r, garamOwned)
-		Expect(runningOf(namespace, "mira").Reason).To(Equal(reasonWaitingForTrust))
+		Expect(absentIn(namespace, "mira-connector-trust", &corev1.ConfigMap{})).To(BeTrue())
+		Expect(runningOf(namespace, "mira").Reason).To(Equal(reasonStarting), "it waits for no connector's trust")
 	})
 
 	It("changes nothing when it reconciles the same Bot twice", func() {
@@ -297,19 +306,20 @@ var _ = Describe("Bot Controller", func() {
 		Expect(r.botsOfClaim(ctx, another)).To(BeEmpty(), "control: another Lease of the namespace wakes nothing")
 	})
 
-	It("builds no Pod and reports waiting while the connector has published no trust bundle", func() {
+	It("builds no Pod and reports waiting while the connector has published no trust bundle, for every Bot", func() {
 		namespace := newBotNamespace(botRelease, nil)
-		bot := createMira(namespace)
 		r := newBotReconciler()
 		r.TrustConfigMap = "unpublished"
 
-		reconcileBot(r, bot)
+		for _, bot := range []*botv1.Bot{createMira(namespace), createBotOwned(namespace, "local", false)} {
+			reconcileBot(r, bot)
 
-		Expect(absentIn(namespace, "mira", &appsv1.StatefulSet{})).To(BeTrue())
-		running := runningOf(namespace, "mira")
-		Expect(running).NotTo(BeNil())
-		Expect(running.Status).To(Equal(metav1.ConditionFalse))
-		Expect(running.Reason).To(Equal(reasonWaitingForTrust))
+			Expect(absentIn(namespace, bot.Name, &appsv1.StatefulSet{})).To(BeTrue(), bot.Name)
+			running := runningOf(namespace, bot.Name)
+			Expect(running).NotTo(BeNil(), bot.Name)
+			Expect(running.Status).To(Equal(metav1.ConditionFalse), bot.Name)
+			Expect(running.Reason).To(Equal(reasonWaitingForTrust), "%s: garam-owned or cluster-owned", bot.Name)
+		}
 	})
 
 	It("writes the Bot's Running condition from its Pod's runtime container", func() {
@@ -380,6 +390,25 @@ var _ = Describe("Bot Controller", func() {
 
 // botPodOf creates the Pod mira-0 of namespace from the Bot's StatefulSet's template, as the StatefulSet
 // controller would, controlled by set where it is not nil. envtest runs no StatefulSet controller.
+// botFileArgs are the runtime's arguments every Bot's Pod starts with: run, on its Bot file.
+func botFileArgs() []string { return []string{"run", "--bot-file", "/etc/garam-bot/bot/bot.yaml"} }
+
+// projectedTokens are the ServiceAccount tokens a Pod spec projects, in order.
+func projectedTokens(spec corev1.PodSpec) []corev1.ServiceAccountTokenProjection {
+	var tokens []corev1.ServiceAccountTokenProjection
+	for _, volume := range spec.Volumes {
+		if volume.Projected == nil {
+			continue
+		}
+		for _, source := range volume.Projected.Sources {
+			if source.ServiceAccountToken != nil {
+				tokens = append(tokens, *source.ServiceAccountToken)
+			}
+		}
+	}
+	return tokens
+}
+
 func botPodOf(set *appsv1.StatefulSet, namespace string) *corev1.Pod {
 	GinkgoHelper()
 	template := getIn(namespace, "mira", &appsv1.StatefulSet{}).Spec.Template

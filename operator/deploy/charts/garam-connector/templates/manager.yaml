@@ -48,9 +48,14 @@ spec:
             - --release-namespace={{ .Release.Namespace }}
             - --release-name={{ .Release.Name }}
             - --bot-image={{ include "garam-connector.image" (dict "name" "runtime" "ref" .Values.images.runtime) }}
+            {{- if .Values.connector.enabled }}
+            # Every Bot reaches the connector for its workspace, and a garam-owned one for its token
+            # too (ADR 0099 decision 12). With the connector off, no Bot reaches one.
             - --connector-url=https://{{ include "garam-connector.serviceName" . }}.{{ .Release.Namespace }}.svc:{{ include "garam-connector.botTokenPort" . }}
             - --trust-configmap={{ include "garam-connector.trustConfigMap" . }}
             - --bot-token-audience={{ include "garam-connector.audience" . }}
+            - --workspace-audience={{ include "garam-connector.workspaceAudience" . }}
+            {{- end }}
           ports:
             - name: health
               containerPort: 8081

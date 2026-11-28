@@ -265,3 +265,41 @@ func TestChart_RefusesAWorkspaceConfigurationTheConnectorWouldRefuse(t *testing.
 		})
 	}
 }
+
+// managerConnectorArgs are the manager's arguments naming the connector, its trust and both audiences.
+func managerConnectorArgs(t *testing.T, objects []unstructured.Unstructured) []string {
+	t.Helper()
+	manager := named[appsv1.Deployment](t, objects, "Deployment", releaseNamespace, releaseName+"-manager")
+	var found []string
+	for _, arg := range manager.Spec.Template.Spec.Containers[0].Args {
+		for _, flag := range []string{
+			"--connector-url=", "--trust-configmap=", "--bot-token-audience=", "--workspace-audience=",
+		} {
+			if strings.HasPrefix(arg, flag) {
+				found = append(found, arg)
+			}
+		}
+	}
+	return found
+}
+
+func TestChart_GivesTheManagerTheConnectorAndTheWorkspaceAudienceTheConnectorChecks(t *testing.T) {
+	objects := render(t, workspaceValues...)
+	want := []string{
+		"--connector-url=https://garam-connector." + releaseNamespace + ".svc:8443",
+		"--trust-configmap=garam-connector-trust",
+		"--bot-token-audience=garam-connector",
+		"--workspace-audience=garam-workspace",
+	}
+	if got := managerConnectorArgs(t, objects); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("the manager's connector arguments = %v, want %v", got, want)
+	}
+	if !slices.Contains(workspaceArgs(t, objects), want[3]) {
+		t.Errorf("the connector checks another audience than the manager projects: %v", workspaceArgs(t, objects))
+	}
+
+	off := render(t, "--set=connector.enabled=false")
+	if got := managerConnectorArgs(t, off); len(got) != 0 {
+		t.Errorf("with the connector off the manager is given %v, so every Bot would wait for its trust", got)
+	}
+}

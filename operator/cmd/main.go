@@ -173,13 +173,17 @@ func main() {
 		"The connector chart's release name. A Bot is built only in a namespace whose claim names "+
 			"<release-namespace>/<release-name>. Required wherever the Bot kind is served.")
 	flag.StringVar(&bots.connectorURL, "connector-url", "",
-		"The connector's bot token server as a Bot's runtime reaches it, such as "+
-			"https://garam-connector.<release-namespace>.svc:8443. Required wherever the Bot kind is served.")
+		"The connector as a Bot's runtime reaches it, such as https://garam-connector.<release-namespace>.svc:8443. "+
+			"Unset where the chart runs no connector: no Bot then reaches one, and none gets a workspace.")
 	flag.StringVar(&bots.trustConfigMap, "trust-configmap", "garam-connector-trust",
 		"The ConfigMap in release-namespace the connector publishes its serving certificates to, under ca.crt, "+
 			"copied into each Bot's namespace.")
 	flag.StringVar(&bots.audience, "bot-token-audience", "garam-connector",
-		"The audience of the ServiceAccount token projected into each Bot's Pod for the connector.")
+		"The audience of the ServiceAccount token projected into each garam-owned Bot's Pod for the "+
+			"connector's bot token server (interface 6).")
+	flag.StringVar(&bots.workspaceAudience, "workspace-audience", "garam-workspace",
+		"The audience of the ServiceAccount token projected into every Bot's Pod for the connector's "+
+			"workspace access (interface 7). It matches the connector's --workspace-audience.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -541,6 +545,7 @@ func servedKinds(config *rest.Config) (served, error) {
 // botOptions are the flags the Bot reconciler is built from.
 type botOptions struct {
 	image, watchNamespaces, releaseNamespace, releaseName, connectorURL, trustConfigMap, audience string
+	workspaceAudience                                                                             string
 }
 
 // trustKey is the key of the connector's trust ConfigMap its serving certificates are published under.
@@ -574,19 +579,20 @@ func cacheOptions(bots botOptions) cache.Options {
 
 // setupBots sets the Bot reconciler up with mgr. It needs no garam address or key (ADR 0090 decision 1).
 func setupBots(mgr ctrl.Manager, bots botOptions) error {
-	if bots.image == "" || bots.releaseNamespace == "" || bots.releaseName == "" || bots.connectorURL == "" {
-		return errors.New("bot-image, release-namespace, release-name and connector-url are required " +
-			"wherever the Bot kind is served")
+	if bots.image == "" || bots.releaseNamespace == "" || bots.releaseName == "" {
+		return errors.New("bot-image, release-namespace and release-name are required wherever the Bot kind " +
+			"is served")
 	}
 	return (&controller.BotReconciler{
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		Image:          bots.image,
-		Release:        bots.releaseNamespace + "/" + bots.releaseName,
-		TrustNamespace: bots.releaseNamespace,
-		TrustConfigMap: bots.trustConfigMap,
-		TrustKey:       trustKey,
-		ConnectorURL:   bots.connectorURL,
-		Audience:       bots.audience,
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Image:             bots.image,
+		Release:           bots.releaseNamespace + "/" + bots.releaseName,
+		TrustNamespace:    bots.releaseNamespace,
+		TrustConfigMap:    bots.trustConfigMap,
+		TrustKey:          trustKey,
+		ConnectorURL:      bots.connectorURL,
+		Audience:          bots.audience,
+		WorkspaceAudience: bots.workspaceAudience,
 	}).SetupWithManager(mgr)
 }

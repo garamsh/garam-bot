@@ -33,14 +33,16 @@ const (
 	botFSGroup   = 65532
 
 	// The files mounted into the runtime, read-only, and where.
-	botFileDir       = "/etc/garam-bot/bot"
-	botFileName      = "bot.yaml"
-	trustDir         = "/etc/garam-bot/connector"
-	credentialDir    = "/var/run/secrets/garam-connector"
-	credentialName   = "token"
-	botFileVolume    = "bot"
-	trustVolume      = "connector-trust"
-	credentialVolume = "connector-credential"
+	botFileDir     = "/etc/garam-bot/bot"
+	botFileName    = "bot.yaml"
+	trustDir       = "/etc/garam-bot/connector"
+	credentialDir  = "/var/run/secrets/garam-connector"
+	credentialName = "token"
+	// workspaceCredentialName is interface 7's credential, beside interface 6's in the same volume.
+	workspaceCredentialName = "workspace-token"
+	botFileVolume           = "bot"
+	trustVolume             = "connector-trust"
+	credentialVolume        = "connector-credential"
 
 	// credentialLifetime is the projected ServiceAccount token's expirationSeconds: the life the
 	// connector's bound refuses beyond is an hour, and the kubelet replaces it at 80 % (ADR 0097).
@@ -82,9 +84,10 @@ func applyServiceAccount(bot *botv1.Bot, account *corev1.ServiceAccount) {
 }
 
 // applyStatefulSet makes set the Bot's StatefulSet of one, running the runtime on the Bot file and,
-// where connector is set, on the trust copy and the projected credential, which obtain the bot's token
-// from the connector (ADR 0090 decision 3, ADR 0097).
-func (r *BotReconciler) applyStatefulSet(bot *botv1.Bot, set *appsv1.StatefulSet, connector bool) {
+// where connector is set, on the trust copy and interface 7's projected credential, which reach the
+// Bot's workspace through the connector, and where garamOwned is set also on interface 6's, which
+// obtains the bot's garam token (ADR 0090 decision 3, ADR 0097, ADR 0099 decision 12).
+func (r *BotReconciler) applyStatefulSet(bot *botv1.Bot, set *appsv1.StatefulSet, connector, garamOwned bool) {
 	labels := botLabels(bot)
 	set.Labels = labels
 	if set.CreationTimestamp.IsZero() {
@@ -106,11 +109,14 @@ func (r *BotReconciler) applyStatefulSet(bot *botv1.Bot, set *appsv1.StatefulSet
 	args := []string{"run", "--bot-file", path.Join(botFileDir, botFileName)}
 	mounts := []corev1.VolumeMount{{Name: botFileVolume, MountPath: botFileDir, ReadOnly: true}}
 	if connector {
-		spec.Volumes = append(spec.Volumes, r.connectorVolumes(bot)...)
+		spec.Volumes = append(spec.Volumes, r.connectorVolumes(bot, garamOwned)...)
 		args = append(args,
 			"--connector-url", r.ConnectorURL,
 			"--connector-trust-file", path.Join(trustDir, r.TrustKey),
-			"--credential-file", path.Join(credentialDir, credentialName))
+			"--workspace-credential-file", path.Join(credentialDir, workspaceCredentialName))
+		if garamOwned {
+			args = append(args, "--credential-file", path.Join(credentialDir, credentialName))
+		}
 		mounts = append(mounts,
 			corev1.VolumeMount{Name: trustVolume, MountPath: trustDir, ReadOnly: true},
 			corev1.VolumeMount{Name: credentialVolume, MountPath: credentialDir, ReadOnly: true})
@@ -135,18 +141,24 @@ func (r *BotReconciler) applyStatefulSet(bot *botv1.Bot, set *appsv1.StatefulSet
 	}}
 }
 
-// connectorVolumes are the trust copy and the ServiceAccount token projected for the connector.
-func (r *BotReconciler) connectorVolumes(bot *botv1.Bot) []corev1.Volume {
+// connectorVolumes are the trust copy and the ServiceAccount tokens projected for the connector:
+// interface 7's for every Bot, and interface 6's for a garam-owned one.
+func (r *BotReconciler) connectorVolumes(bot *botv1.Bot, garamOwned bool) []corev1.Volume {
+	tokens := []corev1.VolumeProjection{{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+		Audience: r.WorkspaceAudience, ExpirationSeconds: ptr.To[int64](credentialLifetime), Path: workspaceCredentialName,
+	}}}
+	if garamOwned {
+		tokens = append(tokens, corev1.VolumeProjection{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+			Audience: r.Audience, ExpirationSeconds: ptr.To[int64](credentialLifetime), Path: credentialName,
+		}})
+	}
 	return []corev1.Volume{
 		{Name: trustVolume, VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
 			LocalObjectReference: corev1.LocalObjectReference{Name: trustCopyName(bot)},
 			DefaultMode:          ptr.To[int32](botFileMode),
 		}}},
 		{Name: credentialVolume, VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
-			Sources: []corev1.VolumeProjection{{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-				Audience: r.Audience, ExpirationSeconds: ptr.To[int64](credentialLifetime), Path: credentialName,
-			}}},
-			DefaultMode: ptr.To[int32](botFileMode),
+			Sources: tokens, DefaultMode: ptr.To[int32](botFileMode),
 		}}},
 	}
 }
