@@ -7,7 +7,7 @@ import (
 )
 
 // SpecRelease is the release of v1alpha1's specification this package states.
-const SpecRelease = "0.2.0"
+const SpecRelease = "0.2.1"
 
 // DataPath is where a workspace's data volume is mounted: what survives a stop, a start and a
 // restore is under it (DATA-1, SNAP-2).

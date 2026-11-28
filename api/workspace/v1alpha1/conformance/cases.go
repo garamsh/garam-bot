@@ -45,10 +45,6 @@ func Cases() []Case {
 		{Requirement: "SNAP-2", Name: "a restore holds the snapshot's data and outlives its source", run: restore},
 		{Requirement: "SNAP-2", Name: "a restore of another disk size is refused", run: restoreMismatch},
 		{Requirement: "SNAP-3", Name: "snapshot is refused without the snapshot capability", run: snapshotRefused},
-		{
-			Requirement: "VER-2", Name: "a caller reads a phase it does not know as unknown",
-			Pending: "a caller obligation; the caller suite arrives with the first caller",
-		},
 	}
 }
 

@@ -26,3 +26,8 @@ func TestReference(t *testing.T) {
 		},
 	})
 }
+
+// TestReferenceCaller runs the caller suite against the reference caller.
+func TestReferenceCaller(t *testing.T) {
+	conformance.RunCaller(t, conformance.ReferenceCaller{})
+}
