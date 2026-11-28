@@ -25,7 +25,8 @@ const (
 	// signatureSkew is the whole skew allowance garam's validity assumes.
 	signatureSkew = 60 * time.Second
 	// keysLife is how long a read of the keys stands, its Cache-Control max-age; keysGrace how long
-	// more they are used while a read fails; and keysRefetch how often a kid not held reads them again.
+	// more they are used while a read fails; and keysRefetch how long a read stands for a kid it lacks,
+	// and how often a set held past its life is read again.
 	keysLife    = time.Hour
 	keysGrace   = 24 * time.Hour
 	keysRefetch = time.Minute
@@ -33,6 +34,9 @@ const (
 
 // errSignature is a delivery whose signature garam's contract refuses.
 var errSignature = errors.New("the delivery's signature is refused")
+
+// errKeys is a delivery that cannot be judged, because garam's keys cannot be read.
+var errKeys = errors.New("garam's message signing keys cannot be read")
 
 // messageKeys verifies the signature of each message garam hands the bot against the keys garam
 // publishes, read from its machine listener and held for an hour (ADR-0101 §What a verifier checks).
@@ -44,8 +48,8 @@ type messageKeys struct {
 
 	mu      sync.Mutex
 	set     jose.JSONWebKeySet
-	readAt  time.Time // when the set held was read
-	triedAt time.Time // when a read was last tried
+	readAt  time.Time // when the set held was last read
+	triedAt time.Time // when a read of a set past its life was last tried
 }
 
 // signedMessage is what a verified signature says of its message.
@@ -113,21 +117,59 @@ func (k *messageKeys) verify(ctx context.Context, signature, content, id, audien
 	return signedMessage{Sender: claims.Subject}, nil
 }
 
-// key answers the key kid names, reading the set again where the one held is an hour old, or holds no
-// such key, and no read was tried in the last minute. A set that cannot be read is used for 24 hours
-// more, and none after.
+// lapsed reports whether signature's exp, read unverified, is past by more than the skew allowance, so
+// a delivery held unjudged that long would be refused for its time alone.
+func (k *messageKeys) lapsed(signature string) bool {
+	parsed, err := jose.ParseSignedCompact(signature, []jose.SignatureAlgorithm{jose.ES256})
+	if err != nil {
+		return false
+	}
+	var claims struct {
+		Expires *int64 `json:"exp"`
+	}
+	if json.Unmarshal(parsed.UnsafePayloadWithoutVerification(), &claims) != nil || claims.Expires == nil {
+		return false
+	}
+	return !time.Unix(*claims.Expires, 0).After(k.now().Add(-signatureSkew))
+}
+
+// ready answers errKeys where no set is held within keysLife+keysGrace and none can be read now, so a
+// poll that would be handed a message it cannot judge is not made.
+func (k *messageKeys) ready(ctx context.Context) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.usable(ctx, k.now())
+}
+
+// usable reads the set where none is held or the one held is past its life: at once where it is past
+// its grace too, and otherwise at most once a minute, keeping the one held where the read fails.
+// k.mu is held.
+func (k *messageKeys) usable(ctx context.Context, now time.Time) error {
+	unusable := k.readAt.IsZero() || !now.Before(k.readAt.Add(keysLife+keysGrace))
+	if unusable || (!now.Before(k.readAt.Add(keysLife)) && now.Sub(k.triedAt) >= keysRefetch) {
+		k.triedAt = now
+		k.read(ctx, now)
+	}
+	if k.readAt.IsZero() || !now.Before(k.readAt.Add(keysLife+keysGrace)) {
+		return errKeys
+	}
+	return nil
+}
+
+// key answers the key kid names. A kid the set held lacks reads the set again, unless it was read in
+// the last minute: a kid is refused only where a set read in the last minute lacks it, and a read
+// that fails leaves the delivery unjudged (ADR-0101: a redelivery, not a loss).
 func (k *messageKeys) key(ctx context.Context, kid string) (*jose.JSONWebKey, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	now := k.now()
-	if (k.readAt.IsZero() || !now.Before(k.readAt.Add(keysLife))) && now.Sub(k.triedAt) >= keysRefetch {
-		k.read(ctx, now)
+	if err := k.usable(ctx, now); err != nil {
+		return nil, err
 	}
-	if found := k.set.Key(kid); len(found) == 0 && now.Sub(k.triedAt) >= keysRefetch {
-		k.read(ctx, now)
-	}
-	if k.readAt.IsZero() || !now.Before(k.readAt.Add(keysLife+keysGrace)) {
-		return nil, errors.New("garam's message signing keys cannot be read")
+	if len(k.set.Key(kid)) == 0 && now.Sub(k.readAt) >= keysRefetch {
+		if !k.read(ctx, now) {
+			return nil, errKeys
+		}
 	}
 	found := k.set.Key(kid)
 	if len(found) != 1 || !found[0].Valid() || found[0].Algorithm != string(jose.ES256) || !found[0].IsPublic() {
@@ -136,14 +178,15 @@ func (k *messageKeys) key(ctx context.Context, kid string) (*jose.JSONWebKey, er
 	return &found[0], nil
 }
 
-// read reads the set, keeping the one held where the read fails. k.mu is held.
-func (k *messageKeys) read(ctx context.Context, now time.Time) {
-	k.triedAt = now
+// read reads the set, keeping the one held where the read fails, and answers whether it was read.
+// k.mu is held.
+func (k *messageKeys) read(ctx context.Context, now time.Time) bool {
 	set, err := k.fetch(ctx)
 	if err != nil {
-		return
+		return false
 	}
 	k.set, k.readAt = set, now
+	return true
 }
 
 func (k *messageKeys) fetch(ctx context.Context) (jose.JSONWebKeySet, error) {

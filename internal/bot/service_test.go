@@ -179,6 +179,10 @@ func TestRun_RefusesToStartOnAnInvalidBotOrConfiguration(t *testing.T) {
 			o.MailboxURL, o.MailboxOrigin, o.GaramRootFile, o.BotGRN = "https://garam.test", "https://garam.test", "/garam.crt", "grn:acme/iam/bot/d1"
 			o.InboxDir = "/inbox"
 		}},
+		{name: "a mailbox origin of another spelling", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
+			o.ConnectorURL, o.ConnectorTrustFile, o.CredentialFile = "https://connector.test", "/ca.crt", "/token"
+			o.MailboxURL, o.MailboxOrigin, o.GaramRootFile, o.BotGRN = "https://garam.test", "https://garam.test/", "/garam.crt", "grn:acme/iam/bot/d1"
+		}},
 		{name: "a negative heartbeat interval", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
 			o.HeartbeatInterval = -time.Second
 		}},

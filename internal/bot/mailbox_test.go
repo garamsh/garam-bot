@@ -11,11 +11,14 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -83,6 +86,8 @@ type posted struct {
 	key    *signingKey
 	// contract is the content's contract in place of garam-message.v1.
 	contract string
+	// noKid signs it with no kid in its header.
+	noKid bool
 }
 
 // garam is the fake machine listener.
@@ -107,8 +112,13 @@ type garam struct {
 	redirected []string
 	keyReads   int
 	keysDown   bool
-	arrived    chan struct{}
+	// tamper, where set, changes the key set garam publishes before it is served.
+	tamper  func(*jose.JSONWebKeySet)
+	arrived chan struct{}
 }
+
+// hangUp is a scripted answer that closes the connection with none.
+const hangUp = -1
 
 func startGaram(t *testing.T, now func() time.Time) *garam {
 	t.Helper()
@@ -153,6 +163,9 @@ func (g *garam) keys(w http.ResponseWriter, _ *http.Request) {
 	for _, key := range g.published {
 		set.Keys = append(set.Keys, jose.JSONWebKey{Key: key.private.Public(), KeyID: key.kid, Algorithm: string(jose.ES256), Use: "sig"})
 	}
+	if g.tamper != nil {
+		g.tamper(&set)
+	}
 	w.Header().Set("Content-Type", "application/jwk-set+json")
 	w.Header().Set("Cache-Control", "max-age=3600")
 	_ = json.NewEncoder(w).Encode(set)
@@ -173,6 +186,12 @@ func (g *garam) poll(w http.ResponseWriter, r *http.Request) {
 		status := g.statuses[0]
 		g.statuses = g.statuses[1:]
 		g.mu.Unlock()
+		if status == hangUp {
+			conn, _, err := w.(http.Hijacker).Hijack()
+			require.NoError(g.t, err)
+			_ = conn.Close()
+			return
+		}
 		switch status {
 		case http.StatusTooManyRequests:
 			w.Header().Set("Retry-After", "7")
@@ -234,7 +253,10 @@ func (g *garam) handOut(m posted, cursor string, attempt int) map[string]any {
 	if m.typ != "" {
 		typ = m.typ
 	}
-	options := (&jose.SignerOptions{}).WithType(jose.ContentType(typ)).WithHeader("kid", key.kid)
+	options := (&jose.SignerOptions{}).WithType(jose.ContentType(typ))
+	if !m.noKid {
+		options = options.WithHeader("kid", key.kid)
+	}
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: key.private}, options)
 	require.NoError(g.t, err)
 	payload, err := json.Marshal(claims)
@@ -281,6 +303,28 @@ func (g *garam) authorized(r *http.Request) bool {
 	digest := sha256.Sum256([]byte(botToken))
 	return claims.HTM == http.MethodPost && claims.HTU == garamOrigin+r.URL.EscapedPath() && claims.JTI != "" &&
 		claims.ATH == base64.RawURLEncoding.EncodeToString(digest[:]) && claims.IAT > 0
+}
+
+// attempts is how many times the message handed out has been.
+func (g *garam) attempts() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.attempt
+}
+
+// setKeysDown has the keys route answer 503 where down is set.
+func (g *garam) setKeysDown(down bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.keysDown = down
+}
+
+// rotate has garam sign with a new key, published beside the old.
+func (g *garam) rotate(t *testing.T) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.current = newSigningKey(t)
+	g.published = append(g.published, g.current)
 }
 
 func (g *garam) record() (acked, cursors []string, keyReads int) {
@@ -400,6 +444,9 @@ func TestMailbox_RejectsAndAcknowledgesEachDeliveryWhoseSignatureFailsAndLogsNon
 	set := func(claim string, value any) func(map[string]any) {
 		return func(claims map[string]any) { claims[claim] = value }
 	}
+	drop := func(claim string) func(map[string]any) {
+		return func(claims map[string]any) { delete(claims, claim) }
+	}
 	refused := []posted{
 		{id: "aud", body: "secret-aud", claims: set("aud", "grn:acme/iam/bot/another")},
 		{id: "aud-list", body: "secret-aud-list", claims: set("aud", []string{botGRN})},
@@ -411,6 +458,10 @@ func TestMailbox_RejectsAndAcknowledgesEachDeliveryWhoseSignatureFailsAndLogsNon
 		{id: "typ", body: "secret-typ", typ: "JWT"},
 		{id: "stranger", body: "secret-stranger", key: stranger},
 		{id: "contract", body: "secret-contract", contract: "garam-message.v2"},
+		{id: "no-exp", body: "secret-no-exp", claims: drop("exp")},
+		{id: "no-iat", body: "secret-no-iat", claims: drop("iat")},
+		{id: "no-sub", body: "secret-no-sub", claims: set("sub", "")},
+		{id: "no-kid", body: "secret-no-kid", noKid: true},
 	}
 	g.post(refused...)
 	// Expired and issued ahead within the 60 seconds of skew, it is taken.
@@ -599,4 +650,236 @@ func TestMailbox_JudgesNoMessageWhileGaramsKeysCannotBeReadAndUsesTheKeysHeldADa
 	g.post(posted{id: "three", body: "a message"})
 	_, err = mailbox.Next(t.Context())
 	require.Error(t, err, "keys more than a day past their hour are used")
+}
+
+func TestMailbox_SpendsNoAttemptAndLosesNoMessageWhileGaramsKeysCannotBeRead(t *testing.T) {
+	now := &clock{now: time.Now()}
+	g := startGaram(t, now.Now)
+	mailbox := mailboxOf(t, g, now.Now, &logs{})
+	polls := func() int { _, cursors, _ := g.record(); return len(cursors) }
+
+	// No keys held and none readable: no poll is made, so no message is handed out.
+	g.setKeysDown(true)
+	g.post(posted{id: "one", body: "a message"})
+	_, err := mailbox.Next(t.Context())
+	require.Error(t, err)
+	assert.Zero(t, polls(), "a poll made with no keys to judge its message by")
+	g.setKeysDown(false)
+	m, err := mailbox.Next(t.Context())
+	require.NoError(t, err)
+	assert.NotEmpty(t, m.Input, "control: the message is given once the keys are read")
+	assert.Equal(t, 1, g.attempts(), "one hand-out of it")
+	require.NoError(t, mailbox.Done(t.Context(), m, agent.OutcomeCompleted))
+
+	// garam signs with a key published since, while its keys cannot be read: the delivery is held
+	// unjudged, and judged again with no poll, until the keys are read.
+	g.rotate(t)
+	g.setKeysDown(true)
+	now.advance(2 * time.Minute)
+	g.post(posted{id: "two", body: "a message"})
+	for range 3 {
+		_, err = mailbox.Next(t.Context())
+		require.Error(t, err, "a delivery judged with its key unread")
+	}
+	before := polls()
+	assert.Equal(t, 1, g.attempts(), "a hand-out spent while the keys cannot be read")
+	// Held past its signature's exp, it is let go unacknowledged, and handed out again signed anew.
+	now.advance(6 * time.Minute)
+	_, err = mailbox.Next(t.Context())
+	require.Error(t, err)
+	_, err = mailbox.Next(t.Context())
+	require.Error(t, err)
+	assert.Equal(t, 2, g.attempts(), "a lapsed delivery is not handed out again")
+	g.setKeysDown(false)
+	m, err = mailbox.Next(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "two", m.ID)
+	assert.NotEmpty(t, m.Input, "the message is refused for a key it could not read")
+	assert.Equal(t, before+1, polls(), "a poll was made while a delivery was held")
+	require.NoError(t, mailbox.Done(t.Context(), m, agent.OutcomeCompleted))
+
+	g.post(posted{id: "three", body: "a message"})
+	m, err = mailbox.Next(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "three", m.ID)
+	acked, _, _ := g.record()
+	assert.Equal(t, []string{"one", "two"}, acked, "each message is acknowledged once, as given")
+}
+
+func TestMailbox_FetchesNothingForAnIssuerItDoesNotTrust(t *testing.T) {
+	now := &clock{now: time.Now()}
+	g := startGaram(t, now.Now)
+	mailbox := mailboxOf(t, g, now.Now, &logs{})
+	reads := func() int { _, _, n := g.record(); return n }
+	g.post(posted{id: "one", body: "a message"})
+	m, err := mailbox.Next(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, mailbox.Done(t.Context(), m, agent.OutcomeCompleted))
+	require.Equal(t, 1, reads())
+	now.advance(2 * time.Minute)
+
+	// A kid not held would read the keys again, had the issuer been trusted.
+	stranger := newSigningKey(t)
+	g.post(posted{id: "iss", body: "a message", key: stranger, claims: func(claims map[string]any) {
+		claims["iss"] = "https://another.garam.test"
+	}})
+	m, err = mailbox.Next(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, m.Input)
+	assert.Equal(t, 1, reads(), "garam's keys are read for an issuer not trusted")
+	require.NoError(t, mailbox.Done(t.Context(), m, bot.OutcomeRejected))
+
+	g.post(posted{id: "kid", body: "a message", key: stranger})
+	m, err = mailbox.Next(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, m.Input)
+	assert.Equal(t, 2, reads(), "control: a kid not held, from the issuer trusted, reads the keys again")
+}
+
+func TestMailbox_NamesNoCursorInAFailedPoll(t *testing.T) {
+	g := startGaram(t, time.Now)
+	mailbox := mailboxOf(t, g, time.Now, &logs{})
+	g.post(posted{id: "one", body: "a message"})
+	m, err := mailbox.Next(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, mailbox.Done(t.Context(), m, agent.OutcomeCompleted))
+	g.mu.Lock()
+	g.statuses = []int{hangUp}
+	g.mu.Unlock()
+
+	_, err = mailbox.Next(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "poll the mailbox", "control: the poll failed")
+	assert.NotContains(t, err.Error(), "cursor-one-1", "the cursor reaches the error")
+	_, cursors, _ := g.record()
+	assert.Equal(t, "cursor-one-1", cursors[len(cursors)-1], "control: the failed poll carried the cursor")
+}
+
+func TestMailbox_ReachesGaramThroughTheProxyTheEnvironmentNames(t *testing.T) {
+	g := startGaram(t, time.Now)
+	var mu sync.Mutex
+	var tunnelled []string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			http.Error(w, "CONNECT alone", http.StatusMethodNotAllowed)
+			return
+		}
+		mu.Lock()
+		tunnelled = append(tunnelled, r.Host)
+		mu.Unlock()
+		upstream, err := net.Dial("tcp", g.server.Listener.Addr().String())
+		require.NoError(t, err)
+		w.WriteHeader(http.StatusOK)
+		client, _, err := w.(http.Hijacker).Hijack()
+		require.NoError(t, err)
+		go func() { _, _ = io.Copy(upstream, client); _ = upstream.Close() }()
+		go func() { _, _ = io.Copy(client, upstream); _ = client.Close() }()
+	}))
+	t.Cleanup(proxy.Close)
+	t.Setenv("HTTPS_PROXY", proxy.URL)
+	t.Setenv("NO_PROXY", "")
+	// example.com is a name garam's test certificate holds, and one this host does not reach garam at.
+	_, port, err := net.SplitHostPort(g.server.Listener.Addr().String())
+	require.NoError(t, err)
+	g.identity = newIdentity(t)
+	mailbox, err := bot.NewMailbox(bot.MailboxConfig{
+		URL: "https://example.com:" + port, Origin: garamOrigin, RootFile: g.rootFile, GRN: botGRN,
+		Identity: g.identity, Now: time.Now,
+	})
+	require.NoError(t, err)
+
+	g.post(posted{id: "one", body: "a message"})
+	m, err := mailbox.Next(t.Context())
+	require.NoError(t, err)
+	assert.NotEmpty(t, m.Input)
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Contains(t, tunnelled, "example.com:"+port, "the poll did not go through the proxy")
+}
+
+func TestNewMailbox_RefusesAnOriginOfAnotherSpelling(t *testing.T) {
+	config := func(origin string) bot.MailboxConfig {
+		return bot.MailboxConfig{
+			URL: "https://garam.test", Origin: origin, RootFile: "root.crt", GRN: botGRN, Identity: newIdentity(t),
+		}
+	}
+	for _, origin := range []string{garamOrigin, "https://machine.garam.test:8443"} {
+		_, err := bot.NewMailbox(config(origin))
+		assert.NoError(t, err, "control: %s is refused", origin)
+	}
+	for _, origin := range []string{
+		"https://machine.garam.test/", "https://Machine.garam.test", "http://machine.garam.test",
+		"https://machine.garam.test:", "https://machine.garam.test/path", "HTTPS://machine.garam.test",
+		"https://user@machine.garam.test", "https://machine.garam.test?q",
+	} {
+		_, err := bot.NewMailbox(config(origin))
+		assert.Error(t, err, "%s is taken", origin)
+	}
+}
+
+func TestMailbox_RefusesAKeyGaramPublishesOutsideItsContract(t *testing.T) {
+	for name, tamper := range map[string]func(g *garam, set *jose.JSONWebKeySet){
+		"another algorithm":             func(_ *garam, set *jose.JSONWebKeySet) { set.Keys[0].Algorithm = string(jose.ES384) },
+		"two keys of one kid":           func(_ *garam, set *jose.JSONWebKeySet) { set.Keys = append(set.Keys, set.Keys[0]) },
+		"a private key":                 func(g *garam, set *jose.JSONWebKeySet) { set.Keys[0].Key = g.current.private },
+		"control: the key as published": nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := startGaram(t, time.Now)
+			if tamper != nil {
+				g.mu.Lock()
+				g.tamper = func(set *jose.JSONWebKeySet) { tamper(g, set) }
+				g.mu.Unlock()
+			}
+			mailbox := mailboxOf(t, g, time.Now, &logs{})
+			g.post(posted{id: "one", body: "a message"})
+			m, err := mailbox.Next(t.Context())
+			require.NoError(t, err)
+			if tamper == nil {
+				assert.NotEmpty(t, m.Input, "the key as published is refused")
+				return
+			}
+			assert.Empty(t, m.Input, "a message signed by a key outside the contract is given")
+		})
+	}
+}
+
+func TestMailbox_UsesTheKeysHeldADayPastTheirHourAndNotASecondMore(t *testing.T) {
+	now := &clock{now: time.Now()}
+	g := startGaram(t, now.Now)
+	mailbox := mailboxOf(t, g, now.Now, &logs{})
+	g.post(posted{id: "one", body: "a message"})
+	m, err := mailbox.Next(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, mailbox.Done(t.Context(), m, agent.OutcomeCompleted))
+
+	g.setKeysDown(true)
+	now.advance(25*time.Hour - time.Second)
+	g.post(posted{id: "two", body: "a message"})
+	m, err = mailbox.Next(t.Context())
+	require.NoError(t, err)
+	assert.NotEmpty(t, m.Input, "the keys held are dropped before their day is out")
+	require.NoError(t, mailbox.Done(t.Context(), m, agent.OutcomeCompleted))
+	now.advance(time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	_, err = mailbox.Next(ctx)
+	require.ErrorContains(t, err, "signing keys cannot be read", "the keys held are used past their day")
+}
+
+func TestMailbox_ReadsNoAnswerLargerThanAMessageTakes(t *testing.T) {
+	g := startGaram(t, time.Now)
+	mailbox := mailboxOf(t, g, time.Now, &logs{})
+	g.post(posted{id: "large", body: strings.Repeat("x", 5*bot.MaxMessage)})
+	_, err := mailbox.Next(t.Context())
+	require.Error(t, err, "an answer past the bound is read whole")
+
+	// The large message is withdrawn, so the next poll hands out the next.
+	g.post(posted{id: "one", body: strings.Repeat("x", bot.MaxMessage)})
+	g.mu.Lock()
+	g.out = nil
+	g.mu.Unlock()
+	m, err := mailbox.Next(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "one", m.ID, "control: a message of MaxMessage is read")
 }

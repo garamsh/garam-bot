@@ -18,6 +18,7 @@ import (
 	"time"
 
 	agent "github.com/garamsh/garam-bot/api/agent/v1alpha1"
+	"golang.org/x/net/http/httpproxy"
 )
 
 // mailboxTimeout is how long a poll is read: garam holds one 30 seconds and more, and asks its clients
@@ -29,7 +30,8 @@ type MailboxConfig struct {
 	// URL is the base URL the bot dials garam's machine listener at.
 	URL string
 	// Origin is garam's machine origin, which is not the address dialled where a proxy stands between:
-	// the htu of each proof is the route's URL at it, and it is the iss of every hand-out's signature.
+	// the htu of each proof is the route's URL at it, and it is the iss of every hand-out's signature,
+	// compared as written. It is https://<lowercase host>[:<port>], with no path or trailing slash.
 	Origin string
 	// RootFile holds the root garam's certificate chains to, read again as it changes.
 	RootFile string
@@ -45,7 +47,9 @@ type MailboxConfig struct {
 // the cursor of the last message done, which acknowledges it. A message handed out and not
 // acknowledged is handed out again, so delivery is at least once and a message's task identifier is
 // derived from its identifier. Each hand-out's signature is verified as garam ADR-0101 says; one that
-// fails is rejected and acknowledged, and no content of it is logged.
+// fails is rejected and acknowledged, and no content of it is logged. One that cannot be judged,
+// because garam's keys cannot be read, is held unjudged and judged again at the next Next, with no
+// poll made meanwhile, so no attempt of it or another message is spent.
 type Mailbox struct {
 	cfg  MailboxConfig
 	keys *messageKeys
@@ -54,15 +58,20 @@ type Mailbox struct {
 	root   placeTrust
 	client *http.Client
 	// cursor acknowledges the last message done on the next poll; held is the cursor of the message
-	// answered and not yet done.
-	cursor string
-	held   map[string]string
+	// answered and not yet done; and pending the delivery handed out and not yet judged.
+	cursor  string
+	held    map[string]string
+	pending *delivery
 }
 
 // NewMailbox returns the Mailbox under cfg.
 func NewMailbox(cfg MailboxConfig) (*Mailbox, error) {
 	if cfg.URL == "" || cfg.Origin == "" || cfg.RootFile == "" || cfg.GRN == "" || cfg.Identity == nil {
 		return nil, errors.New("--mailbox-url, --mailbox-origin, --garam-root-file and --bot-grn are given together, with the bot's garam token")
+	}
+	if !canonicalOrigin(cfg.Origin) {
+		// Another spelling of garam's origin would refuse, and so acknowledge, every message.
+		return nil, errors.New("--mailbox-origin is https://<lowercase host>[:<port>], with no path or trailing slash")
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -95,8 +104,17 @@ type content struct {
 
 const contentContract = "garam-message.v1"
 
-// Next polls the mailbox until it answers a message. A poll garam answers 429 answers a *RetryLater.
+// Next judges the delivery held unjudged, where one is, and otherwise polls the mailbox until it answers
+// a message. No poll is made while garam's keys cannot be read. A poll garam answers 429 answers a
+// *RetryLater.
 func (m *Mailbox) Next(ctx context.Context) (Message, error) {
+	m.mu.Lock()
+	pending := m.pending
+	m.mu.Unlock()
+	if pending != nil {
+		got, _, err := m.judge(ctx, *pending)
+		return got, err
+	}
 	for {
 		got, ok, err := m.poll(ctx)
 		if err != nil || ok {
@@ -111,13 +129,16 @@ func (m *Mailbox) poll(ctx context.Context) (Message, bool, error) {
 	if token == "" {
 		return Message{}, false, errors.New("the bot holds no garam token to poll its mailbox with")
 	}
+	if err := m.keys.ready(ctx); err != nil {
+		return Message{}, false, err
+	}
 	client, err := m.httpClient()
 	if err != nil {
 		return Message{}, false, err
 	}
 	// The GRN is one segment, its / as %2F and its : literal, as garam compares the paths as written.
 	route := "/bots/" + url.PathEscape(m.cfg.GRN) + "/mailbox"
-	proof, err := m.cfg.Identity.Proof(http.MethodPost, strings.TrimRight(m.cfg.Origin, "/")+route, token)
+	proof, err := m.cfg.Identity.Proof(http.MethodPost, m.cfg.Origin+route, token)
 	if err != nil {
 		return Message{}, false, err
 	}
@@ -136,7 +157,11 @@ func (m *Mailbox) poll(ctx context.Context) (Message, bool, error) {
 	request.Header.Set(headerProof, proof)
 	response, err := client.Do(request)
 	if err != nil {
-		// A poll aborted is sent again with the same cursor.
+		// A poll aborted is sent again with the same cursor. The error names no URL, so no cursor.
+		var failed *url.Error
+		if errors.As(err, &failed) {
+			err = failed.Err
+		}
 		return Message{}, false, fmt.Errorf("poll the mailbox: %w", err)
 	}
 	defer func() { _ = response.Body.Close() }()
@@ -169,22 +194,33 @@ func (m *Mailbox) poll(ctx context.Context) (Message, bool, error) {
 // signature beside it.
 const maxDelivery = 4*MaxMessage + maxAnswer
 
-// take reads a delivery and verifies it. One whose signature or content garam's contract refuses is
-// answered as a message of no input, which the driver rejects, so it is acknowledged.
+// take reads a delivery and judges it.
 func (m *Mailbox) take(ctx context.Context, body []byte) (Message, bool, error) {
 	var d delivery
 	if err := json.Unmarshal(body, &d); err != nil || d.Cursor == "" || d.Message.ID == "" {
 		return Message{}, false, errors.New("the mailbox answered no delivery")
 	}
+	return m.judge(ctx, d)
+}
+
+// judge verifies d. One whose signature or content garam's contract refuses is answered as a message of
+// no input, which the driver rejects, so it is acknowledged. One that cannot be judged is held, and
+// answered as a failure the driver backs off on; held past its signature's exp, it is let go
+// unacknowledged, so the next poll is handed it again, signed anew.
+func (m *Mailbox) judge(ctx context.Context, d delivery) (Message, bool, error) {
 	id := messageTaskID(d.Message.ID)
 	signed, err := m.keys.verify(ctx, d.Signature, d.Content, d.Message.ID, m.cfg.GRN)
-	if err != nil && !errors.Is(err, errSignature) {
-		// The keys could not be read: the message is not judged, and is handed out again.
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if errors.Is(err, errKeys) {
+		m.pending = &d
+		if m.keys.lapsed(d.Signature) {
+			m.pending = nil
+		}
 		return Message{}, false, err
 	}
-	m.mu.Lock()
+	m.pending = nil
 	m.held[id] = d.Cursor
-	m.mu.Unlock()
 	var c content
 	if err == nil {
 		if decodeErr := json.Unmarshal([]byte(d.Content), &c); decodeErr != nil || c.Contract != contentContract {
@@ -223,7 +259,7 @@ func messageTaskID(id string) string {
 
 // httpClient answers the client trusting garam's root alone, built again when the root file changes.
 // It reads a poll for mailboxTimeout, follows no redirect, and goes through the proxy the
-// environment names.
+// environment names, read as it is built.
 func (m *Mailbox) httpClient() (*http.Client, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -232,10 +268,11 @@ func (m *Mailbox) httpClient() (*http.Client, error) {
 		return nil, fmt.Errorf("read garam's root: %w", err)
 	}
 	if changed || m.client == nil {
+		proxy := httpproxy.FromEnvironment().ProxyFunc()
 		m.client = &http.Client{
 			Timeout: mailboxTimeout,
 			Transport: &http.Transport{
-				Proxy:           http.ProxyFromEnvironment,
+				Proxy:           func(r *http.Request) (*url.URL, error) { return proxy(r.URL) },
 				TLSClientConfig: &tls.Config{RootCAs: m.root.roots, MinVersion: tls.VersionTLS12},
 			},
 			// A redirect would carry the token wherever it pointed.
@@ -243,6 +280,16 @@ func (m *Mailbox) httpClient() (*http.Client, error) {
 		}
 	}
 	return m.client, nil
+}
+
+// canonicalOrigin reports whether origin is the one spelling garam's issuer is compared by (ADR-0101):
+// https, a lowercase host, a port only where one is written, and nothing after it.
+func canonicalOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Opaque != "" {
+		return false
+	}
+	return u.Host == strings.ToLower(u.Host) && !strings.HasSuffix(u.Host, ":") && "https://"+u.Host == origin
 }
 
 // mailboxRefusal is garam's refusal of a poll. Its message names the status and the code, and nothing

@@ -56,7 +56,9 @@ connector:
   # tasks (garam's pollBotMailbox): url as a Bot's Pod dials it, and origin garam's machine origin, which
   # every proof and message signature names. The manager gives them, and garamRoot, to garam-owned Bots
   # alone, through proxy where it is set. The chart refuses one set without the other, and either with
-  # garam or the connector off. Unset, a garam-owned Bot is given no task.
+  # garam or the connector off. origin is https://<lowercase host>[:<port>], with no path or trailing
+  # slash, as garam's issuer is spelled; proxy.url then carries no credential. Unset, a garam-owned Bot
+  # is given no task.
   garamMachine:
     url: ""
     origin: ""

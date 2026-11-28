@@ -625,7 +625,7 @@ func setupBots(mgr ctrl.Manager, bots botOptions) error {
 	if mailbox != nil {
 		// garam's root is read and watched through a cache of its own, holding that ConfigMap alone, as
 		// the manager's cache holds one ConfigMap of the release namespace already.
-		options := rootCacheOptions(bots)
+		options := controller.RootCacheOptions(bots.releaseNamespace, bots.mailbox.RootConfigMap)
 		options.Scheme, options.Mapper = mgr.GetScheme(), mgr.GetRESTMapper()
 		root, err := cache.New(mgr.GetConfig(), options)
 		if err != nil {
@@ -634,17 +634,7 @@ func setupBots(mgr ctrl.Manager, bots botOptions) error {
 		if err := mgr.Add(root); err != nil {
 			return err
 		}
-		r.Reader, r.RootCache = root, root
+		r.RootCache = root
 	}
 	return r.SetupWithManager(mgr)
-}
-
-// rootCacheOptions narrow the cache of garam's root to that one ConfigMap, by a field selector on its
-// name that RBAC applies resourceNames to.
-func rootCacheOptions(bots botOptions) cache.Options {
-	return cache.Options{
-		DefaultNamespaces: map[string]cache.Config{bots.releaseNamespace: {
-			FieldSelector: fields.OneTermEqualSelector("metadata.name", bots.mailbox.RootConfigMap),
-		}},
-	}
 }

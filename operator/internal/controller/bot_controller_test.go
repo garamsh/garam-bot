@@ -1,10 +1,12 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	botv1 "github.com/garamsh/garam-bot/api/declaration/v1alpha1"
 	"github.com/go-logr/logr"
@@ -17,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -89,7 +92,6 @@ func newBotReconciler() *BotReconciler {
 		Image: botImage, Release: botRelease,
 		TrustNamespace: botReleaseNS, TrustConfigMap: botTrustConfigMap, TrustKey: trustKeyForTest,
 		ConnectorURL: botConnectorURL, Audience: botConnectorAudien, WorkspaceAudience: botWorkspaceAud,
-		Reader: k8sClient,
 	}
 }
 
@@ -101,13 +103,42 @@ const (
 	botProxy         = "http://proxy.example:3128"
 )
 
-// withMailbox gives r garam's mailbox, its root in botGaramRootMap, published.
+// withMailbox gives r garam's mailbox, its root in botGaramRootMap, published, and read through a
+// cache narrowed as the manager's is.
 func withMailbox(r *BotReconciler) *BotReconciler {
 	GinkgoHelper()
 	root := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: botGaramRootMap, Namespace: botReleaseNS}}
 	Expect(createOrUpdate(root, func() { root.Data = map[string]string{trustKeyForTest: botGaramRoot} })).To(Succeed())
 	r.Mailbox = &Mailbox{URL: botMailboxURL, Origin: botMailboxOrigin, RootConfigMap: botGaramRootMap, RootKey: trustKeyForTest}
+	r.RootCache = rootCache(botGaramRootMap)
+	r.Client = releaseNarrowed{r.Client}
 	return r
+}
+
+// releaseNarrowed reads in the release namespace no ConfigMap but the trust bundle, as the manager's
+// cache does, so garam's root is read through RootCache alone.
+type releaseNarrowed struct{ client.Client }
+
+func (c releaseNarrowed) Get(ctx context.Context, key client.ObjectKey, object client.Object, options ...client.GetOption) error {
+	if _, ok := object.(*corev1.ConfigMap); ok && key.Namespace == botReleaseNS && key.Name != botTrustConfigMap {
+		return apierrors.NewNotFound(corev1.Resource("configmaps"), key.Name)
+	}
+	return c.Client.Get(ctx, key, object, options...)
+}
+
+// rootCache starts a cache under RootCacheOptions for the ConfigMap name of the release namespace,
+// stopped when the spec ends.
+func rootCache(name string) cache.Cache {
+	GinkgoHelper()
+	options := RootCacheOptions(botReleaseNS, name)
+	options.Scheme = k8sClient.Scheme()
+	started, err := cache.New(cfg, options)
+	Expect(err).NotTo(HaveOccurred())
+	running, stop := context.WithCancel(ctx)
+	DeferCleanup(stop)
+	go func() { _ = started.Start(running) }()
+	Expect(started.WaitForCacheSync(running)).To(BeTrue())
+	return started
 }
 
 // createMira creates the Bot mira in namespace, garam-owned as the connector applies one.
@@ -306,6 +337,18 @@ var _ = Describe("Bot Controller", func() {
 		Expect(getIn(namespace, "local-connector-trust", &corev1.ConfigMap{}).Data).To(Equal(map[string]string{trustKeyForTest: botTrustBundle}))
 	})
 
+	It("gives no garam mailbox, and waits for no garam root, where the manager has no connector", func() {
+		namespace := newBotNamespace(botRelease, nil)
+		bot := createMira(namespace)
+		r := withMailbox(newBotReconciler())
+		r.ConnectorURL, r.Mailbox.RootConfigMap = "", "unpublished-root"
+
+		reconcileBot(r, bot)
+
+		Expect(getIn(namespace, "mira", &appsv1.StatefulSet{}).Spec.Template.Spec.Containers[0].Args).To(Equal(botFileArgs()))
+		Expect(runningOf(namespace, "mira").Reason).To(Equal(reasonStarting), "it waits for a root it would not use")
+	})
+
 	It("builds no Pod for a garam-owned Bot while the release has published no garam root", func() {
 		namespace := newBotNamespace(botRelease, nil)
 		bot := createMira(namespace)
@@ -315,7 +358,7 @@ var _ = Describe("Bot Controller", func() {
 				root := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: botReleaseNS}}
 				Expect(createOrUpdate(root, func() { root.Data = data })).To(Succeed())
 			}
-			r.Mailbox.RootConfigMap = name
+			r.Mailbox.RootConfigMap, r.RootCache = name, rootCache(name)
 
 			reconcileBot(r, bot)
 
@@ -323,7 +366,7 @@ var _ = Describe("Bot Controller", func() {
 			Expect(runningOf(namespace, "mira").Reason).To(Equal(reasonWaitingForGaramRoot), name)
 		}
 
-		r.Mailbox.RootConfigMap = botGaramRootMap
+		r.Mailbox.RootConfigMap, r.RootCache = botGaramRootMap, rootCache(botGaramRootMap)
 		reconcileBot(r, bot)
 		Expect(absentIn(namespace, "mira", &appsv1.StatefulSet{})).To(BeFalse(), "it starts once the root is published")
 		Expect(runningOf(namespace, "mira").Reason).To(Equal(reasonStarting))
@@ -340,6 +383,14 @@ var _ = Describe("Bot Controller", func() {
 		DeferCleanup(func() {
 			Expect(createOrUpdate(root, func() { root.Data = map[string]string{trustKeyForTest: botGaramRoot} })).To(Succeed())
 		})
+		Eventually(func(g Gomega) {
+			seen := &corev1.ConfigMap{}
+			g.Expect(r.RootCache.Get(ctx, client.ObjectKeyFromObject(root), seen)).To(Succeed())
+			g.Expect(seen.Data[trustKeyForTest]).To(Equal(replaced))
+		}).WithTimeout(10*time.Second).Should(Succeed(), "the root cache sees the replaced root")
+		trust := &corev1.ConfigMap{}
+		Expect(apierrors.IsNotFound(r.RootCache.Get(ctx, client.ObjectKey{Namespace: botReleaseNS, Name: botTrustConfigMap}, trust))).
+			To(BeTrue(), "the root cache holds another ConfigMap of the release namespace")
 
 		reconcileBot(r, bot)
 

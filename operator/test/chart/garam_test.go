@@ -109,9 +109,11 @@ func TestChart_RefusesGaramHalfOnAndAProxyWithGaramOff(t *testing.T) {
 }
 
 // mailboxValues give garam-owned Bots garam's mailbox.
+// The URL is not the origin, as behind a proxy, and garam's root is under a key other than the default.
 var mailboxValues = []string{
-	"--set=connector.garamMachine.url=https://machine.garam.example",
+	"--set=connector.garamMachine.url=https://garam-machine.proxy-side.example:8443",
 	"--set=connector.garamMachine.origin=https://machine.garam.example",
+	"--set=connector.garamRoot.key=root.pem",
 }
 
 // mailboxProxyValues give garam-owned Bots garam's mailbox through a proxy.
@@ -140,10 +142,10 @@ func mailboxArgs(args []string) []string {
 
 func TestChart_GivesGaramOwnedBotsTheMailboxDirectlyOrThroughTheProxy(t *testing.T) {
 	mailbox := []string{
-		"--mailbox-url=https://machine.garam.example",
+		"--mailbox-url=https://garam-machine.proxy-side.example:8443",
 		"--mailbox-origin=https://machine.garam.example",
 		"--garam-root-configmap=garam-root",
-		"--garam-root-key=ca.crt",
+		"--garam-root-key=root.pem",
 	}
 	for name, test := range map[string]struct {
 		set  []string
@@ -182,8 +184,15 @@ func TestChart_RefusesTheMailboxHalfSetOrWithoutGaramOrTheConnector(t *testing.T
 		want string
 	}{
 		"a URL without an origin": {mailboxValues[:1], "set together, or neither is"},
-		"an origin without a URL": {mailboxValues[1:], "set together, or neither is"},
-		"garam off":               {append(slices.Clone(mailboxValues), garamOffValues...), "where garam is off"},
+		"an origin without a URL": {mailboxValues[1:2], "set together, or neither is"},
+		"an origin with a trailing slash": {append(slices.Clone(mailboxValues),
+			"--set=connector.garamMachine.origin=https://machine.garam.example/"), "with no path or trailing slash"},
+		"an origin with an uppercase host": {append(slices.Clone(mailboxValues),
+			"--set=connector.garamMachine.origin=https://Machine.garam.example"), "with no path or trailing slash"},
+		"a proxy with a credential": {append(slices.Clone(mailboxValues),
+			"--set=proxy.url=http://user:pass@proxy.example:3128", "--set=proxy.cidr=10.9.0.0/24"),
+			"proxy.url carries a credential"},
+		"garam off": {append(slices.Clone(mailboxValues), garamOffValues...), "where garam is off"},
 		"the connector off": {append(slices.Clone(mailboxValues), "--set=connector.enabled=false"),
 			"where the connector is off"},
 	} {

@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -54,11 +55,10 @@ type BotReconciler struct {
 	ConnectorURL string
 	Audience     string
 	// Mailbox is garam's mailbox a garam-owned Bot long-polls for its tasks, and nil where the release
-	// configures none, so a garam-owned Bot is given no task. Reader reads its garam root, which the
-	// manager's cache does not hold, and RootCache, holding that ConfigMap alone, wakes every Bot on its
-	// change.
+	// configures none, so a garam-owned Bot is given no task. RootCache, under RootCacheOptions, holds
+	// garam's root alone, which the manager's cache does not: the root is read through it, and every
+	// Bot is woken by its change. It is set wherever Mailbox is.
 	Mailbox   *Mailbox
-	Reader    client.Reader
 	RootCache cache.Cache
 
 	// unclaimed holds each Bot already logged as standing in a namespace not claimed for Release, so
@@ -78,6 +78,14 @@ type Mailbox struct {
 	// reaches directly.
 	Proxy   string
 	NoProxy string
+}
+
+// RootCacheOptions narrow the cache of garam's root to the ConfigMap name of namespace, by a field
+// selector on its name, which RBAC applies resourceNames to.
+func RootCacheOptions(namespace, name string) cache.Options {
+	return cache.Options{DefaultNamespaces: map[string]cache.Config{namespace: {
+		FieldSelector: fields.OneTermEqualSelector("metadata.name", name),
+	}}}
 }
 
 // botMailbox is what one Bot is given of the mailbox: its GRN, and garam's root as last read.
@@ -175,7 +183,7 @@ func (r *BotReconciler) mailboxOf(ctx context.Context, management botv1.Manageme
 		return nil, err
 	}
 	root := &corev1.ConfigMap{}
-	err = r.Reader.Get(ctx, client.ObjectKey{Namespace: r.TrustNamespace, Name: r.Mailbox.RootConfigMap}, root)
+	err = r.RootCache.Get(ctx, client.ObjectKey{Namespace: r.TrustNamespace, Name: r.Mailbox.RootConfigMap}, root)
 	switch {
 	case apierrors.IsNotFound(err):
 		return nil, nil
