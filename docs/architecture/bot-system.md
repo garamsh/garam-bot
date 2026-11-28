@@ -171,7 +171,7 @@ The standards are ADR 0037's.
   - `garam`: §External apps, for a bot garam declared;
   - `secretRef`: a Secret the declaration names, read at the place;
   - `federated`: a token exchanged at the tool's issuer.
-- **Model calls go to interface 5**, the model gateway, with a token file the bot's process keeps current. Interface 5 is `api/model-gateway/v1alpha1/` (ADR 0044); a place's gateway issues its own model token, and v1 serves the organization's own key alone. Calls are billed by API through the gateway only, with no subscription login, and an organization may bring its own provider key, which the gateway holds (comment 19858505).
+- **Model calls go to interface 5**, the model gateway, with a token file the bot's process keeps current. Interface 5 is `api/model-gateway/v1alpha1/` (ADR 0044); a place's gateway issues its own model token, and v1 serves the organization's own key alone. A place's gateway serves a certificate of its own making, so the workspace verifies it against the roots the place gives: interface 7 answers them as `model.trust`, and the bot's process writes them to the file interface 2's `model.trustFile` names. Calls are billed by API through the gateway only, with no subscription login, and an organization may bring its own provider key, which the gateway holds (comment 19858505).
 
 ### External apps
 

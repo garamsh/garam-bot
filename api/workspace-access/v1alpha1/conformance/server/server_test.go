@@ -72,6 +72,7 @@ func TestServer(t *testing.T) {
 		{"DIAL-4/a dial closes when its instance ends", dialClosesWithInstance},
 		{"DIAL-4/a dial closes when its bot is gone", dialClosesWithBot},
 		{"DIAL-4/a dial closes when its workspace stops", dialClosesWithWorkspace},
+		{"TRUST-1/a model's trust is PEM roots, as CheckTrust takes them", trustAnswered},
 		{"TOK-1/session tokens name the model and every tool", tokensAnswered},
 		{"TOK-1/a server with no issuer answers waiting_for_gateway", tokensNoIssuer},
 		{"LIMIT-1/a bot past its limit is answered 429 alone, for each call that reaches a provider or an issuer", limitBot},
@@ -325,6 +326,20 @@ func acquireIdempotent(t *testing.T) {
 	require.Len(t, w.Tools, 1)
 	assert.Equal(t, "github", w.Tools[0].Name)
 	assert.NotEmpty(t, w.Tools[0].URL)
+}
+
+// trustAnswered holds an acquire's and a read's model.trust to what CheckTrust takes, and to the same
+// roots in both. A server whose workspaces verify their gateway with their system roots answers none,
+// which CheckTrust takes too.
+func trustAnswered(t *testing.T) {
+	b := newBot(t)
+	acquired := b.acquire(t, "main")
+	require.Equal(t, http.StatusOK, acquired.status, acquired.raw)
+	read := b.call(t, http.MethodGet, ws("main"), nil)
+	require.Equal(t, http.StatusOK, read.status, read.raw)
+	trust := workspaceOf(t, acquired).Model.Trust
+	assert.NoError(t, v1alpha1.CheckTrust(trust))
+	assert.Equal(t, trust, workspaceOf(t, read).Model.Trust, "a read answers other roots than the acquire before it")
 }
 
 func acquireRecovers(t *testing.T) {

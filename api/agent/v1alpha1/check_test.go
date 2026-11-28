@@ -19,12 +19,20 @@ func valid() v1alpha1.SessionSpec {
 
 func TestCheckSession_SES1(t *testing.T) {
 	require.NoError(t, v1alpha1.CheckSession("s", valid())) // control
+	trusted := valid()
+	trusted.Model.TrustFile = "/run/garam-bot/model/trust.pem"
+	require.NoError(t, v1alpha1.CheckSession("s", trusted), "control: a trust file for an https gateway")
 	assert.Error(t, v1alpha1.CheckSession("S", valid()), "an identifier that is not a DNS label")
 	for name, change := range map[string]func(*v1alpha1.SessionSpec){
-		"no bot name":            func(s *v1alpha1.SessionSpec) { s.Bot.Name = "" },
-		"a relative model URL":   func(s *v1alpha1.SessionSpec) { s.Model.BaseURL = "/v1" },
-		"a model URL of ftp":     func(s *v1alpha1.SessionSpec) { s.Model.BaseURL = "ftp://gateway.example" },
-		"a relative token file":  func(s *v1alpha1.SessionSpec) { s.Model.TokenFile = "token" },
+		"no bot name":           func(s *v1alpha1.SessionSpec) { s.Bot.Name = "" },
+		"a relative model URL":  func(s *v1alpha1.SessionSpec) { s.Model.BaseURL = "/v1" },
+		"a model URL of ftp":    func(s *v1alpha1.SessionSpec) { s.Model.BaseURL = "ftp://gateway.example" },
+		"a relative token file": func(s *v1alpha1.SessionSpec) { s.Model.TokenFile = "token" },
+		"a relative trust file": func(s *v1alpha1.SessionSpec) { s.Model.TrustFile = "trust.pem" },
+		"an unclean trust file": func(s *v1alpha1.SessionSpec) { s.Model.TrustFile = "/run/garam-bot/../trust.pem" },
+		"a trust file for http": func(s *v1alpha1.SessionSpec) {
+			s.Model.BaseURL, s.Model.TrustFile = "http://gateway.example", "/run/garam-bot/model/trust.pem"
+		},
 		"an unclean token file":  func(s *v1alpha1.SessionSpec) { s.Tools[0].TokenFile = "/run/../token" },
 		"a tool without a name":  func(s *v1alpha1.SessionSpec) { s.Tools[0].Name = "" },
 		"a tool repeated":        func(s *v1alpha1.SessionSpec) { s.Tools = append(s.Tools, s.Tools[0]) },

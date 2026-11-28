@@ -2,8 +2,15 @@ package conformance
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"net/http"
 	"strings"
 	"testing"
@@ -30,6 +37,10 @@ func Cases() []Case {
 		{Requirement: "EVT-2", Name: "a task's last event is its one taskDone", run: taskDoneLast},
 		{Requirement: "MEM-1", Name: "the harness's answer is a message event", run: answered},
 		{Requirement: "MODEL-1", Name: "model requests go to the gateway with the token file's token", run: modelCalls},
+		{
+			Requirement: "MODEL-2", Name: "model requests verify the gateway against the trust file's roots alone, read again when it changes",
+			run: modelTrust,
+		},
 		{
 			Requirement: "TOOL-1", Name: "the harness reaches only the session's MCP servers, with their token files' tokens",
 			Pending: "needs an MCP server stub that records calls, and a harness that a task can make call it",
@@ -73,6 +84,62 @@ func modelCalls(t *testing.T, s *Subject) {
 	if n := s.Gateway.Refused() - refused; n > 0 {
 		t.Fatalf("the gateway refused %d model requests: the harness sent another credential", n)
 	}
+}
+
+// modelTrust runs two tasks: the first with the trust file holding a root the gateway's certificate
+// does not chain to, so no request of it may reach the gateway, and the second with the file
+// rewritten to the gateway's root, so a harness that read the file once, or trusts the system's roots
+// as well, is told apart from one that trusts the file alone and reads it again.
+func modelTrust(t *testing.T, s *Subject) {
+	if s.Gateway == nil || s.WriteModelToken == nil || s.WriteModelTrust == nil || len(s.GatewayTrust) == 0 ||
+		s.Session.Model.TrustFile == "" {
+		t.Skip("the subject gives no gateway over TLS with its root, no way to write the trust file, or no trust file")
+	}
+	t.Cleanup(func() { _ = s.WriteModelTrust(s.GatewayTrust) })
+	issued, err := s.Gateway.Issue(s.ModelBot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WriteModelToken(issued.Token); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WriteModelTrust(otherRoot(t)); err != nil {
+		t.Fatal(err)
+	}
+	s.session(t, "trust")
+	before := len(s.Gateway.Requests())
+	s.task(t, "trust", "untrusted", "Reply with the word ready.")
+	s.until(t, "trust", 0, doneOf("untrusted"))
+	if n := len(s.Gateway.Requests()) - before; n > 0 {
+		t.Fatalf("%d model requests reached a gateway whose root the trust file does not hold", n)
+	}
+	if err := s.WriteModelTrust(s.GatewayTrust); err != nil {
+		t.Fatal(err)
+	}
+	s.task(t, "trust", "trusted", "Reply with the word ready.")
+	s.until(t, "trust", 0, doneOf("trusted"))
+	if len(s.Gateway.Requests()) == before {
+		t.Fatal("no model request reached the gateway once the trust file held its root: the file was not read again")
+	}
+}
+
+// otherRoot is a self-signed root no gateway's certificate chains to.
+func otherRoot(t *testing.T) []byte {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "conformance: a root of no gateway"},
+		NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 }
 
 func unauthorized(t *testing.T, s *Subject) {

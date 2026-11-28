@@ -5,12 +5,18 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -44,6 +50,9 @@ type server struct {
 	origin  *url.URL
 	keys    jose.JSONWebKeySet
 	started time.Time
+	// trust is the root the reference answers as its gateway's (TRUST-1): it has no gateway, so the
+	// root is one it makes at start, and no certificate chains to it.
+	trust string
 }
 
 func newServer(p *place, baseURL string, credentialKey *ecdsa.PublicKey, started time.Time) (*server, error) {
@@ -51,8 +60,12 @@ func newServer(p *place, baseURL string, credentialKey *ecdsa.PublicKey, started
 	if err != nil {
 		return nil, err
 	}
+	trust, err := newRoot(started)
+	if err != nil {
+		return nil, err
+	}
 	return &server{
-		place: p, origin: origin, started: started,
+		place: p, origin: origin, started: started, trust: trust,
 		keys: jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: credentialKey, KeyID: "reference", Algorithm: string(jose.ES256)}}},
 	}, nil
 }
@@ -375,7 +388,8 @@ func (s *server) answer(c caller, sp *space) v1alpha1.Workspace {
 		tools = append(tools, v1alpha1.Tool{Name: name, URL: toolProxy + name})
 	}
 	return v1alpha1.Workspace{
-		Attachment: c.attachment, Phase: sp.phase, Reason: sp.reason, Model: v1alpha1.Model{BaseURL: ModelBaseURL}, Tools: tools,
+		Attachment: c.attachment, Phase: sp.phase, Reason: sp.reason, Tools: tools,
+		Model: v1alpha1.Model{BaseURL: ModelBaseURL, Trust: s.trust},
 	}
 }
 
@@ -503,4 +517,22 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// newRoot makes a self-signed P-256 root, as PEM, valid a year from now.
+func newRoot(now time.Time) (string, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return "", err
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "workspace-access reference gateway root"},
+		NotBefore: now, NotAfter: now.AddDate(1, 0, 0), IsCA: true, BasicConstraintsValid: true,
+		KeyUsage: x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		return "", err
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), nil
 }
