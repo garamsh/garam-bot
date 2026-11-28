@@ -35,14 +35,6 @@ func Cases() []Case {
 			Requirement: "TOOL-1", Name: "the harness reaches only the session's MCP servers, with their token files' tokens",
 			Pending: "needs an MCP server stub that records calls, and a harness that a task can make call it",
 		},
-		{
-			Requirement: "CRED-1", Name: "the caller writes no credential but short-lived tokens into a workspace",
-			Pending: "a caller obligation; the caller suite arrives with the first caller",
-		},
-		{
-			Requirement: "VER-2", Name: "a caller skips an event type it does not know",
-			Pending: "a caller obligation; the caller suite arrives with the first caller",
-		},
 	}
 }
 

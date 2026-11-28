@@ -8,6 +8,8 @@ The tests of `README.md`'s requirements: what each one is, and how a new adapter
 - **The cases run one after another** against one adapter, which holds one session at a time, and each deletes the session it made.
 - **`TestReference`** runs it against `agentfake`, served by `httptest`. `make test` runs it.
 - **A real adapter** runs it in a workspace of interface 3, with the conformance session's model a gateway that answers, the token written with `WriteFile`, and the base URL reached through `Dial`. The inputs are plain requests, "Reply with the word ready.", and `conformance.HoldInput`, which the harness is asked to keep working on until it is stopped.
+- **The caller suite** is `CallerCases()` in the same package, run with `conformance.RunCaller(t, caller)`: the cases of the requirements that bind the caller, VER-2 and CRED-1. A caller plugs in as a `conformance.Caller` (read the events of a session, read its state, keep the workspace's tokens), and the suite serves it a scripted adapter that says what a later release may, and a recording workspace with a clock it moves 10 minutes at a time over 3 hours. It reaches no real adapter and no workspace.
+- **`TestReferenceCaller`** runs it against `conformance.ReferenceCaller`, the smallest caller that keeps the obligations. The bot's driver (garam-bot#1281) binds its own code to the same cases, and does not copy the reference.
 - **A pending case** is skipped with its reason. It counts as named, not as passing.
 
 ## Requirements and their tests
@@ -28,6 +30,6 @@ The tests of `README.md`'s requirements: what each one is, and how a new adapter
 | MEM-1 | `MEM-1/the harness's answer is a message event`. Tool call events wait for TOOL-1's stub |
 | MODEL-1 | `MODEL-1/model requests go to the gateway with the token file's token`, pending a model gateway stub, which arrives with interface 5 |
 | TOOL-1 | `TOOL-1/the harness reaches only the session's MCP servers, with their token files' tokens`, pending an MCP server stub |
-| CRED-1 | `CRED-1/the caller writes no credential but short-lived tokens into a workspace`, pending a caller suite, which arrives with the first caller |
+| CRED-1 | `CRED-1/the caller writes no credential but short-lived tokens into a workspace`, in the caller suite |
 | VER-1 | `INFO-1/info names the harness and the release` reads the release |
-| VER-2 | `VER-2/a caller skips an event type it does not know`, pending a caller suite |
+| VER-2 | `VER-2/a caller skips an event type it does not know`, `VER-2/a caller reads a session state it does not know as unknown`, in the caller suite |

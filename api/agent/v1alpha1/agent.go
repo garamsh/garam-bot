@@ -3,7 +3,7 @@ package v1alpha1
 import "encoding/json"
 
 // SpecRelease is the release of v1alpha1's specification this package states.
-const SpecRelease = "0.1.0"
+const SpecRelease = "0.1.1"
 
 // Version is the version of the protocol these types speak.
 const Version = "agent/v1alpha1"
