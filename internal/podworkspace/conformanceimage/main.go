@@ -18,8 +18,7 @@ func main() {
 	case "false":
 		os.Exit(1)
 	case "cat":
-		_, _ = io.Copy(os.Stdout, os.Stdin)
-		return
+		os.Exit(cat(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	listener, err := net.Listen("tcp", ":7")
 	if err != nil {
