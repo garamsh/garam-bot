@@ -28,6 +28,9 @@ func (p *Provider) Create(ctx context.Context, name v1alpha1.Name, spec v1alpha1
 	if err := spec.Check(); err != nil {
 		return v1alpha1.Workspace{}, false, err
 	}
+	if err := checkLabels(spec); err != nil {
+		return v1alpha1.Workspace{}, false, err
+	}
 	caps, err := p.Capabilities(ctx)
 	if err != nil {
 		return v1alpha1.Workspace{}, false, err

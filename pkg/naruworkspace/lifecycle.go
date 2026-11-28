@@ -21,6 +21,9 @@ func (p *Provider) Create(ctx context.Context, name v1alpha1.Name, spec v1alpha1
 	if err := spec.Check(); err != nil {
 		return v1alpha1.Workspace{}, false, err
 	}
+	if len(spec.Labels) > 0 {
+		return v1alpha1.Workspace{}, false, fmt.Errorf("%w: labels: a Machine carries no label of its caller's (naru#453)", v1alpha1.ErrUnsupported)
+	}
 	m, created, err := p.api.CreateMachine(ctx, string(name), machineSpec(spec, p.cfg.RootDiskBytes))
 	if err != nil {
 		return v1alpha1.Workspace{}, false, translate("create the Machine "+string(name), err)

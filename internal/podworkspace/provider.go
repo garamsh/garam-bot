@@ -81,7 +81,7 @@ func (p *Provider) Capabilities(context.Context) (v1alpha1.Capabilities, error) 
 		return v1alpha1.Capabilities{}, err
 	}
 
-	return v1alpha1.Capabilities{Snapshot: snapshot, Egress: p.cfg.Egress, Stdin: true}, nil
+	return v1alpha1.Capabilities{Snapshot: snapshot, Egress: p.cfg.Egress, Stdin: true, Labels: true}, nil
 }
 
 func (p *Provider) snapshotsServed() (bool, error) {

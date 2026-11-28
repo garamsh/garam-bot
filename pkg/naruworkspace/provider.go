@@ -163,7 +163,7 @@ func (p *Provider) Run(ctx context.Context) error {
 // Capabilities reports what README §Mapping onto naru's Machine API states: snapshots of the
 // volume, egress rules, and no exec input.
 func (p *Provider) Capabilities(context.Context) (v1alpha1.Capabilities, error) {
-	return v1alpha1.Capabilities{Snapshot: true, Egress: true, Stdin: false}, nil
+	return v1alpha1.Capabilities{Snapshot: true, Egress: true, Stdin: false, Labels: false}, nil
 }
 
 // list replaces the record with the Machines orch lists, and follows the log from the cursor the

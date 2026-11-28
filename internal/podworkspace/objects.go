@@ -3,6 +3,7 @@ package podworkspace
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
@@ -39,6 +40,25 @@ func workspaceLabels(name v1alpha1.Name) map[string]string {
 	return map[string]string{labelWorkspace: string(name)}
 }
 
+// objectLabels are a workspace object's labels: the caller's, and labelWorkspace, which the caller may
+// not set (LABEL-1).
+func objectLabels(name v1alpha1.Name, spec v1alpha1.Spec) map[string]string {
+	labels := maps.Clone(spec.Labels)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[labelWorkspace] = string(name)
+	return labels
+}
+
+// checkLabels refuses a spec whose labels set the key the provider marks its objects with.
+func checkLabels(spec v1alpha1.Spec) error {
+	if _, ok := spec.Labels[labelWorkspace]; ok {
+		return fmt.Errorf("%w: label %s is the provider's own", v1alpha1.ErrInvalid, labelWorkspace)
+	}
+	return nil
+}
+
 func claimFor(name v1alpha1.Name, spec v1alpha1.Spec, ns string) (*corev1.PersistentVolumeClaim, error) {
 	raw, err := json.Marshal(spec)
 	if err != nil {
@@ -48,7 +68,7 @@ func claimFor(name v1alpha1.Name, spec v1alpha1.Spec, ns string) (*corev1.Persis
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        string(name),
 			Namespace:   ns,
-			Labels:      workspaceLabels(name),
+			Labels:      objectLabels(name, spec),
 			Annotations: map[string]string{annotationSpec: string(raw), annotationDesired: desiredRunning},
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
@@ -99,7 +119,7 @@ func podFor(name v1alpha1.Name, spec v1alpha1.Spec, ns, helperImage string) *cor
 	}
 
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: string(name), Namespace: ns, Labels: workspaceLabels(name)},
+		ObjectMeta: metav1.ObjectMeta{Name: string(name), Namespace: ns, Labels: objectLabels(name, spec)},
 		Spec: corev1.PodSpec{
 			RestartPolicy:                corev1.RestartPolicyAlways,
 			AutomountServiceAccountToken: ptr.To(false),
@@ -160,7 +180,7 @@ func policyFor(name v1alpha1.Name, spec v1alpha1.Spec, ns string) *networkingv1.
 	}
 
 	return &networkingv1.NetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{Name: string(name), Namespace: ns, Labels: workspaceLabels(name)},
+		ObjectMeta: metav1.ObjectMeta{Name: string(name), Namespace: ns, Labels: objectLabels(name, spec)},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{MatchLabels: workspaceLabels(name)},
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},

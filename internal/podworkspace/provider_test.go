@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	fakediscovery "k8s.io/client-go/discovery/fake"
@@ -150,7 +151,7 @@ func TestCapabilitiesFollowTheClusterAndTheConfiguration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			caps, err := newFixture(t, tc.egress, tc.snapshots).provider.Capabilities(t.Context())
 			require.NoError(t, err)
-			assert.Equal(t, v1alpha1.Capabilities{Egress: tc.egress, Snapshot: tc.snapshots, Stdin: true}, caps)
+			assert.Equal(t, v1alpha1.Capabilities{Egress: tc.egress, Snapshot: tc.snapshots, Stdin: true, Labels: true}, caps)
 		})
 	}
 }
@@ -338,6 +339,44 @@ func TestPolicyAdmitsNothingInAndOnlyTheRulesOut(t *testing.T) {
 	assert.Equal(t, int32(90), *rules[0].Ports[0].EndPort)
 	assert.Equal(t, corev1.ProtocolUDP, *rules[1].Ports[0].Protocol, "a rule with no ports still names its protocol")
 	assert.Nil(t, rules[1].Ports[0].Port)
+}
+
+func TestEveryObjectCarriesTheCallersLabels(t *testing.T) {
+	f := newFixture(t, false, false)
+	ctx := t.Context()
+	spec := testSpec()
+	spec.Labels = map[string]string{"bot.garam.sh/bot-uid": "6d3c0f1e-1b2a-4c5d-8e9f-0a1b2c3d4e5f"}
+	want := map[string]string{"bot.garam.sh/bot-uid": "6d3c0f1e-1b2a-4c5d-8e9f-0a1b2c3d4e5f", labelWorkspace: "one"}
+
+	_, _, err := f.provider.Create(ctx, "one", spec)
+	require.NoError(t, err)
+	claim, err := f.kube.CoreV1().PersistentVolumeClaims(testNamespace).Get(ctx, "one", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, want, claim.Labels)
+	pod, err := f.kube.CoreV1().Pods(testNamespace).Get(ctx, "one", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, want, pod.Labels)
+	policy, err := f.kube.NetworkingV1().NetworkPolicies(testNamespace).Get(ctx, "one", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, want, policy.Labels)
+	assert.Equal(t, map[string]string{labelWorkspace: "one"}, policy.Spec.PodSelector.MatchLabels, "the policy selects its workspace, not every pod with the caller's labels")
+}
+
+func TestCreateRefusesTheProvidersOwnLabel(t *testing.T) {
+	f := newFixture(t, false, false)
+	ctx := t.Context()
+
+	control := testSpec()
+	control.Labels = map[string]string{"garam-bot.garam.sh/attachment": "main"}
+	_, _, err := f.provider.Create(ctx, "two", control)
+	require.NoError(t, err, "a caller's label under the provider's prefix is taken")
+
+	spec := testSpec()
+	spec.Labels = map[string]string{labelWorkspace: "another"}
+	_, _, err = f.provider.Create(ctx, "one", spec)
+	assert.ErrorIs(t, err, v1alpha1.ErrInvalid)
+	_, err = f.kube.CoreV1().PersistentVolumeClaims(testNamespace).Get(ctx, "one", metav1.GetOptions{})
+	assert.True(t, apierrors.IsNotFound(err), "nothing is made: %v", err)
 }
 
 func TestCreateRefusesAnImageThatRunsAsRoot(t *testing.T) {
