@@ -9,6 +9,7 @@ ConfigMap names are its flags' defaults, which the manager's flags name too.
 {{- define "garam-connector.claimName" -}}garam-connector-claim{{- end -}}
 {{- define "garam-connector.audience" -}}garam-connector{{- end -}}
 {{- define "garam-connector.botTokenPort" -}}8443{{- end -}}
+{{- define "garam-connector.workspaceAudience" -}}garam-workspace{{- end -}}
 
 {{/* The release a claim names, <release-namespace>/<release-name> (CLAIM-1). */}}
 {{- define "garam-connector.release" -}}{{ .Release.Namespace }}/{{ .Release.Name }}{{- end -}}
@@ -93,4 +94,48 @@ capabilities:
     - protocol: TCP
       port: {{ .Values.metrics.port }}
 {{- end }}
+{{- end -}}
+
+
+{{/*
+workspaceEgress renders a workspaces.<provider>.egress list as the connector's
+<cidr>/<protocol>/<port>[-<port>] rules, and refuses one without a rule to port 53, so a workspace
+resolves its URLs' names (ADR 0099 decision 7). The argument is a dict of name and rules.
+*/}}
+{{- define "garam-connector.workspaceEgress" -}}
+{{- $rules := list -}}
+{{- $dns := false -}}
+{{- range .rules -}}
+{{- $port := required (printf "workspaces.%s.egress: each rule names a port" $.name) .port | int -}}
+{{- $end := .endPort | default $port | int -}}
+{{- if and (le $port 53) (ge $end 53) -}}{{- $dns = true -}}{{- end -}}
+{{- $range := ternary (printf "%d" $port) (printf "%d-%d" $port $end) (eq $port $end) -}}
+{{- $rules = append $rules (printf "%s/%s/%s" (required (printf "workspaces.%s.egress: each rule names a cidr" $.name) .cidr) (required (printf "workspaces.%s.egress: each rule names a protocol" $.name) .protocol) $range) -}}
+{{- end -}}
+{{- if not $dns -}}
+{{- fail (printf "workspaces.%s.egress must include a rule to port 53, so a workspace resolves its URLs' names" .name) -}}
+{{- end -}}
+{{- join "," $rules -}}
+{{- end -}}
+
+{{/*
+workspacesOn answers "true" where the connector serves the bots' workspaces, and refuses a partial
+configuration as the connector does, so a render does not ship one it would refuse at start.
+*/}}
+{{- define "garam-connector.workspacesOn" -}}
+{{- $w := .Values.workspaces -}}
+{{- if and .Values.connector.enabled $w.namespace -}}
+{{- $watched := include "garam-connector.watched" . | fromJsonArray -}}
+{{- if has $w.namespace (append $watched .Release.Namespace) -}}
+{{- fail (printf "workspaces.namespace %s is the release namespace or a watched one" $w.namespace) -}}
+{{- end -}}
+{{- if not .Values.connector.naru.enabled -}}
+{{- if or $w.naru.modelGatewayURL $w.naru.toolProxyURL $w.naru.egress -}}
+{{- fail "workspaces.naru is set where connector.naru is off" -}}
+{{- end -}}
+{{- end -}}
+true
+{{- else if and .Values.connector.enabled (or .Values.images.workspaceHelper .Values.images.agents $w.pod.modelGatewayURL $w.pod.toolProxyURL $w.pod.egress $w.naru.modelGatewayURL $w.naru.toolProxyURL $w.naru.egress) -}}
+{{- fail "images.workspaceHelper, images.agents or workspaces.pod or naru is set without workspaces.namespace" -}}
+{{- end -}}
 {{- end -}}

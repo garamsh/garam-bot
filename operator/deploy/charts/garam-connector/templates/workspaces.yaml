@@ -1,0 +1,60 @@
+{{- if include "garam-connector.workspacesOn" . }}
+{{- $namespace := .Values.workspaces.namespace }}
+# The namespace every workspace lives in (ADR 0099 decision 4). The chart renders it, so Helm refuses a
+# second release that renders the same one, and the label names the release it belongs to.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+    bot.garam.sh/workspace-release: {{ printf "%s.%s" .Release.Namespace .Release.Name }}
+    # The Pod provider's Pods, its file helper included, run as PodSecurity restricted admits.
+    pod-security.kubernetes.io/enforce: restricted
+---
+# The Pod provider's rights, in the workspace namespace alone (garam-bot interfaces.md, interface 3's
+# Pod provider), and the default ServiceAccount the connector stops mounting its token.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-connector-workspaces
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, create, delete]
+  - apiGroups: [""]
+    resources: [pods/exec, pods/portforward]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [get, list, create, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [create, delete]
+  - apiGroups: [snapshot.storage.k8s.io]
+    resources: [volumesnapshots]
+    verbs: [get, create, delete]
+  - apiGroups: [""]
+    resources: [serviceaccounts]
+    resourceNames: [default]
+    verbs: [get, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-connector-workspaces
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-connector-workspaces
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-connector
+    namespace: {{ .Release.Namespace }}
+{{- end }}

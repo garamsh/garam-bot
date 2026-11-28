@@ -104,6 +104,26 @@ spec:
             - --connector-deployment={{ $.Release.Name }}-connector
             {{- end }}
             {{- end }}
+            {{- if include "garam-connector.workspacesOn" . }}
+            {{- with .Values.workspaces }}
+            - --workspace-namespace={{ .namespace }}
+            - --workspace-audience={{ include "garam-connector.workspaceAudience" $ }}
+            {{- range $harness, $ref := $.Values.images.agents }}
+            - --agent-image={{ $harness }}={{ include "garam-connector.image" (dict "name" (printf "agents.%s" $harness) "ref" $ref) }}
+            {{- end }}
+            - --workspace-helper-image={{ include "garam-connector.image" (dict "name" "workspaceHelper" "ref" $.Values.images.workspaceHelper) }}
+            - --max-dials={{ .maxDials | int }}
+            - --pod-workspace-enforces-egress={{ .pod.enforcesNetworkPolicy }}
+            - --pod-model-gateway-url={{ required "workspaces.pod.modelGatewayURL is required where workspaces.namespace is set" .pod.modelGatewayURL }}
+            - --pod-tool-proxy-url={{ required "workspaces.pod.toolProxyURL is required where workspaces.namespace is set" .pod.toolProxyURL }}
+            - --pod-workspace-egress={{ include "garam-connector.workspaceEgress" (dict "name" "pod" "rules" .pod.egress) }}
+            {{- if $.Values.connector.naru.enabled }}
+            - --naru-model-gateway-url={{ required "workspaces.naru.modelGatewayURL is required where workspaces.namespace is set and connector.naru is enabled" .naru.modelGatewayURL }}
+            - --naru-tool-proxy-url={{ required "workspaces.naru.toolProxyURL is required where workspaces.namespace is set and connector.naru is enabled" .naru.toolProxyURL }}
+            - --naru-workspace-egress={{ include "garam-connector.workspaceEgress" (dict "name" "naru" "rules" .naru.egress) }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
           {{- if .Values.proxy.url }}
           env:
             - name: HTTPS_PROXY

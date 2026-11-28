@@ -212,7 +212,7 @@ metadata: {name: allowed}
 }
 
 // valueSets are the renders every invariant is checked on: the full values, the connector off, a
-// proxy, metrics on, and the release namespace watched alone.
+// proxy, metrics on, the release namespace watched alone, naru, and the bots' workspaces.
 var valueSets = map[string][]string{
 	"full":          nil,
 	"connector off": {"--set=connector.enabled=false"},
@@ -223,6 +223,8 @@ var valueSets = map[string][]string{
 	},
 	"release namespace alone": {"--set-json=watchNamespaces=[]"},
 	"naru":                    naruValues,
+	"workspaces":              workspaceValues,
+	"naru workspaces":         naruWorkspaceValues,
 }
 
 // naruValues turn the naru Machine provider on, with every value it requires.
@@ -267,7 +269,13 @@ func TestChart_PinsEveryImageByDigest(t *testing.T) {
 				for _, container := range deployment.Spec.Template.Spec.Containers {
 					images := []string{container.Image}
 					for _, arg := range container.Args {
-						if image, ok := strings.CutPrefix(arg, "--bot-image="); ok {
+						for _, flag := range []string{"--bot-image=", "--workspace-helper-image="} {
+							if image, ok := strings.CutPrefix(arg, flag); ok {
+								images = append(images, image)
+							}
+						}
+						if value, ok := strings.CutPrefix(arg, "--agent-image="); ok {
+							_, image, _ := strings.Cut(value, "=")
 							images = append(images, image)
 						}
 					}

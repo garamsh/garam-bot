@@ -152,6 +152,13 @@ rules:
   - apiGroups: [bot.garam.sh]
     resources: [bots, workspaces, workspaceclasses, botpools]
     verbs: [list, watch, create, patch, delete]
+  {{- if include "garam-connector.workspacesOn" $root }}
+  # The deletion sweep reads a Bot live, past the cache, before it deletes its workspace (ADR 0099
+  # decision 6).
+  - apiGroups: [bot.garam.sh]
+    resources: [bots]
+    verbs: [get]
+  {{- end }}
   - apiGroups: [coordination.k8s.io]
     resources: [leases]
     resourceNames: [{{ include "garam-connector.claimName" $root }}]
