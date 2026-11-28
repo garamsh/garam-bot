@@ -2,7 +2,7 @@
 
 How a user's own cluster is connected to garam: the chart a user installs, the connector program in it, its registration and identity, the declarations it syncs both ways, the rights it holds in the cluster, and what garam owes on its side.
 
-Registration and identity are built, in `cmd/connector` and `internal/clusteridentity` (#440), except registering again after a key is lost (#450). Applying declarations and reporting are built, in `internal/declaration` (#441, #442). Bots' tokens are built, in `internal/bottoken` (garam-bot#1255). The manager's Bot reconciler is built, in `internal/controller` (garam-bot#1254). The naru Machine provider runs in the connector where the chart turns it on (garam-bot#1209). The rest is not built yet. This document states what is decided. Goal #436 lists the implementation issues, and each section names the decision it holds.
+Registration and identity are built, in `cmd/connector` and `internal/clusteridentity` (#440), except registering again after a key is lost (#450). Applying declarations and reporting are built, in `internal/declaration` (#441, #442). Bots' tokens are built, in `internal/bottoken` (garam-bot#1255). The manager's Bot reconciler is built, in `internal/controller` (garam-bot#1254). The naru Machine provider runs in the connector where the chart turns it on (garam-bot#1209). The bots' workspaces, interface 7, are decided and not built (garam-bot#1281). The rest is not built yet. This document states what is decided. Goal #436 lists the implementation issues, and each section names the decision it holds.
 
 ## Current decisions
 
@@ -10,8 +10,8 @@ Registration and identity are built, in `cmd/connector` and `internal/clusteride
 
 - **A user connects a cluster by installing the connector chart in it**, in EKS or any conformant cluster ([ADR 0087](adr/0087-connect-a-users-cluster-through-a-connector-it-installs-that-dials-garam-over-https-long-poll.md)). The chart is a product users install: for it, ADR 0079's "runs only on our own system" and "BYO on hold" no longer hold.
 - **The chart, `deploy/charts/garam-connector/`, deploys two programs as two Deployments from two images** ([ADR 0090](adr/0090-run-the-connector-as-a-binary-beside-the-manager-and-build-the-bot-reconciler-from-the-agent-workload.md)):
-  - **The manager** reconciles garam-bot's interface-1 objects into workloads. It needs no garam connection, so the chart with the connector off is the cluster mode that works without garam.
-  - **The connector**, `cmd/connector`, holds the cluster's identity and is the only program that talks to garam.
+  - **The manager** reconciles garam-bot's interface-1 objects into workloads. It needs no garam connection.
+  - **The connector**, `cmd/connector`, holds the cluster's identity and is the only program that talks to garam. It also serves every Bot's workspace (ADR 0099), so the cluster mode that works without garam is the chart with garam off, not with the connector off: the connector then registers nothing and serves the workspaces alone.
   - **They meet only through the Kubernetes API.**
 - **The Bot reconciler is built from the Agent workload code** ([ADR 0098](adr/0098-build-the-bot-reconciler-on-the-restricted-pod-and-pull-policy-alone-and-keep-the-fence-and-claims-with-the-agent.md)). What the two share today, the restricted Pod and the pull policy, is `internal/workload`. The writer fence and the claims stay with the Agent until a Bot holds state. One Bot is one StatefulSet of one, whose runtime reads that Bot from a mounted file.
 - **What the manager builds for a Bot**, in a namespace whose claim names its release, every object controlled by the Bot:
@@ -20,6 +20,7 @@ Registration and identity are built, in `cmd/connector` and `internal/clusteride
   - the trust copy, the ConfigMap `<bot>-connector-trust`, copied again on every change of `--trust-configmap`;
   - the StatefulSet of one, running `--bot-image`. It carries the ServiceAccount token projected for `--bot-token-audience`, 600 seconds, and `garam-bot probe` as its probes, and PodSecurity `restricted` admits its Pod.
   - A cluster-owned Bot gets no trust copy, no projected token and no connector flags, so it runs with no garam identity.
+  - **Decided, to build (ADR 0099):** every Bot, garam-owned or cluster-owned, gets the trust copy, a second token projected for `--workspace-audience`, `garam-workspace`, 600 seconds, and `--connector-url`, `--connector-trust-file` and `--workspace-credential-file`. Only a garam-owned Bot gets the `--bot-token-audience` token and `--credential-file`, so a cluster-owned Bot still has no garam identity.
 - **A Bot's `Running` condition** is read off its Pod's runtime container: `True` while it is ready, and otherwise the reason its termination message names, `Starting`, or `WaitingForConnectorTrust`. In a namespace not claimed for its release the manager writes nothing and logs once per Bot why.
 - **Interface 1's kinds are garam-bot's interface.** Their Go types come from garam-bot's `api/declaration/v1alpha1`, and no second API group is scaffolded under `api/`, so `stack-kubebuilder.md` §1's single-group rule holds for this project's own APIs (garam-bot#1254).
 - **The manager starts a reconciler for each kind the cluster serves**, found by discovery at start. The chart installs no `Agent` CRD, so the chart's manager runs no `Agent` reconciler. No mode flag is added. Where `--control-address` is set, a missing `Agent` kind fails the start.
@@ -139,11 +140,44 @@ These follow garam-bot's ADR 0034 and naru ADR 0116. The provider is garam-bot's
 - **A refused renewal is a Warning Event on the connector's Deployment**, reason `NaruCallerCertificate`, and an error line in the log. The certificate then renews no more, and the operator places a new registration token before it expires. Interface 4's report carries no such warning yet (garam-bot#1248).
 - **Its egress** is the ranges and ports `connector.naru.egress` names, for orch and naru-proxy.
 
+### Bots' workspaces
+
+These follow [ADR 0099](adr/0099-serve-every-bots-process-its-workspace-from-the-connector-in-one-dedicated-workspace-namespace-also-with-garam-off.md) and garam-bot's ADR 0043. The protocol is garam-bot's interface 7, `api/workspace-access/v1alpha1/`. Decided, not built (garam-bot#1281).
+
+- **The connector serves every Bot's process its workspace**, on interface 6's listener, Service and certificate.
+  - **Who is served.** A Bot in a namespace claimed for its release, garam-owned or cluster-owned, resolved from its credential as interface 6 resolves it but on the audience `--workspace-audience`. Interface 6's "applied by the connector itself" is not required.
+  - **Garam off.** It serves interface 7 also with garam off.
+- **The credential and the key.**
+  - **The credential** is reused while it lives, and one issued before the connector started is refused.
+  - **The instance** is the Pod's UID with its `runtime` container's `containerID` while that container runs. A Pod whose `runtime` container is not running is refused.
+  - **The binding cache.** A credential's binding is kept 10 seconds at most, and read again live before `invalid_key` is answered.
+  - **The pin.** The first key whose DPoP proof verifies for an instance is pinned. Another key for that instance is answered 401 `invalid_key`. Pins are held in memory alone, and a gone Pod's pins are dropped.
+- **What a process may do:** acquire its own attachment's workspace, write up to 16 files at once under `/run/garam-bot/`, dial port 7700, and obtain the session's tokens. No exec, no file read, no delete.
+- **The workspace namespace, `--workspace-namespace`,** holds every workspace. It is never a watched namespace or the release namespace.
+  - **The chart renders it,** labelled for its release and `pod-security.kubernetes.io/enforce: restricted`, so Helm refuses a second release that names it.
+  - **The default ServiceAccount.** The connector sets `automountServiceAccountToken: false` on its `default` ServiceAccount at start.
+  - **The Pod provider**, moved to garam-bot's `pkg/podworkspace`, runs there with the rights garam-bot `interfaces.md` lists. Its `Capabilities.Egress` is `workspaces.pod.enforcesNetworkPolicy`, true by default, which needs a network plugin that enforces NetworkPolicy egress.
+  - **The naru Machine provider** stays as it runs. A Machine's port is guarded by the adapter's token alone, since naru-proxy serves it to whoever reaches it.
+  - **Choosing a provider.** A WorkspaceClass's `spec.provider`, `pod` or `naru`, picks one.
+- **Each workspace is named per Bot and per release, and isolated.**
+  - **Naming.** Its name is `w<release>-<bot>`, hashes of the release and of the Bot's namespace, name, UID and attachment. It carries labels naming the release and the Bot.
+  - **Ingress.** Its NetworkPolicy admits no ingress, since `Dial` is `portforward`.
+  - **Egress** is per provider: `--pod-workspace-egress` and `--naru-workspace-egress`, as `<cidr>/<protocol>/<port>` rules that must include DNS. The gateway and tool proxy URLs are `--pod-model-gateway-url`, `--pod-tool-proxy-url`, `--naru-model-gateway-url` and `--naru-tool-proxy-url`.
+  - **Deletion.** The sweep takes only this release's workspaces, by prefix and labels, and leaves those of a namespace no longer watched. It deletes one only after a live `GET` of its Bot answers NotFound or another UID, and 10 minutes have passed since it first found it so.
+- **Images.** The workspace image is `--agent-image <harness>=<ref>` by digest, and the Pod provider's file helper is `--workspace-helper-image`.
+- **Session tokens.** Before G3 and G6 there is no production issuer, so the call answers 503 `waiting_for_gateway`. The stub issuer is compiled only under the build tag `e2e`, into the end-to-end suite's own connector image (garam-bot#1252).
+- **Limits.**
+  - **Per Bot.** Each Bot has a bucket of 20 calls that reach a provider or an issuer, refilled one every 3 seconds, answered 429 past it to that Bot alone. A read of the workspace takes nothing, and a renewal is two calls.
+  - **Per instance.** Each instance has a bucket of 30 requests, refilled one a second, taken right after the credential verifies, before any Pod is read.
+  - **Dials.** At most 4 are open per instance, at most `--max-dials` (256) in all, and one idle for 120 seconds is closed. An instance's dials close when its Pod or container ends, its Bot goes, or its workspace stops.
+- **A restart mid-`Dial`** breaks the connection. The process dials again once its credential is replaced, within 8 minutes, and the adapter keeps its session and events.
+- **What is logged.** Each call, with the Bot, the call and the outcome. Never a credential, a proof, a token, a file's content or the bytes of a dial.
+
 ### Rights in the user's cluster
 
 These follow [ADR 0091](adr/0091-hold-only-namespaced-rights-in-a-users-cluster-open-no-inbound-port-and-keep-secrets-in-it.md).
 
-- **Rights:** Roles and RoleBindings in the release namespace and in each watched namespace, and no ClusterRole at runtime. The chart, `deploy/charts/garam-connector/`, renders them (#1253).
+- **Rights:** Roles and RoleBindings in the release namespace and in each watched namespace, and no ClusterRole at runtime. Decided, to build: the connector's Role in the workspace namespace as well (ADR 0099). The chart, `deploy/charts/garam-connector/`, renders them (#1253).
   - **Neither program holds any right on Secrets in a watched namespace** (ADR 0097 decision 5, ADR 0098), so neither can read one.
   - **Each can read and write every object of the kinds its Role names there**: the manager every ConfigMap, ServiceAccount and StatefulSet, the connector every object of interface 1's kinds. So a watched namespace holds the bots' objects and nothing the installer would not hand these two programs.
   - **The caches are restricted to those namespaces.** The manager caches the claim alone among Leases, by a field selector on its name, and in a release namespace it does not watch, the trust ConfigMap alone the same way, since RBAC applies `resourceNames` to a `list` or `watch` that carries one.
@@ -157,8 +191,8 @@ These follow [ADR 0091](adr/0091-hold-only-namespaced-rights-in-a-users-cluster-
   - The cache asks for the claim by a field selector on its name, and RBAC applies `resourceNames` to a `list` or `watch` that carries one, so no other Lease is readable.
   - It never writes a Lease (CLAIM-2).
   - `internal/declaration/kube`'s tests run every read and write as a ServiceAccount bound to exactly this Role, and `test/chart` fails a chart that renders any other.
-- **CRDs:** installed by Helm with the installer's rights, and the only cluster-scoped objects the chart renders.
-- **No inbound path from outside the cluster:** no LoadBalancer or NodePort Service, no external IPs, no Ingress, no webhook. A NetworkPolicy admits no ingress to the manager, and reaches the API server alone. The connector's admits ingress to its bot token port alone, from the bots' Pods of the watched namespaces alone (ADR 0097). Its egress goes to the configured proxy, or else to garam on 443, plus DNS, plus the API server's range given as a value, plus `connector.naru.egress` where the naru Machine provider is on. `test/chart` fails a chart that renders otherwise.
+- **CRDs:** installed by Helm with the installer's rights, and the only cluster-scoped objects the chart renders. Decided, to build (ADR 0099): the workspace Namespace as well.
+- **No inbound path from outside the cluster:** no LoadBalancer or NodePort Service, no external IPs, no Ingress, no webhook. A NetworkPolicy admits no ingress to the manager, and reaches the API server alone. The connector's admits ingress to its bot token port alone, from the bots' Pods of the watched namespaces alone (ADR 0097). Its egress goes to the configured proxy, or else to garam on 443, plus DNS, plus the API server's range given as a value, plus `connector.naru.egress` where the naru Machine provider is on. Decided, to build (ADR 0099): plus `connector.issuers.egress` for the session tokens' issuers, and nothing to garam when garam is off. `test/chart` fails a chart that renders otherwise.
 - **PodSecurity `restricted`** admits both programs' Pods. `test/chart` creates each from its installed Deployment in a namespace enforcing it.
 - **Metrics:** off by default. Turned on, the manager serves plain HTTP inside the cluster, admitted from the peers the installer names alone. The connector serves none.
 - **Secrets:** no Secret or ConfigMap is ever reported, and no credential reaches a log, metric, event, status or report. A report does carry two free-text fields of a cluster-owned object as written, `spec.persona.instructions` and a status condition's `message` (REP-2, REP-9), so it holds no credential only while nobody types one into them.
@@ -189,6 +223,7 @@ These are obligations on `garamsh/garam`, for that repository to decide and buil
 - **Why every cluster, aurora included:** the owner's direction of 2026-11-24, recorded in ADR 0093. Its precedents are GitHub Actions runners and Actions Runner Controller, and the Rancher agent.
 - **Why one owner per object:** the 11-21 decision's managed-by (ADR 0089). The precedent is argocd-agent's managed and autonomous modes, chosen here per object.
 - **Why two programs:** ADR 0090. ADR 0079's seam keeps identity provisioning outside the manager, and it keeps the key and the right to build workloads in different Pods.
+- **Why the connector serves the bots' workspaces:** ADR 0099 and garam-bot ADR 0043. A process linking a provider would spread `pods/exec` or the naru caller certificate to every Bot, and a dedicated namespace keeps the connector's exec right away from the bots' own Pods.
 - **Why the bot's process calls the connector for its token:** ADR 0097. The token is bound to a key only the process holds, so the process has to sign the proof and the connector has to make the exchange. Meeting through the Kubernetes API instead needs a Role per Bot and a token at rest.
 - **Why namespaced rights and no images in declarations:** ADR 0091. They bound what a compromised garam or a stolen cluster token can do in a user's cluster.
 - **Why an interface with suites:** ADR 0092. It is the owner's interfaces-first principle and `convention-driven-project`'s interfaces.md.

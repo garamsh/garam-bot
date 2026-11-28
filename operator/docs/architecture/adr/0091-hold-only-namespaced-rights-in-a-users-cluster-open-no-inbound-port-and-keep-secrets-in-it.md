@@ -1,6 +1,6 @@
 # ADR 0091: Hold only namespaced rights in a user's cluster, open no inbound port, and keep secrets in the cluster
 
-> Status: accepted; decision 2's Secret verbs for the connector, and decision 4's no ingress for the connector, superseded by ADR-0097
+> Status: accepted; decision 2's Secret verbs for the connector, and decision 4's no ingress for the connector, superseded by ADR-0097; decisions 1's namespaces and 3's cluster-scoped objects widened by ADR-0099
 > Date: 2026-11-24
 
 Append-only: once merged, the body below is not rewritten. A fact later found wrong is corrected in an appended note, not edited out; a revised decision is a new ADR that supersedes this one.
