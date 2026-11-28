@@ -11,6 +11,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// openat2 is unix.Openat2, which a test replaces to model a kernel without it.
+var openat2 = unix.Openat2
+
 // writeFile replaces the file at path with in, whole, and follows no symbolic link (interface 3,
 // FILE-3). The directory is opened with no link resolved at any of its components, and a temporary
 // file written in it is renamed over the path's last component: a link there is replaced, never
@@ -21,11 +24,15 @@ func writeFile(path string, in io.Reader) error {
 	if !filepath.IsAbs(path) || base == "" {
 		return fmt.Errorf("path %q is not an absolute path of a file", path)
 	}
-	dirfd, err := unix.Openat2(unix.AT_FDCWD, dir, &unix.OpenHow{
+	dirfd, err := openat2(unix.AT_FDCWD, dir, &unix.OpenHow{
 		Flags: unix.O_PATH | unix.O_DIRECTORY | unix.O_CLOEXEC, Resolve: unix.RESOLVE_NO_SYMLINKS,
 	})
-	if errors.Is(err, unix.ELOOP) {
+	switch {
+	case errors.Is(err, unix.ELOOP):
 		return fmt.Errorf("%w: %s", errLink, dir)
+	case errors.Is(err, unix.ENOSYS):
+		// No fallback: a write that might follow a link is no write FILE-3 allows.
+		return fmt.Errorf("%w: openat2 is not offered here, and Linux 5.6 or later offers it", errUnsupported)
 	}
 	if err != nil {
 		return &os.PathError{Op: "open", Path: dir, Err: err}
