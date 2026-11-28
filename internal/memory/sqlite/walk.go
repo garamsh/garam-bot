@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/memory"
 )
 
 // damping is the probability that the walk follows an edge rather than
@@ -16,7 +16,7 @@ const damping = 0.5
 // graph is the bipartite graph of mids and the entities their syntheses
 // name. Nodes 0..len(mids)-1 are mids; the rest are entities.
 type graph struct {
-	mids  []agent.ConversationHit
+	mids  []memory.ConversationHit
 	names []string
 	adj   [][]int
 	// byFirst indexes entity nodes by their first word, for seed matching.
@@ -25,7 +25,7 @@ type graph struct {
 
 // newGraph links every mid to each entity its synthesis names, numbering
 // entities in the order the mids first name them.
-func newGraph(mids []agent.ConversationHit, entities map[int64][]string) *graph {
+func newGraph(mids []memory.ConversationHit, entities map[int64][]string) *graph {
 	g := &graph{mids: mids, adj: make([][]int, len(mids)), byFirst: map[string][]int{}}
 	node := map[string]int{}
 	for i, m := range mids {
@@ -104,10 +104,10 @@ func (g *graph) walk(seeds map[int]float64) []float64 {
 // Linked ranks every linked mid episode the walk reaches from the stored
 // entities the query names, highest score first and the newer first on a
 // tie. A query naming none reaches nothing, and no model is called.
-func (s *Store) Linked(ctx context.Context, query string) (agent.Linked, error) {
+func (s *Store) Linked(ctx context.Context, query string) (memory.Linked, error) {
 	mids, entities, err := s.midEntities(ctx)
 	if err != nil {
-		return agent.Linked{}, err
+		return memory.Linked{}, err
 	}
 	g := newGraph(mids, entities)
 	seeds := g.seeds(query)
@@ -124,13 +124,13 @@ func (s *Store) Linked(ctx context.Context, query string) (agent.Linked, error) 
 		}
 		return g.mids[reached[a]].ID > g.mids[reached[b]].ID
 	})
-	out := agent.Linked{Seeds: []string{}, Hits: make([]agent.LinkedHit, len(reached))}
+	out := memory.Linked{Seeds: []string{}, Hits: make([]memory.LinkedHit, len(reached))}
 	for n := range seeds {
 		out.Seeds = append(out.Seeds, g.name(n))
 	}
 	sort.Strings(out.Seeds)
 	for i, n := range reached {
-		out.Hits[i] = agent.LinkedHit{ConversationHit: g.mids[n], Subject: entities[g.mids[n].ID][0]}
+		out.Hits[i] = memory.LinkedHit{ConversationHit: g.mids[n], Subject: entities[g.mids[n].ID][0]}
 	}
 	return out, nil
 }

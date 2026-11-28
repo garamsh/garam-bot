@@ -24,7 +24,7 @@ import (
 // dials the listener address handed over via the environment and exits
 // 0 on success, 1 on failure. The env gate keeps it inert under `go test`.
 func TestNetnsProbeHelper(t *testing.T) {
-	addr := os.Getenv("SHERLOCK_NETNS_PROBE_ADDR")
+	addr := os.Getenv("GARAM_BOT_NETNS_PROBE_ADDR")
 	if addr == "" {
 		return
 	}
@@ -80,10 +80,10 @@ func runProbe(t *testing.T, executor shell.Executor, req shell.Request) shell.Re
 	// wording names the class and lets the error name the cause.
 	if errors.Is(err, shell.ErrAgentUIDUnavailable) {
 		if privilegedRun() {
-			t.Fatalf("SHERLOCK_PRIVILEGED_TESTS is set but this host cannot provide what an isolated call needs, so the run cannot report on it: %v", err)
+			t.Fatalf("GARAM_BOT_PRIVILEGED_TESTS is set but this host cannot provide what an isolated call needs, so the run cannot report on it: %v", err)
 		}
 		if usernsRequired() && os.Geteuid() != 0 {
-			t.Fatalf("SHERLOCK_REQUIRE_USERNS is set but this host refuses the unprivileged NoNetwork clone, so the run cannot report on ADR 0010's unprivileged path: %v", err)
+			t.Fatalf("GARAM_BOT_REQUIRE_USERNS is set but this host refuses the unprivileged NoNetwork clone, so the run cannot report on ADR 0010's unprivileged path: %v", err)
 		}
 		t.Skipf("this host cannot provide what an isolated call needs: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestProcessExecutor_NoNetworkBlocksLoopback(t *testing.T) {
 
 	req := shell.Request{
 		Command: fmt.Sprintf("%s -test.run=TestNetnsProbeHelper", probeBinary(t)),
-		Env:     []string{"SHERLOCK_NETNS_PROBE_ADDR=" + ln.Addr().String()},
+		Env:     []string{"GARAM_BOT_NETNS_PROBE_ADDR=" + ln.Addr().String()},
 	}
 	executor := shell.NewProcessExecutor(testExecUID, 5*time.Second)
 
@@ -236,7 +236,7 @@ func requirePython3(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("python3"); err != nil {
 		if usernsRequired() {
-			t.Fatalf("SHERLOCK_REQUIRE_USERNS is set but python3 is not on PATH, so the single-account netns probe cannot run: %v", err)
+			t.Fatalf("GARAM_BOT_REQUIRE_USERNS is set but python3 is not on PATH, so the single-account netns probe cannot run: %v", err)
 		}
 		t.Skip("python3 not on PATH; the single-account netns probe needs it")
 	}
@@ -249,7 +249,7 @@ func requirePython3(t *testing.T) {
 // instead of leaving it green with the path untested (#1077). Unset, as
 // on a contributor's machine, the cases skip on such a host.
 func usernsRequired() bool {
-	return os.Getenv("SHERLOCK_REQUIRE_USERNS") != ""
+	return os.Getenv("GARAM_BOT_REQUIRE_USERNS") != ""
 }
 
 // TestProcessExecutor_SingleAccountNoNetworkBlocksLoopback pins the
@@ -258,7 +258,7 @@ func usernsRequired() bool {
 // no privileges required — while a child without NoNetwork keeps the
 // host network (the script-tool contract). Needs a host that permits
 // unprivileged user namespaces and a python3 the child can exec; it
-// skips when either is missing, unless the run set SHERLOCK_REQUIRE_USERNS.
+// skips when either is missing, unless the run set GARAM_BOT_REQUIRE_USERNS.
 func TestProcessExecutor_SingleAccountNoNetworkBlocksLoopback(t *testing.T) {
 	requireUnprivileged(t)
 	requirePython3(t)
@@ -297,7 +297,7 @@ func TestProcessExecutor_SingleAccountNoNetworkBlocksLoopback(t *testing.T) {
 // netns-filtered from an unprivileged userns.) Needs a host that
 // permits unprivileged user namespaces and a python3 the child can
 // exec; it skips when either is missing, unless the run set
-// SHERLOCK_REQUIRE_USERNS.
+// GARAM_BOT_REQUIRE_USERNS.
 func TestProcessExecutor_SingleAccountLoopbackDownInNamespace(t *testing.T) {
 	requireUnprivileged(t)
 	requirePython3(t)

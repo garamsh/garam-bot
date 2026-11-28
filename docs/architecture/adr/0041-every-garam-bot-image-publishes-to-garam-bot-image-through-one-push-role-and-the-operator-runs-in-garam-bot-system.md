@@ -23,7 +23,7 @@ This amends ADR 0020's repository names and operator ADR 0078's, ADR 0084's and 
 - The images already published stay in `sherlock/*` and `garam-agent-operator/*`, which nothing here pushes to any more.
 - No release has pushed to the new repositories yet. The first `v*` tag and the first `operator/v*` tag after this lands are what show that the role and the repositories admit a push.
 - The old roles' subjects for this repository are garamsh/aurora's to drop once garam-bot-operator is archived.
-- `garam-bot/tools` is named for completeness: no workflow publishes a tools image (ADR 0021).
+- `garam-bot/tools` is named for completeness: no workflow publishes a tools image.
 
 ## Signs the decision was wrong
 

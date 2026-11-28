@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/memory"
 	"github.com/garamsh/garam-bot/internal/memory/sqlite"
 )
 
@@ -27,7 +27,7 @@ func storeFiles(path string) []string {
 func recordOne(t *testing.T, store *sqlite.Store) {
 	t.Helper()
 	require.NoError(t, store.RecordTurn(context.Background(),
-		[]agent.SourceMessage{{Role: agent.RoleUser, ExternalID: "m1", Sender: "s", Content: "remember cedar"}}, nil))
+		[]memory.SourceMessage{{Role: memory.RoleUser, ExternalID: "m1", Sender: "s", Content: "remember cedar"}}, nil))
 }
 
 // assertOwnerOnly asserts each file exists with mode 0600.

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/memory"
 	"github.com/garamsh/garam-bot/internal/memory/sqlite"
 )
 
@@ -16,11 +16,11 @@ import (
 // unconnected.
 func chainStore(t *testing.T) *sqlite.Store {
 	store, _ := linkedStore(t,
-		agent.Synthesis{Summary: "Every part for the Rodend build is ordered from Gebind Components, through the office.", Entities: []string{"Rodend", "Gebind Components", "office"}},
-		agent.Synthesis{Summary: "Our account at Gebind Components is looked after by Mateo Deatreal.", Entities: []string{"Gebind Components", "Mateo Deatreal"}},
-		agent.Synthesis{Summary: "Mateo Deatreal answers on extension 5504.", Entities: []string{"Mateo Deatreal"}},
-		agent.Synthesis{Summary: "The office moved to the second floor.", Entities: []string{"office"}},
-		agent.Synthesis{Summary: "The harbour ferry runs hourly.", Entities: []string{"harbour"}},
+		memory.Synthesis{Summary: "Every part for the Rodend build is ordered from Gebind Components, through the office.", Entities: []string{"Rodend", "Gebind Components", "office"}},
+		memory.Synthesis{Summary: "Our account at Gebind Components is looked after by Mateo Deatreal.", Entities: []string{"Gebind Components", "Mateo Deatreal"}},
+		memory.Synthesis{Summary: "Mateo Deatreal answers on extension 5504.", Entities: []string{"Mateo Deatreal"}},
+		memory.Synthesis{Summary: "The office moved to the second floor.", Entities: []string{"office"}},
+		memory.Synthesis{Summary: "The harbour ferry runs hourly.", Entities: []string{"harbour"}},
 	)
 	return store
 }

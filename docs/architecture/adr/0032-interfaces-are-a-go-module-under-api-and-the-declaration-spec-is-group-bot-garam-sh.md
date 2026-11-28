@@ -7,7 +7,7 @@
 
 - ADR 0031 makes every component boundary of garam-bot a versioned public interface with conformance tests, five of them, and `garamsh/garam-bot#1193` places their specifications in `api/`, one directory per interface and one per version.
 - `garamsh/garam-bot-operator` goal #436 needs interface 1, the declaration spec, now. Its chart installs the four kinds' CustomResourceDefinitions, and its manager and connector import their Go types rather than scaffold their own (`garamsh/garam-bot-operator` ADR 0089, ADR 0090).
-- The root module is `github.com/garamsh/sherlock`, a binary's module whose requirements reach model clients, SQLite and gRPC (ADR 0001). A consumer importing types from it would take that module's path and requirements, and the path names a repository that is now `garamsh/garam-bot`.
+- The root module was `github.com/garamsh/sherlock` (now `github.com/garamsh/garam-bot`), a binary's module whose requirements reach model clients, SQLite and gRPC (ADR 0001). A consumer importing types from it would take that module's path and requirements, and the path named a repository that is now `garamsh/garam-bot`.
 - The API group was left open by the owner's decision of 2026-11-21 (`garamsh/discussions` discussion 6, comment 19791278). `garamsh/garam-bot-operator`'s own kind is `agent.garam.sh`, and garam's resources are its own. The owner's PM chose `bot.garam.sh` on 2026-11-24, relayed on this goal.
 - Precedents: `garamsh/gaon` publishes `lib/api` and `garamsh/mvmd` `lib/runtimeapi` as modules beside their binaries, and `garamsh/garam-bot-operator` imports both (its `go.mod` at `dev`). Kubernetes publishes its types as `k8s.io/api`, apart from the components that serve them.
 

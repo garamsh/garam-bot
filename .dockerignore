@@ -1,12 +1,11 @@
 # The build context is an allow-list: everything is excluded, and only what
-# `go build ./cmd/sherlock` reads is admitted. A deny-list admits every new
+# `go build ./cmd/garam-bot` reads is admitted. A deny-list admits every new
 # file at the root until someone remembers to exclude it, which is how a
 # credential reached the build stage in #594 and how the compiled tool
 # binaries reached it in #597.
 #
-# The re-includes are directories rather than globs on purpose:
-# internal/agent/instructions.go embeds ego.md, so a `*.go` allow-list would
-# drop an embedded asset and break the build.
+# The re-includes are directories rather than globs on purpose: a `*.go`
+# allow-list would drop an embedded asset and break the build.
 *
 !go.mod
 !go.sum

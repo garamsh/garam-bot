@@ -1,4 +1,4 @@
-.PHONY: lint format format-fix test test-privileged test-podworkspace test-claude-code build build-tools build-images toolchain-image proto generate ci hooks conformance-bot-token
+.PHONY: lint format format-fix test test-privileged test-podworkspace test-claude-code build build-images toolchain-image proto generate ci hooks conformance-bot-token
 
 # The toolchain floor every go command below runs under: `go install tool@version`
 # and `go run tool@version` take the toolchain from the tool's own `go.mod` rather
@@ -23,9 +23,9 @@ REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
 # Where `test-privileged` builds the test binary. Not under the repository:
 # the file is written and run by root, and the worktree keeps no root-owned
 # artifacts.
-PRIVILEGED_TEST_BIN ?= /tmp/sherlock-privileged.test
-PRIVILEGED_BINARY_TEST_BIN ?= /tmp/sherlock-privileged-binary.test
-PRIVILEGED_SHERLOCK_BIN ?= /tmp/sherlock-privileged
+PRIVILEGED_TEST_BIN ?= /tmp/garam-bot-privileged.test
+PRIVILEGED_BINARY_TEST_BIN ?= /tmp/garam-bot-privileged-binary.test
+PRIVILEGED_GARAM_BOT_BIN ?= /tmp/garam-bot-privileged
 
 # golangci-lint's cache is keyed on file content, not path, and replays a result
 # with the paths of the checkout that recorded it. A cache shared between
@@ -136,7 +136,7 @@ DEPLOYED_CAP_SET = -all,+$(subst $(COMMA),$(COMMA)+,$(DEPLOYED_CAP_ADD))
 # The binary is built rather than run through `go test` because the child
 # execs it: an untrusted child runs the platform binary as its resource-limit
 # shim, and `go test` puts that binary in a private directory the child's own
-# account cannot enter. SHERLOCK_PRIVILEGED_TESTS then makes every guard in the
+# account cannot enter. GARAM_BOT_PRIVILEGED_TESTS then makes every guard in the
 # family report an absent privilege instead of skipping past it, so a run
 # that cannot reach the boundary says so.
 #
@@ -145,7 +145,7 @@ DEPLOYED_CAP_SET = -all,+$(subst $(COMMA),$(COMMA)+,$(DEPLOYED_CAP_ADD))
 # fail the way the deployment fails, which is how #612 was true in production
 # and green in CI at once (#620). The narrowing only ever drops, so whatever
 # the runner granted, what the tests see is the deployment's set — and
-# SHERLOCK_DEPLOYED_CAPS names it, so a run that skipped this line is a failure
+# GARAM_BOT_DEPLOYED_CAPS names it, so a run that skipped this line is a failure
 # rather than a quieter pass.
 #
 # The workspace binary is built as build/workspace.Dockerfile builds it. That
@@ -157,12 +157,12 @@ test-privileged:
 	@test "$$(id -u)" = 0 || { echo "test-privileged needs root: the drop to the exec UID is what it exercises (ADR 0008)"; exit 1; }
 	go test -c -o $(PRIVILEGED_TEST_BIN) ./internal/workspace/shell/
 	go test -c -o $(PRIVILEGED_BINARY_TEST_BIN) ./tests/
-	CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="-s -w" -o $(PRIVILEGED_SHERLOCK_BIN) ./cmd/sherlock/
-	@chmod 0755 $(PRIVILEGED_TEST_BIN) $(PRIVILEGED_BINARY_TEST_BIN) $(PRIVILEGED_SHERLOCK_BIN)
-	SHERLOCK_PRIVILEGED_TESTS=1 SHERLOCK_DEPLOYED_CAPS=$(DEPLOYED_CAP_ADD) \
+	CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="-s -w" -o $(PRIVILEGED_GARAM_BOT_BIN) ./cmd/garam-bot/
+	@chmod 0755 $(PRIVILEGED_TEST_BIN) $(PRIVILEGED_BINARY_TEST_BIN) $(PRIVILEGED_GARAM_BOT_BIN)
+	GARAM_BOT_PRIVILEGED_TESTS=1 GARAM_BOT_DEPLOYED_CAPS=$(DEPLOYED_CAP_ADD) \
 		setpriv --bounding-set=$(DEPLOYED_CAP_SET) $(PRIVILEGED_TEST_BIN) -test.v
-	SHERLOCK_PRIVILEGED_TESTS=1 SHERLOCK_DEPLOYED_CAPS=$(DEPLOYED_CAP_ADD) \
-		SHERLOCK_TEST_BINARY=$(PRIVILEGED_SHERLOCK_BIN) \
+	GARAM_BOT_PRIVILEGED_TESTS=1 GARAM_BOT_DEPLOYED_CAPS=$(DEPLOYED_CAP_ADD) \
+		GARAM_BOT_TEST_BINARY=$(PRIVILEGED_GARAM_BOT_BIN) \
 		setpriv --bounding-set=$(DEPLOYED_CAP_SET) $(PRIVILEGED_BINARY_TEST_BIN) \
 		-test.v -test.run='^TestEndToEnd_PrivilegedWorkspaceExec$$'
 
@@ -233,26 +233,8 @@ build:
 		(cd $$module && $(go_packages); echo "go build ./... under $$PWD"; go build ./...) || exit $$?; \
 	done
 
-# A `for` loop's status is its last iteration's, so a tool that failed to
-# compile left the target at exit 0 having written fewer executables than it
-# names (#720). Each build exits the recipe on failure now, whatever its
-# position, and what it wrote is checked for the execute bit, because
-# `go build -o` also returns zero for a package that is not `main` and writes
-# an archive the platform cannot spawn. The counter advances past both, so the
-# number printed is the number of executables written (#653, #715). The set is
-# the loop's list, not what tools/ holds, so a tool directory missing from it is
-# never built, and the message names that list as the selection (#1095).
-build-tools:
-	@built=0; \
-	for tool in file_read file_write file_list shell_exec message_send github_push github_open_issue github_open_pull_request github_comment image_generate speech_generate; do \
-		CGO_ENABLED=0 go build -o tools/$$tool/$$tool ./tools/$$tool/ || exit $$?; \
-		test -x tools/$$tool/$$tool || { echo "build-tools: go build wrote tools/$$tool/$$tool without the execute bit; ./tools/$$tool/ must be a main package"; exit 1; }; \
-		built=$$((built + 1)); \
-	done; \
-	echo "build-tools: $$built tools built, selected by: the tool list in the build-tools recipe"
-
-# Builds the two platform images (ADR 0017, ADR 0021) and the runtime image that
-# runs one Bot (ADR 0033); nothing is pushed and no
+# Builds the workspace image (ADR 0010, ADR 0040) and the runtime image that
+# runs one Bot (ADR 0033), with the other images; nothing is pushed and no
 # registry is named here. Each build context is the repository root because
 # each build stage copies the module; what each context holds is $(dockerignores).
 #
@@ -262,7 +244,7 @@ build-tools:
 # and tags) take once and never again — leaving the tag to be invented at a
 # push command line, which is where a wrong one enters (#692).
 #
-# The guard fails closed: an empty REVISION builds `sherlock-agent:`, and docker
+# The guard fails closed: an empty REVISION builds `garam-bot-workspace:`, and docker
 # reports the reference it was handed rather than the metadata that is missing.
 #
 # The second guard is the tree the label claims. `REVISION` is the checked-out
@@ -284,9 +266,7 @@ build-tools:
 # as no paths at all, and the recipe fails on that rather than checking a
 # pathspec that is not the context.
 #
-# There is one ignore file, because the two images share one context: the
-# tools are baked into the agent image at build time (ADR 0021), so a path
-# the tool sources need is a path the agent image's build reads.
+# There is one ignore file, because the images share one context.
 DOCKERIGNORE = .dockerignore
 dockerignores = $(DOCKERIGNORE)
 ignore_patterns = $(shell sed -e '/^[[:space:]]*\#/d' -e '/^[[:space:]]*$$/d' $(1) 2>/dev/null)
@@ -306,12 +286,11 @@ shapeless_ignores = $(strip $(foreach file,$(dockerignores),$(if $(call context_
 # $(dockerignores) are checked for a second reason: the guard derives its own
 # scope from those files, so leaving one out would let an uncommitted edit
 # redefine what a context is for a build the guard then reports clean.
-AGENT_DOCKERFILE = build/agent.Dockerfile
 WORKSPACE_DOCKERFILE = build/workspace.Dockerfile
 RUNTIME_DOCKERFILE = build/runtime.Dockerfile
 WORKSPACEFILE_DOCKERFILE = build/workspacefile.Dockerfile
 CLAUDE_CODE_DOCKERFILE = build/claude-code.Dockerfile
-build_inputs = $(AGENT_DOCKERFILE) $(WORKSPACE_DOCKERFILE) $(RUNTIME_DOCKERFILE) $(WORKSPACEFILE_DOCKERFILE) $(CLAUDE_CODE_DOCKERFILE) $(dockerignores)
+build_inputs = $(WORKSPACE_DOCKERFILE) $(RUNTIME_DOCKERFILE) $(WORKSPACEFILE_DOCKERFILE) $(CLAUDE_CODE_DOCKERFILE) $(dockerignores)
 checked_paths = $(context_paths) $(build_inputs)
 
 # Read paths that are not in the tree. They are handed to git as pathspecs,
@@ -351,7 +330,7 @@ BUILD_ENV = BUILDX_NO_DEFAULT_ATTESTATIONS=1
 # numeric Config.User: the kubelet checks `runAsNonRoot` against the image's
 # user and refuses a name it cannot resolve. The workspace image runs as root
 # in the privileged shape and is not one of them.
-non_root_images = sherlock-agent garam-bot-runtime garam-bot-workspacefile garam-bot-claude-code
+non_root_images = garam-bot-runtime garam-bot-workspacefile garam-bot-claude-code
 
 build-images:
 	@test -n "$(REVISION)" || { echo "build-images: REVISION is empty, and it is both the tag and the label; the default reads 'git rev-parse HEAD', which a checkout with no git metadata does not answer - pass one: make build-images REVISION=<commit>"; exit 1; }
@@ -359,8 +338,7 @@ build-images:
 	@test -z "$(revision_is_default)" || test -z "$(missing_paths)" || { echo "[$(dockerignores)]: re-include [$(missing_paths)], which $(CURDIR) does not hold: every admitted path is read as a git pathspec and one that matches nothing reports a clean tree"; exit 1; }
 	@test -z "$(dirty_inputs)" || { echo "build-images: what docker reads differs from $(REVISION), which every image built here is labelled and tagged with, at [$(dirty_inputs)]. Commit those paths, or name what you are building: make build-images REVISION=<commit>"; exit 1; }
 	@echo "build-images: $(if $(revision_is_default),what docker reads [$(checked_paths)] matches $(REVISION),REVISION=$(REVISION) was passed in and what docker reads is not checked against it)"
-	$(BUILD_ENV) docker build -f $(AGENT_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t sherlock-agent:$(REVISION) .
-	$(BUILD_ENV) docker build -f $(WORKSPACE_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t sherlock-workspace:$(REVISION) .
+	$(BUILD_ENV) docker build -f $(WORKSPACE_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t garam-bot-workspace:$(REVISION) .
 	$(BUILD_ENV) docker build -f $(RUNTIME_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t garam-bot-runtime:$(REVISION) .
 	$(BUILD_ENV) docker build -f $(WORKSPACEFILE_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t garam-bot-workspacefile:$(REVISION) .
 	$(BUILD_ENV) docker build -f $(CLAUDE_CODE_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t garam-bot-claude-code:$(REVISION) .

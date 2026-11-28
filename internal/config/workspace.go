@@ -23,9 +23,8 @@ const (
 )
 
 // AddWorkspaceFlags registers the workspace's settings as flags on fs.
-// The addr flag is the same name the agent registers on its own set,
-// not a shadow of a shared one — only --config is shared — and its
-// default listener is 8081, not the gateway's 8080.
+// Only --config is shared with the other commands; the addr flag is the
+// workspace's own.
 func AddWorkspaceFlags(fs *pflag.FlagSet) {
 	fs.String("addr", defaultWorkspaceAddr, "gRPC listen address for the workspace contract")
 	fs.String("workspace", defaultWorkspace, "workspace directory (created on first use)")
@@ -37,7 +36,7 @@ func AddWorkspaceFlags(fs *pflag.FlagSet) {
 
 // WorkspaceConfig is the workspace's resolved settings, parsed once at
 // the command boundary (docs/convention/runtime-safety.md) and passed
-// down typed. The workspace is the agent's data plane (ADR 0017): it
+// down typed. The workspace is the agent's data plane (ADR 0010): it
 // owns the workspace directory and serves the gRPC contract — Read,
 // Write, List, Exec — and nothing else. No tools, no plugin loader.
 type WorkspaceConfig struct {
@@ -58,10 +57,10 @@ type WorkspaceConfig struct {
 }
 
 // ResolveWorkspace builds the workspace's effective WorkspaceConfig
-// from fs with the same precedence as the agent's: flags > SHERLOCK_*
+// from fs with one precedence: flags > GARAM_BOT_*
 // environment variables > config file > defaults. The workspace's
 // config file resolves via --config <path>, then ./configs/workspace.yaml,
-// then os.UserConfigDir()/sherlock/workspace.yaml (XDG).
+// then os.UserConfigDir()/garam-bot/workspace.yaml (XDG).
 func ResolveWorkspace(fs *pflag.FlagSet) (WorkspaceConfig, error) {
 	v := newConfigViper()
 	v.SetDefault("addr", defaultWorkspaceAddr)

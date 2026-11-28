@@ -20,7 +20,7 @@ func workspaceClientFlags() *pflag.FlagSet {
 }
 
 // TestResolveWorkspaceClient_Precedence resolves the address in the
-// order ADR 0027 states: the flag, then SHERLOCK_WORKSPACE_ADDR, then
+// order ADR 0027 states: the flag, then GARAM_BOT_WORKSPACE_ADDR, then
 // the default.
 func TestResolveWorkspaceClient_Precedence(t *testing.T) {
 	tests := []struct {
@@ -35,7 +35,7 @@ func TestResolveWorkspaceClient_Precedence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("SHERLOCK_WORKSPACE_ADDR", tt.env)
+			t.Setenv("GARAM_BOT_WORKSPACE_ADDR", tt.env)
 			fs := workspaceClientFlags()
 			require.NoError(t, fs.Parse(tt.args))
 
@@ -50,7 +50,7 @@ func TestResolveWorkspaceClient_Precedence(t *testing.T) {
 // flags that name a config file, since none is read (ADR 0027). The
 // control is the same set with neither flag given, which resolves.
 func TestResolveWorkspaceClient_RefusesConfigFileFlags(t *testing.T) {
-	t.Setenv("SHERLOCK_WORKSPACE_ADDR", "")
+	t.Setenv("GARAM_BOT_WORKSPACE_ADDR", "")
 	_, err := config.ResolveWorkspaceClient(workspaceClientFlags())
 	require.NoError(t, err, "control: the set resolves without a config-file flag")
 

@@ -12,7 +12,7 @@ import (
 // what names the file in the error the operator reads — "config file",
 // "tls: server key". Both files carry the same rule for the same
 // reason: they are operator material in the runtime UID's domain
-// (ADR 0017), so an agent-UID child must not be able to read them.
+// (ADR 0010), so an agent-UID child must not be able to read them.
 // 0600 and 0400 pass; 0644 fails.
 func RequireOwnerOnly(what, path string) error {
 	info, err := os.Stat(path)

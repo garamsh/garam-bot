@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 
 // TestServe_ContractEndToEnd runs the workspace in-process and
 // drives it through the gRPC contract: the workspace exposes
-// Read/Write/List and rejects a path that escapes the workspace (ADR 0017).
+// Read/Write/List and rejects a path that escapes the workspace (ADR 0010).
 func TestServe_ContractEndToEnd(t *testing.T) {
 	listen, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -75,7 +75,7 @@ func TestServe_ContractEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []byte("hi"), resp.Content)
 
-	// Confinement holds: a traversal is rejected (ADR 0005 — convenience
+	// Confinement holds: a traversal is rejected (ADR 0010 — convenience
 	// confinement, not a trust boundary, but enforced everywhere).
 	_, err = client.Read(ctxRPC, &workspace.ReadRequest{Path: "../escape"})
 	require.Error(t, err, "an out-of-workspace path must be rejected")
@@ -87,7 +87,7 @@ func TestServe_ContractEndToEnd(t *testing.T) {
 	assert.True(t, listResp.Entries[0].Dir)
 
 	// Exec crosses the same wire: the command runs in the workspace
-	// directory and sees the files the contract serves (ADR 0017).
+	// directory and sees the files the contract serves (ADR 0010).
 	execResp, err := client.Exec(ctxRPC, &workspace.ExecRequest{Command: "ls"})
 	require.NoError(t, err)
 	assert.Zero(t, execResp.GetExitCode())

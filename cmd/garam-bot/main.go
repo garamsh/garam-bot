@@ -1,9 +1,12 @@
 // Command garam-bot runs one Bot of interface 1 v1alpha1: "garam-bot run" reads the Bot from a file,
 // obtains the bot's garam token from its place's connector and runs it, and "garam-bot probe" answers
-// the status contract a container's probe asks (ADR 0033, ADR 0042).
+// the status contract a container's probe asks (ADR 0033, ADR 0042). "garam-bot workspace" serves a
+// workspace's gRPC data plane (files and exec), whose operations its subcommands call, and its MCP
+// server, the in-workspace tools a harness may be given (ADR 0027, ADR 0028, ADR 0040).
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,22 +17,47 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/garamsh/garam-bot/internal/bot"
+	"github.com/garamsh/garam-bot/internal/workspace/shell"
 )
 
 func main() {
-	if err := newRootCommand().Execute(); err != nil {
-		os.Exit(1)
-	}
+	os.Exit(run())
 }
 
-func newRootCommand() *cobra.Command {
+// run is the binary's whole behaviour, returned as its exit status.
+func run() int {
+	// The workspace's executor execs this binary as its resource-limit shim for every untrusted
+	// child (ADR 0008). The verb short-circuits the command tree: the shim caps itself and execs
+	// the child's command, so it never returns to run a subcommand.
+	shell.ShimIfRequested()
+
+	err := NewRootCommand().Execute()
+	reportCommandError(err)
+
+	return exitStatus(err)
+}
+
+// reportCommandError prints the error of a command that is not a workspace operation as one
+// "Error: <message>" line on stderr, which is the only diagnosis a failed start has. An operation
+// prints its own JSON failure object, so it is not printed twice.
+func reportCommandError(err error) {
+	var op *operationError
+	if err == nil || errors.As(err, &op) {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+}
+
+// NewRootCommand builds the garam-bot command tree. It is the package's one export: main runs it,
+// and the package's tests drive the binary through it.
+func NewRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "garam-bot",
 		Short:         "Run one Bot from a file, and probe whether it runs",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(newRunCommand(), newProbeCommand())
+	root.AddCommand(newRunCommand(), newProbeCommand(), newWorkspaceCommand())
 
 	return root
 }

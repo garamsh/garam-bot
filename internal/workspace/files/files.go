@@ -36,7 +36,7 @@ const (
 // FS is a filesystem rooted at a workspace directory. All operations
 // resolve relative paths against the root and reject paths that escape it.
 // Confinement is lexical: symbolic links inside the workspace are followed
-// without further checks (ADR 0005 — convenience confinement, not a trust
+// without further checks (ADR 0010 — convenience confinement, not a trust
 // boundary).
 type FS struct {
 	root string
@@ -137,7 +137,7 @@ func (f *FS) Write(path string, content []byte) error {
 	if err := f.mkdirAll(dir); err != nil {
 		return fmt.Errorf("create parent of %q: %w", path, err)
 	}
-	tmp, err := os.CreateTemp(dir, ".sherlock-write-*")
+	tmp, err := os.CreateTemp(dir, ".garam-bot-write-*")
 	if err != nil {
 		return fmt.Errorf("write %q: %w", path, err)
 	}

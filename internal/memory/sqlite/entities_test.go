@@ -11,20 +11,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/memory"
 	"github.com/garamsh/garam-bot/internal/memory/sqlite"
 )
 
 // scripted answers each synthesis request with the next scripted synthesis
 // and keeps the batches it was sent.
 type scripted struct {
-	syntheses []agent.Synthesis
+	syntheses []memory.Synthesis
 	sent      [][]string
 }
 
-func (s *scripted) Summarize(_ context.Context, updates []string) (agent.Synthesis, error) {
+func (s *scripted) Summarize(_ context.Context, updates []string) (memory.Synthesis, error) {
 	if len(s.sent) == len(s.syntheses) {
-		return agent.Synthesis{}, errors.New("no synthesis left")
+		return memory.Synthesis{}, errors.New("no synthesis left")
 	}
 	s.sent = append(s.sent, updates)
 	return s.syntheses[len(s.sent)-1], nil
@@ -32,7 +32,7 @@ func (s *scripted) Summarize(_ context.Context, updates []string) (agent.Synthes
 
 // linkedStore records one full batch per synthesis, so each becomes one
 // mid episode with the synthesis's entities.
-func linkedStore(t *testing.T, syntheses ...agent.Synthesis) (*sqlite.Store, string) {
+func linkedStore(t *testing.T, syntheses ...memory.Synthesis) (*sqlite.Store, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "memory.db")
 	store, err := sqlite.OpenConversation(path, wordEmbedder{})
@@ -46,7 +46,7 @@ func linkedStore(t *testing.T, syntheses ...agent.Synthesis) (*sqlite.Store, str
 	return store, path
 }
 
-func linkedIDs(linked agent.Linked) []int64 {
+func linkedIDs(linked memory.Linked) []int64 {
 	out := []int64{}
 	for _, hit := range linked.Hits {
 		out = append(out, hit.ID)
@@ -57,8 +57,8 @@ func linkedIDs(linked agent.Linked) []int64 {
 func TestLinked_ReadsTheEntitiesTheCheckpointStored(t *testing.T) {
 	ctx := context.Background()
 	store, path := linkedStore(t,
-		agent.Synthesis{Summary: "Every part for the Rodend build comes from Gebind Components.", Entities: []string{"Rodend", "Gebind Components"}},
-		agent.Synthesis{Summary: "The user chatted about the weather.", Entities: []string{}},
+		memory.Synthesis{Summary: "Every part for the Rodend build comes from Gebind Components.", Entities: []string{"Rodend", "Gebind Components"}},
+		memory.Synthesis{Summary: "The user chatted about the weather.", Entities: []string{}},
 	)
 	linked, err := store.Linked(ctx, "Who supplies the Rodend build?")
 	require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestLinked_ReadsTheEntitiesTheCheckpointStored(t *testing.T) {
 
 func TestLinked_MatchesNamesNormalizedAtCheckpoint(t *testing.T) {
 	ctx := context.Background()
-	store, _ := linkedStore(t, agent.Synthesis{
+	store, _ := linkedStore(t, memory.Synthesis{
 		Summary:  "The coach for the Suvun Hotel is booked through Mateo Deatreal.",
 		Entities: []string{"The Suvun Hotel's", "Suvun Hotel", "the", "", "Mateo Deatreal’s"},
 	})
@@ -141,7 +141,7 @@ func TestLink_NamesEachEpisodeFromBeforeEntitiesOnce(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, before.Hits, "opening alone links nothing")
 
-	summarizer := &scripted{syntheses: []agent.Synthesis{
+	summarizer := &scripted{syntheses: []memory.Synthesis{
 		{Summary: "A second summary the store does not keep.", Entities: []string{"Rodend", "Gebind Components"}},
 		{Summary: "Weather.", Entities: []string{}},
 	}}
@@ -174,7 +174,7 @@ func TestLink_FailedSynthesisLeavesTheEpisodeToTheNextPass(t *testing.T) {
 	require.NoError(t, err)
 	defer store.Close()
 	require.Error(t, store.Link(ctx, &scripted{}))
-	summarizer := &scripted{syntheses: []agent.Synthesis{{Summary: "s", Entities: []string{"Rodend"}}}}
+	summarizer := &scripted{syntheses: []memory.Synthesis{{Summary: "s", Entities: []string{"Rodend"}}}}
 	require.NoError(t, store.Link(ctx, summarizer))
 	assert.Equal(t, "user: old-1", summarizer.sent[0][0], "the same episode is sent again")
 }

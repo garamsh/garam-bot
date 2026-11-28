@@ -7,9 +7,9 @@
 
 The convention template moved three structural rules out of `stack-go.md` — what a unit is named for, what a unit may reference across units, and when shared code is extracted — into a project's `structure.md`, written from the shape the project chose (#939). The template (convention-driven-project `8e32768`, `docs/architecture/structures/`) offers three shapes: domain, layered and hexagonal.
 
-Sherlock already had a shape before it had a record of one. ADR 0001 maps components to `internal/<domain>/` packages rather than technical layers, and `packages.md` cuts every package by pod, then domain, then implementation. A layered partition would cut by technical responsibility — interface, logic, persistence — across subjects that change independently: the gateway, the reasoning loop, memory and the workspace. A hexagonal one makes the port the unit around one application, while Sherlock holds several subjects, each already reaching its technologies through interfaces it declares (`agent.Model`, `agent.Embedder`).
+The project already had a shape before it had a record of one. ADR 0001 maps components to `internal/<domain>/` packages rather than technical layers, and `packages.md` cuts every package by pod, then domain, then implementation. A layered partition would cut by technical responsibility — interface, logic, persistence — across subjects that change independently: the bot process, memory, the workspace and the adapter. A hexagonal one makes the port the unit around one application, while this project holds several subjects, each reaching its technologies through interfaces it declares.
 
-Domain partitioning leaves one point open: whether a domain may depend on a sibling at all, from sharing code (Shared Kernel) to no reference whatsoever (Separate Ways) in *Domain-Driven Design* (Evans, 2003). The import graph answers it for most pairs: `internal/gateway/` imports `internal/agent/` and `internal/message/`, `internal/agent/` imports `internal/tool/`, and none of them imports back. The agent and memory domains run one way too, memory on agent: `internal/memory/sqlite/` imports `internal/agent/`, and nothing under `internal/agent/` imports it (#943).
+Domain partitioning leaves one point open: whether a domain may depend on a sibling at all, from sharing code (Shared Kernel) to no reference whatsoever (Separate Ways) in *Domain-Driven Design* (Evans, 2003). The import graph answers it for most pairs: `internal/bot/` imports `api/declaration/`, `internal/claudeadapter/` imports `api/agent/`, and neither imports the other. The memory domain runs one way too, the store on its types: `internal/memory/sqlite/` imports `internal/memory/`, and nothing under `internal/memory/` imports it (#943; the pair was `internal/memory/sqlite/` on `internal/agent/` until ADR 0040).
 
 ## Decision
 
@@ -18,7 +18,7 @@ The system is partitioned by domain: a top-level `internal/<name>/` package is t
 ## Consequences
 
 - The rules a reviewer applies to packages are `structure.md`'s, and `stack-go.md` spells them in Go without restating them.
-- A change to one subject usually lands in one `internal/<name>/` tree; a capability lands as a tool under `tools/<name>/` and touches no domain (ADR 0009).
+- A change to one subject usually lands in one `internal/<name>/` tree; a capability reaches a bot as an MCP server outside this repository and touches no domain (ADR 0035).
 - A domain cannot reach into a sibling's internals and constructs none of what it depends on, so the composition site can replace a sibling's implementation without touching its consumers.
 - Code no single domain owns has no home except a package below the domains, so shared code has to be named and justified rather than collected.
 

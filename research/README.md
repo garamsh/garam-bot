@@ -2,6 +2,10 @@
 
 Research records the questions, methods, evidence, conclusions, and limits behind this repository's studies. Current system responsibilities and decisions live in [architecture](../docs/architecture/README.md); study reports link to them where relevant.
 
+## Harness code
+
+The studies' Go harnesses and their tests are deleted (ADR 0040): they imported the removed agent, and a harness that no longer compiles is not evidence. Each study's README and recorded data stay. The harness code last compiled at `acdf0941b866902e99076053c6bb78af93698d95`, the `dev` commit the removal branched from; `git show acdf0941b866902e99076053c6bb78af93698d95:research/<study>` reads one, and the PM tags that tree `research/harnesses-final` after the removal merges.
+
 ## Studies
 
 - [Agent context](agent-context/README.md) — source survey of how Claude Code, Codex CLI, Hermes Agent, OpenClaw and opencode understand input and compose context, and three candidate structures for sherlock; the preregistered test of two (#862) applies the evidence in 209 (search during work with a note) and 214 (understand first with a note) of 280 primary probes against the shipped recall's 124, but is undetermined because the oracle-reach control failed for the shipped arm and the search arm; a confirmatory run (#864) with a source-level oracle repeats the gain (192 against 122) and is undetermined again, every oracle miss being a ranking miss of a mid that states the key; a third run on unmixed evidence batches (#870) passes every control and finds A valid, 212 against 171 (A only 42, S only 1, p = 1.0e-11).

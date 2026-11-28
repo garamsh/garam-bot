@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/memory"
 )
 
 // batchMessages is how many completed visible messages make one mid episode.
@@ -15,7 +15,7 @@ const batchMessages = 4
 // Accumulate creates one immutable mid episode per full cross-turn message batch.
 // The source checkpoint commits with the episode, after remote synthesis returns;
 // embedding follows once no full batch remains.
-func (s *Store) Accumulate(ctx context.Context, summarizer agent.ConversationSummarizer) error {
+func (s *Store) Accumulate(ctx context.Context, summarizer memory.ConversationSummarizer) error {
 	for {
 		var lastSource int64
 		if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(source_last),0) FROM conversation_mid`).Scan(&lastSource); err != nil {
@@ -40,7 +40,7 @@ func (s *Store) Accumulate(ctx context.Context, summarizer agent.ConversationSum
 
 // checkpoint commits one episode with its entity links. A concurrent writer
 // must not publish a second episode for the same batch.
-func (s *Store) checkpoint(ctx context.Context, lastSource int64, sources []agent.SourceMessage, synthesis agent.Synthesis) error {
+func (s *Store) checkpoint(ctx context.Context, lastSource int64, sources []memory.SourceMessage, synthesis memory.Synthesis) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin episode checkpoint: %v", err)
@@ -64,24 +64,24 @@ func (s *Store) checkpoint(ctx context.Context, lastSource int64, sources []agen
 	return nil
 }
 
-func (s *Store) sourcesAfter(ctx context.Context, after int64) ([]agent.SourceMessage, error) {
+func (s *Store) sourcesAfter(ctx context.Context, after int64) ([]memory.SourceMessage, error) {
 	return s.readSources(ctx, `SELECT id,external_id,role,content FROM conversation_sources WHERE id>? ORDER BY id LIMIT ?`, after, batchMessages)
 }
 
 // sourcesBetween returns an episode's inclusive source interval.
-func (s *Store) sourcesBetween(ctx context.Context, first, last int64) ([]agent.SourceMessage, error) {
+func (s *Store) sourcesBetween(ctx context.Context, first, last int64) ([]memory.SourceMessage, error) {
 	return s.readSources(ctx, `SELECT id,external_id,role,content FROM conversation_sources WHERE id BETWEEN ? AND ? ORDER BY id`, first, last)
 }
 
-func (s *Store) readSources(ctx context.Context, query string, args ...any) ([]agent.SourceMessage, error) {
+func (s *Store) readSources(ctx context.Context, query string, args ...any) ([]memory.SourceMessage, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read pending sources: %v", err)
 	}
 	defer rows.Close()
-	var out []agent.SourceMessage
+	var out []memory.SourceMessage
 	for rows.Next() {
-		var source agent.SourceMessage
+		var source memory.SourceMessage
 		if err := rows.Scan(&source.ID, &source.ExternalID, &source.Role, &source.Content); err != nil {
 			return nil, fmt.Errorf("read pending sources: %v", err)
 		}
@@ -94,7 +94,7 @@ func (s *Store) readSources(ctx context.Context, query string, args ...any) ([]a
 }
 
 // PendingSources returns a bounded page of sources beyond the last mid checkpoint.
-func (s *Store) PendingSources(ctx context.Context) ([]agent.SourceMessage, error) {
+func (s *Store) PendingSources(ctx context.Context) ([]memory.SourceMessage, error) {
 	var lastSource int64
 	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(source_last),0) FROM conversation_mid`).Scan(&lastSource); err != nil {
 		return nil, fmt.Errorf("read pending sources: %v", err)
@@ -110,9 +110,9 @@ func (s *Store) embedMids(ctx context.Context) error {
 		return fmt.Errorf("read unembedded episodes: %v", err)
 	}
 	defer rows.Close()
-	var mids []agent.ConversationHit
+	var mids []memory.ConversationHit
 	for rows.Next() {
-		var mid agent.ConversationHit
+		var mid memory.ConversationHit
 		if err := rows.Scan(&mid.ID, &mid.Summary); err != nil {
 			return fmt.Errorf("read unembedded episodes: %v", err)
 		}

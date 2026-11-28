@@ -1,7 +1,7 @@
 # ADR 0011: Persist sources before atomic summary checkpoints, and keep one bounded note beside them
 
 > Status: accepted
-> Date: 2026-08-02 (revised in place 2026-09-26; 2026-10-10)
+> Date: 2026-08-02 (revised in place 2026-09-26; 2026-10-10; 2026-11-28)
 
 ## Context
 
@@ -11,23 +11,24 @@ The earlier decision unified model-chosen writes through the reserved `memory_wr
 
 A completed response archives its visible source messages in one transaction before model synthesis. Each full cross-turn batch creates an immutable mid episode with its direct source interval. The last committed interval is the only processing checkpoint. Model calls happen outside write transactions; a checkpoint comparison refuses a stale concurrent synthesis. An episode's embedding is written after the episode commits, also outside any transaction; an episode still without one is embedded at the next completion and is left out of similarity ranking until then.
 
-A failure preserves completed sources and any earlier committed episodes. Subsequent completions resume from the persisted intervals without skipping pending input; the start makes no model or embedding call. Gateway IDs identify a replay of the same completed batch; ID/content conflicts and partially overlapping batches fail explicitly. The reserved `memory_write` response carries the reply and the note.
+A failure preserves completed sources and any earlier committed episodes. Subsequent completions resume from the persisted intervals without skipping pending input; the start makes no model or embedding call. Caller IDs identify a replay of the same completed batch; ID/content conflicts and partially overlapping batches fail explicitly. The reserved `memory_write` response carries the reply and the note.
 
 - The note is a required string of at most 2,000 characters that the model restates whole every turn. A longer one is handed back to the model as the call's result, not cut.
 - A note the call leaves out or sends as null keeps the saved one.
-- It is saved in the agent's SQLite file after the turn's sources commit, with credential patterns redacted. A failed note write fails the turn and leaves the sources durable and the previous note in place.
-- The session shows it under the instructions on every turn.
+- It is saved in the store's SQLite file after the turn's sources commit, with credential patterns redacted. A failed note write fails the turn and leaves the sources durable and the previous note in place.
+- A caller shows it under its instructions on every turn.
 - The addressed `memory_ops` field is removed.
+
+The agent that wrote the reserved `memory_write` response is removed (ADR 0040); what this record decides about the store holds for any caller.
 
 ## Consequences
 
-- The note is the one source-free memory the model writes. It is bounded, has one writer, and is replaced whole; everything else the agent recalls is source-linked.
+- The note is the one source-free memory the model writes. It is bounded, has one writer, and is replaced whole; everything else a caller recalls is source-linked.
 - Old addressed rows remain in the file, unread by this binary, and block source-linked runtime startup until an explicit migration or export.
-- The monitoring stream's `writeback` event carries the saved note instead of `ops`; a consumer that read `ops` reads `note`.
 
 ## Evidence and limits
 
-The note was tested with the search call of ADR 0019, as candidate A in `research/agent-context/`, against the shipped structure. All three runs were preregistered and live, on MiniMax-M2:
+The note was tested with the reserved search call of the removed agent, as candidate A in `research/agent-context/`, against the shipped structure. All three runs were preregistered and live, on MiniMax-M2:
 
 - **Issue #862.** On 280 primary probes, A applied the evidence in 209 and the shipped structure in 124 (A only 86, shipped only 1).
 - **Issue #864.** On a new seed, A applied it in 192 and the shipped structure in 122 (74 to 4). The exact-query, absent-query and continuation guardrails held.
