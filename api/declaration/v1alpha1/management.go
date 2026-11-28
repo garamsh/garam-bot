@@ -12,7 +12,7 @@ import (
 // The ownership marker an object of a declared kind carries in its metadata.
 const (
 	// LabelManagedBy is the label naming the object's owner, OwnerGaram or OwnerCluster. An object
-	// without it is the cluster's.
+	// without it is the execution place's own, at a cluster, a PC or a naru-host place alike.
 	LabelManagedBy = "bot.garam.sh/managed-by"
 	// AnnotationCluster is the GRN of the cluster record that applied a garam-owned object.
 	AnnotationCluster = "bot.garam.sh/cluster"
@@ -28,7 +28,8 @@ type Owner string
 const (
 	// OwnerGaram is garam: the object is applied from a garam declaration.
 	OwnerGaram Owner = "garam"
-	// OwnerCluster is the cluster: the object is written there, by hand, from a file or by GitOps.
+	// OwnerCluster is the execution place itself, whatever kind of place it is: the object is written
+	// there, by hand, from a file or by GitOps. The value stays "cluster" at every kind of place.
 	OwnerCluster Owner = "cluster"
 )
 

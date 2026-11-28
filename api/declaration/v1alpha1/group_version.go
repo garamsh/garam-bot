@@ -10,7 +10,7 @@ import (
 // CustomResourceDefinitions state. Each CustomResourceDefinition carries it under
 // AnnotationSpecRelease, a key of this version's own, so a definition serving a later version
 // beside this one names each version's release.
-const SpecRelease = "0.1.0"
+const SpecRelease = "0.1.1"
 
 // AnnotationSpecRelease is the CustomResourceDefinition annotation naming v1alpha1's SpecRelease.
 const AnnotationSpecRelease = "bot.garam.sh/spec-release.v1alpha1"
