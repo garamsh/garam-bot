@@ -253,6 +253,11 @@ func TestFileCallsGoThroughTheHelperAndNeverAShell(t *testing.T) {
 	assert.ErrorIs(t, f.provider.WriteFile(ctx, "one", "/run/garam-bot/agent/token", nil), v1alpha1.ErrInvalid,
 		"a write through a link is the caller's path refused (FILE-3)")
 
+	f.guest.result = v1alpha1.ExecResult{ExitCode: exitUnsupported, Stderr: []byte("unsupported: openat2 is not offered here")}
+	err = f.provider.WriteFile(ctx, "one", "/run/garam-bot/agent/token", nil)
+	assert.ErrorIs(t, err, v1alpha1.ErrUnsupported, "a node that cannot write without following a link says so")
+	assert.Contains(t, err.Error(), "openat2")
+
 	_, err = f.provider.ReadFile(ctx, "one", "/proc/self/environ")
 	assert.ErrorIs(t, err, v1alpha1.ErrInvalid, "a system directory is refused before the Pod is reached")
 }

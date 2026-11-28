@@ -18,10 +18,14 @@ const (
 	exitFailure      = 1
 	exitFileNotFound = 3
 	exitLink         = 4
+	exitUnsupported  = 5
 )
 
 // errLink is a write whose path passes through a symbolic link (interface 3, FILE-3).
 var errLink = errors.New("the path passes through a symbolic link")
+
+// errUnsupported is a write the system cannot make while following no link.
+var errUnsupported = errors.New("unsupported")
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -52,6 +56,9 @@ func run(args []string, in io.Reader, out, errOut io.Writer) int {
 	}
 	if errors.Is(err, errLink) {
 		return exitLink
+	}
+	if errors.Is(err, errUnsupported) {
+		return exitUnsupported
 	}
 
 	return exitFailure

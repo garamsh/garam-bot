@@ -22,11 +22,12 @@ import (
 	"github.com/garamsh/garam-bot/api/workspace/v1alpha1"
 )
 
-// The exit codes of the file helper (cmd/workspacefile): a read of a path that holds no file, and a
-// write whose path passes through a link.
+// The exit codes of the file helper (cmd/workspacefile): a read of a path that holds no file, a write
+// whose path passes through a link, and a write the node's kernel cannot make without following one.
 const (
 	exitFileNotFound = 3
 	exitLink         = 4
+	exitUnsupported  = 5
 )
 
 // guest reaches into a workspace's Pod: the two calls of the Kubernetes API that are not plain
@@ -109,6 +110,8 @@ func (p *Provider) WriteFile(ctx context.Context, name v1alpha1.Name, path strin
 		return nil
 	case exitLink:
 		return fmt.Errorf("%w: %s passes through a symbolic link", v1alpha1.ErrInvalid, path)
+	case exitUnsupported:
+		return fmt.Errorf("%w: write %s: %s", v1alpha1.ErrUnsupported, path, bytes.TrimSpace(res.Stderr))
 	}
 
 	return fmt.Errorf("write %s: helper exit %d: %s", path, res.ExitCode, bytes.TrimSpace(res.Stderr))

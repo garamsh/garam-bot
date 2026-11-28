@@ -25,7 +25,7 @@ The interface is the Go interface `Provider` in this package, a driver API: an i
 |---|---|---|---|
 | `workspacefake` | memory | the conformance suite | the reference implementation, built, passing the suite |
 | naru Machine | naru's Machine API `machines/v1alpha1` | a naru host | first production implementation; built (`pkg/naruworkspace`), passing the suite against naru's `machineapifake`; the run against orch is pending |
-| Pod | the Kubernetes API | a cluster | built (`internal/podworkspace`), passing the suite against a kind cluster |
+| Pod | the Kubernetes API | a cluster | built (`pkg/podworkspace`), passing the suite against a kind cluster |
 | container | a container engine's API: Docker or Podman, or Apple's container framework | a Linux PC, a Mac | to build |
 | mvmd | mvmd's runtime API `v1alpha2` | a Linux PC | to build |
 
@@ -155,7 +155,7 @@ Each mapping is its implementation issue's to build, and this section is what th
 | `Create`, `Delete` | create, delete both | create, remove both | Create Machine and Create disk, Delete both |
 | `Start`, `Stop` | `Stop` deletes the Pod and keeps the claim, `Start` makes the Pod again | start, stop | Start, Stop |
 | `Exec` | the `exec` subresource | the engine's exec | Exec, then Read exec output to its end |
-| `ReadFile`, `WriteFile` | an `exec` of garam-bot's file helper, which an init container copies into the Pod and which reads and writes the path. `WriteFile` opens the directory by `openat2` with `RESOLVE_NO_SYMLINKS` and writes through a temporary file and a rename (FILE-3) | the engine's archive copy | Read file, Write file |
+| `ReadFile`, `WriteFile` | an `exec` of garam-bot's file helper, which an init container copies into the Pod and which reads and writes the path. `WriteFile` opens the directory by `openat2` with `RESOLVE_NO_SYMLINKS` and writes through a temporary file and a rename (FILE-3). On a node whose kernel offers no `openat2`, before Linux 5.6, it answers `ErrUnsupported` and writes nothing | the engine's archive copy | Read file, Write file |
 | `Dial` | the `portforward` subresource | a port published on loopback | the Machine's address on the host's bridge, under an ingress rule |
 | `Egress` | a NetworkPolicy of `ipBlock` rules | the engine cannot enforce rules: `Capabilities.Egress` false, and no network | `networkPolicy.egress` |
 | `Stdin` | true: the `exec` subresource carries stdin | the engine's exec | false: Exec takes no input |

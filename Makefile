@@ -168,7 +168,7 @@ test-privileged:
 
 # The Pod workspace provider's conformance run (api/workspace/v1alpha1/conformance)
 # against a kind cluster, as the namespaced ServiceAccount of
-# internal/podworkspace/testdata/rbac.yaml, so a right the provider uses and that
+# pkg/podworkspace/testdata/rbac.yaml, so a right the provider uses and that
 # Role omits fails the run. The kubelet pulls an image by digest, so the two
 # images are pushed to a registry beside the cluster and referenced by the digest
 # the push reports; the conformance image is built for this run only and no
@@ -197,7 +197,7 @@ test-podworkspace:
 	$(BUILD_ENV) docker build -f build/conformance.Dockerfile -t localhost:$(PODWORKSPACE_REGISTRY_PORT)/conformance:test .
 	$(BUILD_ENV) docker build -f $(WORKSPACEFILE_DOCKERFILE) -t localhost:$(PODWORKSPACE_REGISTRY_PORT)/workspacefile:test .
 	@docker push -q localhost:$(PODWORKSPACE_REGISTRY_PORT)/conformance:test >/dev/null && docker push -q localhost:$(PODWORKSPACE_REGISTRY_PORT)/workspacefile:test >/dev/null
-	KUBECONFIG=$(PODWORKSPACE_ADMIN_KUBECONFIG) kubectl apply -f internal/podworkspace/testdata/rbac.yaml
+	KUBECONFIG=$(PODWORKSPACE_ADMIN_KUBECONFIG) kubectl apply -f pkg/podworkspace/testdata/rbac.yaml
 	@server=$$(KUBECONFIG=$(PODWORKSPACE_ADMIN_KUBECONFIG) kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}') && \
 	token=$$(KUBECONFIG=$(PODWORKSPACE_ADMIN_KUBECONFIG) kubectl -n $(PODWORKSPACE_NAMESPACE) create token pod-workspace-provider --duration=1h) && \
 	printf 'apiVersion: v1\nkind: Config\nclusters:\n- name: kind\n  cluster: {server: "%s", insecure-skip-tls-verify: true}\nusers:\n- name: provider\n  user: {token: "%s"}\ncontexts:\n- name: provider\n  context: {cluster: kind, user: provider, namespace: $(PODWORKSPACE_NAMESPACE)}\ncurrent-context: provider\n' "$$server" "$$token" > $(PODWORKSPACE_KUBECONFIG) && chmod 0600 $(PODWORKSPACE_KUBECONFIG)
@@ -206,7 +206,7 @@ test-podworkspace:
 	echo "conformance image $$conformance, helper image $$helper" && \
 	POD_WORKSPACE_KUBECONFIG=$(PODWORKSPACE_KUBECONFIG) POD_WORKSPACE_NAMESPACE=$(PODWORKSPACE_NAMESPACE) \
 		POD_WORKSPACE_CONFORMANCE_IMAGE=$$conformance POD_WORKSPACE_HELPER_IMAGE=$$helper POD_WORKSPACE_EGRESS=true \
-		go test -tags conformance -count=1 -timeout 30m -v ./internal/podworkspace/ -run TestConformance
+		go test -tags conformance -count=1 -timeout 30m -v ./pkg/podworkspace/ -run TestConformance
 
 # The claude-code adapter's conformance run (api/agent/v1alpha1/conformance)
 # against the built claude-code image, with the real Claude Code CLI in it. The
