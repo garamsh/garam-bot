@@ -19,16 +19,16 @@ import (
 func TestServe_AnswersATokenBoundToTheKeyThatSignedTheProof(t *testing.T) {
 	s := start(t)
 	p := newProcess(t)
-	credential := s.api.credentialFor(t, watched, "mira")
+	credential := s.api.credentialFor(t, watched, mira)
 
 	asked := s.call(t, credential, "")
 	require.Equal(t, http.StatusBadRequest, asked.status)
-	assert.Equal(t, "use_dpop_nonce", asked.code())
+	assert.Equal(t, useNonce, asked.code())
 	assert.Equal(t, s.mint.server.URL+"/oauth/token", asked.body["htu"], "the proof's htu is garam's token endpoint")
 	assert.Empty(t, s.mint.read(), "no proof was given, so garam is not asked")
 
 	relayed := s.call(t, credential, p.proof(t, s.mint.server.URL+"/oauth/token", ""))
-	require.Equal(t, "use_dpop_nonce", relayed.code(), "garam's nonce refusal is relayed")
+	require.Equal(t, useNonce, relayed.code(), "garam's nonce refusal is relayed")
 	assert.Equal(t, s.mint.nonce, relayed.nonce)
 	assert.Equal(t, s.mint.server.URL+"/oauth/token", relayed.body["htu"])
 
@@ -61,21 +61,21 @@ func TestServe_AnswersATokenBoundToTheKeyThatSignedTheProof(t *testing.T) {
 
 func TestServe_AnswersTheNonceItHoldsWithoutAskingGaram(t *testing.T) {
 	s := start(t)
-	first := s.obtain(t, s.api.credentialFor(t, watched, "mira"), newProcess(t))
+	first := s.obtain(t, s.api.credentialFor(t, watched, mira), newProcess(t))
 	require.Equal(t, http.StatusOK, first.status, first.body)
 	asked := len(s.mint.read())
 
 	p := newProcess(t)
-	again := s.call(t, s.api.credentialFor(t, watched, "mira"), p.proof(t, s.mint.server.URL+"/oauth/token", ""))
+	again := s.call(t, s.api.credentialFor(t, watched, mira), p.proof(t, s.mint.server.URL+"/oauth/token", ""))
 
-	assert.Equal(t, "use_dpop_nonce", again.code())
+	assert.Equal(t, useNonce, again.code())
 	assert.Equal(t, s.mint.nonce, again.nonce, "the nonce garam last answered is answered")
 	assert.Len(t, s.mint.read(), asked, "garam is not asked for a nonce the server holds")
 }
 
 func TestServe_RefusesASpentCredentialWhateverKeySignsItsProof(t *testing.T) {
 	s := start(t)
-	credential := s.api.credentialFor(t, watched, "mira")
+	credential := s.api.credentialFor(t, watched, mira)
 	require.Equal(t, http.StatusOK, s.obtain(t, credential, newProcess(t)).status)
 
 	other := newProcess(t)
@@ -84,7 +84,7 @@ func TestServe_RefusesASpentCredentialWhateverKeySignsItsProof(t *testing.T) {
 	assert.Equal(t, "invalid_credential", replayed.code())
 
 	// Control: a fresh credential of the same ServiceAccount, with the same other key, obtains a token.
-	fresh := s.call(t, s.api.credentialFor(t, watched, "mira"), other.proof(t, s.mint.server.URL+"/oauth/token", s.mint.nonce))
+	fresh := s.call(t, s.api.credentialFor(t, watched, mira), other.proof(t, s.mint.server.URL+"/oauth/token", s.mint.nonce))
 	require.Equal(t, http.StatusOK, fresh.status, fresh.body)
 	token, _ := fresh.body["access_token"].(string)
 	assert.Equal(t, other.thumbprint(), s.mint.boundTo(token))
@@ -92,7 +92,7 @@ func TestServe_RefusesASpentCredentialWhateverKeySignsItsProof(t *testing.T) {
 
 func TestServe_ACredentialTakenBeforeItsUseObtainsOneTokenBoundToTheTakersKeyAlone(t *testing.T) {
 	s := start(t)
-	credential := s.api.credentialFor(t, watched, "mira")
+	credential := s.api.credentialFor(t, watched, mira)
 	taker, rightful := newProcess(t), newProcess(t)
 
 	taken := s.obtain(t, credential, taker)
@@ -107,9 +107,9 @@ func TestServe_ACredentialTakenBeforeItsUseObtainsOneTokenBoundToTheTakersKeyAlo
 
 func TestServe_AnswersOneTokenForACredentialSentTwiceAtOnce(t *testing.T) {
 	s := start(t)
-	require.Equal(t, http.StatusOK, s.obtain(t, s.api.credentialFor(t, watched, "mira"), newProcess(t)).status)
+	require.Equal(t, http.StatusOK, s.obtain(t, s.api.credentialFor(t, watched, mira), newProcess(t)).status)
 	s.mint.set(nil, 200*time.Millisecond)
-	credential := s.api.credentialFor(t, watched, "mira")
+	credential := s.api.credentialFor(t, watched, mira)
 
 	statuses := make([]int, 2)
 	var wg sync.WaitGroup
@@ -150,7 +150,7 @@ func TestServe_RefusesACredentialThatDoesNotVerify(t *testing.T) {
 	}
 	// Control: the same ServiceAccount's credential, signed as the API server signs, is taken.
 	accepted := s.call(t, s.api.sign(t, credential{subject: subject}), "")
-	assert.Equal(t, "use_dpop_nonce", accepted.code())
+	assert.Equal(t, useNonce, accepted.code())
 	assert.Empty(t, s.mint.read(), "garam is asked for no refused credential")
 }
 
@@ -158,14 +158,14 @@ func TestServe_RefusesABotNotGaramOwnedByThisRecord(t *testing.T) {
 	s := start(t)
 	s.bots[bottoken.Bot{Namespace: watched, Name: "local"}] = clusterOwned(t)
 	s.bots[bottoken.Bot{Namespace: watched, Name: "foreign"}] = garamOwned(t, "grn:acme/iam/cluster/c-2", "decl-foreign")
-	s.bots[bottoken.Bot{Namespace: "unwatched", Name: "mira"}] = garamOwned(t, record, "decl-unwatched")
+	s.bots[bottoken.Bot{Namespace: "unwatched", Name: mira}] = garamOwned(t, record, "decl-unwatched")
 	tests := []struct {
 		name, namespace, bot string
 	}{
 		{name: "cluster-owned", namespace: watched, bot: "local"},
 		{name: "applied by another record", namespace: watched, bot: "foreign"},
-		{name: "of another namespace", namespace: otherTeam, bot: "mira"},
-		{name: "in a namespace not watched", namespace: "unwatched", bot: "mira"},
+		{name: "of another namespace", namespace: otherTeam, bot: mira},
+		{name: "in a namespace not watched", namespace: "unwatched", bot: mira},
 		{name: "absent", namespace: watched, bot: "nobody"},
 	}
 	for _, tt := range tests {
@@ -177,7 +177,7 @@ func TestServe_RefusesABotNotGaramOwnedByThisRecord(t *testing.T) {
 	}
 	assert.Empty(t, s.mint.read(), "garam is asked for no unknown bot")
 	// Control: the garam-owned Bot this record applied, in the same namespace, obtains a token.
-	assert.Equal(t, http.StatusOK, s.obtain(t, s.api.credentialFor(t, watched, "mira"), newProcess(t)).status)
+	assert.Equal(t, http.StatusOK, s.obtain(t, s.api.credentialFor(t, watched, mira), newProcess(t)).status)
 }
 
 func TestServe_RelaysGaramsRefusalsAndSpendsNoCredentialOnThem(t *testing.T) {
@@ -189,21 +189,21 @@ func TestServe_RelaysGaramsRefusalsAndSpendsNoCredentialOnThem(t *testing.T) {
 		retryAfter string
 	}{
 		{name: "bot not placed", status: http.StatusForbidden, code: "refused", refuse: func(w http.ResponseWriter) bool {
-			writeAnswer(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+			writeAnswer(w, http.StatusBadRequest, map[string]string{errorKey: "invalid_request"})
 			return true
 		}},
-		{name: "proof refused", status: http.StatusBadRequest, code: "invalid_dpop_proof", refuse: func(w http.ResponseWriter) bool {
-			writeAnswer(w, http.StatusBadRequest, map[string]string{"error": "invalid_dpop_proof"})
+		{name: "proof refused", status: http.StatusBadRequest, code: invalidProof, refuse: func(w http.ResponseWriter) bool {
+			writeAnswer(w, http.StatusBadRequest, map[string]string{errorKey: invalidProof})
 			return true
 		}},
-		{name: "limited", status: http.StatusTooManyRequests, code: "temporarily_unavailable", retryAfter: "7",
+		{name: "limited", status: http.StatusTooManyRequests, code: unavailable, retryAfter: "7",
 			refuse: func(w http.ResponseWriter) bool {
 				w.Header().Set("Retry-After", "7")
-				writeAnswer(w, http.StatusTooManyRequests, map[string]string{"error": "temporarily_unavailable"})
+				writeAnswer(w, http.StatusTooManyRequests, map[string]string{errorKey: unavailable})
 				return true
 			}},
-		{name: "failing", status: http.StatusServiceUnavailable, code: "temporarily_unavailable", refuse: func(w http.ResponseWriter) bool {
-			writeAnswer(w, http.StatusInternalServerError, map[string]string{"error": "server_error"})
+		{name: "failing", status: http.StatusServiceUnavailable, code: unavailable, refuse: func(w http.ResponseWriter) bool {
+			writeAnswer(w, http.StatusInternalServerError, map[string]string{errorKey: "server_error"})
 			return true
 		}},
 	}
@@ -211,13 +211,13 @@ func TestServe_RelaysGaramsRefusalsAndSpendsNoCredentialOnThem(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := start(t)
 			p := newProcess(t)
-			credential := s.api.credentialFor(t, watched, "mira")
+			credential := s.api.credentialFor(t, watched, mira)
 			s.mint.set(tt.refuse, 0)
 
 			refused := s.call(t, credential, p.proof(t, s.mint.server.URL+"/oauth/token", s.mint.nonce))
 			assert.Equal(t, tt.status, refused.status)
 			assert.Equal(t, tt.code, refused.code())
-			if tt.code == "invalid_dpop_proof" {
+			if tt.code == invalidProof {
 				assert.Equal(t, s.mint.nonce, refused.nonce, "garam's nonce is relayed with its refusal of the proof")
 			}
 			assert.Equal(t, tt.retryAfter, refused.retryAfter)
@@ -235,9 +235,9 @@ func TestServe_AnswersUnavailableWhileTheClustersTokenIsNotHeld(t *testing.T) {
 	})
 	p := newProcess(t)
 
-	refused := s.call(t, s.api.credentialFor(t, watched, "mira"), p.proof(t, s.mint.server.URL+"/oauth/token", "n"))
+	refused := s.call(t, s.api.credentialFor(t, watched, mira), p.proof(t, s.mint.server.URL+"/oauth/token", "n"))
 
 	assert.Equal(t, http.StatusServiceUnavailable, refused.status)
-	assert.Equal(t, "temporarily_unavailable", refused.code())
+	assert.Equal(t, unavailable, refused.code())
 	assert.Empty(t, s.mint.read())
 }

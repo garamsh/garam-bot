@@ -45,7 +45,7 @@ func (s *service) refuse(w http.ResponseWriter, bot Bot, obtained answer, err er
 			w.Header().Set(headerNonce, nonce)
 		}
 		body := errorBody{Error: refusal.code}
-		if refusal.code == "use_dpop_nonce" {
+		if refusal.code == codeUseNonce {
 			body.HTU = s.cfg.TokenURL
 		}
 		writeJSON(w, http.StatusBadRequest, body)

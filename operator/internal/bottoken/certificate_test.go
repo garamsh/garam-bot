@@ -19,8 +19,8 @@ func TestServe_IsTrustedByThePublishedBundleAlone(t *testing.T) {
 	s := start(t)
 	other := start(t)
 
-	answered := s.call(t, s.api.credentialFor(t, watched, "mira"), "")
-	assert.Equal(t, "use_dpop_nonce", answered.code(), "a client trusting the published bundle is answered")
+	answered := s.call(t, s.api.credentialFor(t, watched, mira), "")
+	assert.Equal(t, useNonce, answered.code(), "a client trusting the published bundle is answered")
 
 	s.client = other.client
 	request, err := http.NewRequest(http.MethodPost, s.url, nil)
@@ -57,7 +57,7 @@ func (s *server) served(t *testing.T) []byte {
 	// The certificate is read, not trusted, so the handshake verifies nothing.
 	conn, err := tls.Dial("tcp", address.Host, &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}) //nolint:gosec
 	require.NoError(t, err)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	return conn.ConnectionState().PeerCertificates[0].Raw
 }
 

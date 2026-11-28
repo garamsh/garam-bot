@@ -43,6 +43,12 @@ var (
 	errUnavailable = errors.New("garam's exchange is unavailable")
 )
 
+// The codes the server answers that garam answers too (interface 6's T-3).
+const (
+	codeUseNonce     = "use_dpop_nonce"
+	codeInvalidProof = "invalid_dpop_proof"
+)
+
 // proofError is garam's refusal of the proof, use_dpop_nonce or invalid_dpop_proof, relayed as it came.
 type proofError struct {
 	code string

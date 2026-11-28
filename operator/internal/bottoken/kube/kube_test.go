@@ -121,7 +121,7 @@ func TestTrustStore_PublishesIntoTheConfigMapTheChartCreated(t *testing.T) {
 	assert.Error(t, store.Publish(t.Context(), []byte("bundle")), "no ConfigMap is created")
 
 	require.NoError(t, k8sClient.Create(t.Context(), &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "garam-connector-trust"},
+		Namespace: namespace, Name: "garam-connector-trust",
 	}))
 	require.NoError(t, store.Publish(t.Context(), []byte("bundle")))
 	held, err := clientset.CoreV1().ConfigMaps(namespace).Get(t.Context(), "garam-connector-trust", metav1.GetOptions{})
@@ -195,7 +195,7 @@ func (s *service) call(t *testing.T, credential, proof string) answer {
 	}
 	response, err := s.client.Do(request)
 	require.NoError(t, err)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	read, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
 	body := map[string]any{}
@@ -237,7 +237,7 @@ func serviceAccountToken(t *testing.T, namespace, name, audience string) string 
 	_, err := clientset.CoreV1().ServiceAccounts(namespace).Get(t.Context(), name, metav1.GetOptions{})
 	if err != nil {
 		_, err = clientset.CoreV1().ServiceAccounts(namespace).Create(t.Context(),
-			&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: name}}, metav1.CreateOptions{})
+			&corev1.ServiceAccount{Name: name}, metav1.CreateOptions{})
 		require.NoError(t, err)
 	}
 	issued, err := clientset.CoreV1().ServiceAccounts(namespace).CreateToken(t.Context(), name,
@@ -266,7 +266,7 @@ var spaces atomic.Int32
 func newNamespace(t *testing.T) string {
 	t.Helper()
 	name := fmt.Sprintf("bots-%d", spaces.Add(1))
-	require.NoError(t, k8sClient.Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}))
+	require.NoError(t, k8sClient.Create(t.Context(), &corev1.Namespace{Name: name}))
 	return name
 }
 

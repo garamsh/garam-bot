@@ -31,11 +31,11 @@ func (s *service) obtain(ctx context.Context, credential string, proofs []string
 	}
 	if len(proofs) == 0 || !carriesNonce(proofs[0]) {
 		if nonce := s.exchanger.currentNonce(); nonce != "" || len(proofs) == 0 {
-			return held.bot, answer{nonce: nonce}, proofError{code: "use_dpop_nonce"}
+			return held.bot, answer{nonce: nonce}, proofError{code: codeUseNonce}
 		}
 	}
 	if len(proofs) != 1 {
-		return held.bot, answer{}, proofError{code: "invalid_dpop_proof"}
+		return held.bot, answer{}, proofError{code: codeInvalidProof}
 	}
 	token, err := s.exchanger.exchange(ctx, subject, proofs[0])
 	if err != nil {

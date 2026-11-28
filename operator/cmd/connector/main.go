@@ -82,11 +82,13 @@ func main() {
 	flag.StringVar(&o.botTokenAddress, "bot-token-address", ":8443",
 		"The address the bot token server listens on, for the bots' processes of the watched namespaces (interface 6).")
 	flag.StringVar(&o.botTokenService, "bot-token-service", "garam-connector",
-		"The Service in the release namespace the bots' processes reach the bot token server by. The serving certificate names it.")
+		"The Service in the release namespace the bots' processes reach the bot token server by. "+
+			"The serving certificate names it.")
 	flag.StringVar(&o.botTokenAudience, "bot-token-audience", bottoken.DefaultAudience,
 		"The audience a Bot's projected ServiceAccount token names for the bot token server.")
 	flag.StringVar(&o.trustConfigMap, "trust-configmap", "garam-connector-trust",
-		"The ConfigMap in the release namespace the serving certificates are published to, under "+trustKey+". The chart creates it empty.")
+		"The ConfigMap in the release namespace the serving certificates are published to, under "+trustKey+
+			". The chart creates it empty.")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))

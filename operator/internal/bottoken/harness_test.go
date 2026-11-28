@@ -37,6 +37,12 @@ const (
 	actor     = "garam_ct_actor"
 	watched   = "game-team"
 	otherTeam = "other-team"
+	mira      = "mira"
+	// The members and codes of interface 6's refusals.
+	errorKey     = "error"
+	useNonce     = "use_dpop_nonce"
+	invalidProof = "invalid_dpop_proof"
+	unavailable  = "temporarily_unavailable"
 )
 
 // apiServer stands in for the API server's ServiceAccount issuer: it signs credentials with its key.
@@ -178,7 +184,7 @@ func newMint(t *testing.T) *mint {
 
 func (m *mint) serve(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		writeAnswer(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+		writeAnswer(w, http.StatusBadRequest, map[string]string{errorKey: "invalid_request"})
 		return
 	}
 	m.mu.Lock()
@@ -196,11 +202,11 @@ func (m *mint) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	key, nonce, ok := readProof(read.proof)
 	if !ok {
-		writeAnswer(w, http.StatusBadRequest, map[string]string{"error": "invalid_dpop_proof"})
+		writeAnswer(w, http.StatusBadRequest, map[string]string{errorKey: invalidProof})
 		return
 	}
 	if nonce != m.nonce {
-		writeAnswer(w, http.StatusBadRequest, map[string]string{"error": "use_dpop_nonce"})
+		writeAnswer(w, http.StatusBadRequest, map[string]string{errorKey: useNonce})
 		return
 	}
 	token := "garam_bt_" + rand.Text()
@@ -313,7 +319,7 @@ func start(t *testing.T, change ...options) *server {
 	t.Helper()
 	s := &server{trust: &trust{}, mint: newMint(t), api: newAPIServer(t), logs: &lockedWriter{}}
 	s.bots = bots{
-		{Namespace: watched, Name: "mira"}: garamOwned(t, record, "decl-mira"),
+		{Namespace: watched, Name: mira}: garamOwned(t, record, "decl-mira"),
 	}
 	cfg := bottoken.Config{
 		Record:     record,
@@ -363,7 +369,7 @@ type answer struct {
 	body       map[string]any
 }
 
-func (a answer) code() any { return a.body["error"] }
+func (a answer) code() any { return a.body[errorKey] }
 
 // call makes the one call with credential and, where proof is not empty, proof.
 func (s *server) call(t *testing.T, credential, proof string) answer {
@@ -378,7 +384,7 @@ func (s *server) call(t *testing.T, credential, proof string) answer {
 	}
 	response, err := s.client.Do(request)
 	require.NoError(t, err)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	read, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
 	body := map[string]any{}
@@ -391,14 +397,14 @@ func (s *server) call(t *testing.T, credential, proof string) answer {
 func (s *server) obtain(t *testing.T, credential string, p process) answer {
 	t.Helper()
 	asked := s.call(t, credential, "")
-	if asked.code() != "use_dpop_nonce" {
+	if asked.code() != useNonce {
 		return asked
 	}
 	htu, _ := asked.body["htu"].(string)
 	nonce := asked.nonce
 	if nonce == "" {
 		relayed := s.call(t, credential, p.proof(t, htu, ""))
-		if relayed.code() != "use_dpop_nonce" {
+		if relayed.code() != useNonce {
 			return relayed
 		}
 		nonce = relayed.nonce

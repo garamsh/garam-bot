@@ -75,7 +75,7 @@ func (e *exchanger) exchange(ctx context.Context, bot GRN, proof string) (Token,
 		// The error names the URL and the failure, never the form.
 		return Token{}, fmt.Errorf("%w: %w", errUnavailable, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if nonce := response.Header.Get(headerNonce); nonce != "" {
 		e.mu.Lock()
 		e.nonce = nonce
@@ -110,7 +110,7 @@ func answerOf(response *http.Response, body []byte) (Token, error) {
 	}
 	_ = json.Unmarshal(body, &refusal)
 	switch refusal.Error {
-	case "use_dpop_nonce", "invalid_dpop_proof":
+	case codeUseNonce, codeInvalidProof:
 		return Token{}, proofError{code: refusal.Error}
 	}
 	// The code names what garam refused and carries nothing of the request.
