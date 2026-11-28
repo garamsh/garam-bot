@@ -3,7 +3,7 @@ module github.com/garamsh/garam-bot
 go 1.27.4
 
 require (
-	github.com/garamsh/garam-bot/api v0.0.0-20261124163039-276626bfd3f2
+	github.com/garamsh/garam-bot/api v0.0.0-20261128023818-394c702dab9f
 	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0

@@ -30,7 +30,7 @@ Governs garam-bot's public interfaces: where they live, how each is versioned an
     | `networkpolicies` (`networking.k8s.io`) | `create`, `delete` | egress |
     | `volumesnapshots` (`snapshot.storage.k8s.io`) | `get`, `create`, `delete` | `Snapshot` |
 
-  - **`Capabilities.Egress` is the place's setting,** because the Kubernetes API cannot say whether the network plugin enforces a NetworkPolicy; **`Capabilities.Snapshot` is read from the cluster,** true when it serves `snapshot.storage.k8s.io/v1`. A kind cluster enforces egress through kindnet and serves no snapshots, so the run skips the snapshot cases.
+  - **`Capabilities.Egress` is the place's setting,** because the Kubernetes API cannot say whether the network plugin enforces a NetworkPolicy; **`Capabilities.Snapshot` is read from the cluster,** true when it serves `snapshot.storage.k8s.io/v1`; `Capabilities.Stdin` is true, because the `exec` subresource carries stdin. A kind cluster enforces egress through kindnet and serves no snapshots, so the run skips the snapshot cases.
   - **The file calls exec garam-bot's file helper** (`cmd/workspacefile`, ADR 0034), which an init container copies into a read-only mount of the workspace container, so the workspace's image carries no `cat` for them.
 - **Interface 4, the control connection protocol, is `api/cluster-connection/v1alpha1/` for a cluster:** the HTTPS long-poll protocol between garam's connection service and the connector a user's cluster runs (operator ADR 0092). It came with the operator's move into `operator/` (#1205), its contents unchanged.
   - Its implementations are the reference server in `reference/`, the server suite's own client, and the connector, `operator/cmd/connector`. garam's connection service is not built yet.

@@ -150,7 +150,7 @@ func TestCapabilitiesFollowTheClusterAndTheConfiguration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			caps, err := newFixture(t, tc.egress, tc.snapshots).provider.Capabilities(t.Context())
 			require.NoError(t, err)
-			assert.Equal(t, v1alpha1.Capabilities{Egress: tc.egress, Snapshot: tc.snapshots}, caps)
+			assert.Equal(t, v1alpha1.Capabilities{Egress: tc.egress, Snapshot: tc.snapshots, Stdin: true}, caps)
 		})
 	}
 }
