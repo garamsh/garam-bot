@@ -24,7 +24,8 @@ The tests of `README.md`'s requirements: what each one is, and how a new impleme
 | LIFE-5 | `LIFE-5/a name the caller does not have is not found`. The other-caller half needs two callers of one backend, which the suite does not hold |
 | DATA-1 | `DATA-1/the data volume survives a stop and a start` |
 | RUN-1 | `RUN-1/guest calls to a stopped workspace are refused` |
-| EXEC-1 | `EXEC-1/exec returns the exit code and the output whole` |
+| EXEC-1 | `EXEC-1/exec returns the exit code and the output whole`, its input written as a file |
+| EXEC-2 | `EXEC-2/stdin reaches the command with the stdin capability`, `EXEC-2/stdin is refused without the stdin capability` |
 | FILE-1 | `FILE-1/a written file reads back whole`, `FILE-1/a path that is not absolute and clean, or is a system directory, is refused`. `TestCheckPath_FILE1` |
 | FILE-2 | `FILE-2/a read of a missing file is file not found` |
 | ISO-1 | `ISO-1/one workspace does not see another's files` |

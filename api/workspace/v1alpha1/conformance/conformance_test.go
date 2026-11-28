@@ -20,7 +20,7 @@ func TestReference(t *testing.T) {
 		name string
 		caps v1alpha1.Capabilities
 	}{
-		{"every capability", v1alpha1.Capabilities{Snapshot: true, Egress: true}},
+		{"every capability", v1alpha1.Capabilities{Snapshot: true, Egress: true, Stdin: true}},
 		{"no capability", v1alpha1.Capabilities{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

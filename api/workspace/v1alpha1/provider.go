@@ -7,7 +7,7 @@ import (
 )
 
 // SpecRelease is the release of v1alpha1's specification this package states.
-const SpecRelease = "0.1.0"
+const SpecRelease = "0.2.0"
 
 // DataPath is where a workspace's data volume is mounted: what survives a stop, a start and a
 // restore is under it (DATA-1, SNAP-2).
@@ -62,4 +62,7 @@ type Capabilities struct {
 	// Egress is whether a spec's Egress rules are enforced. Without it, only a spec with no rule is
 	// taken, and its workspace sends nothing out (NET-1).
 	Egress bool
+	// Stdin is whether an Exec's Stdin reaches the command. Without it, only an Exec with no Stdin
+	// is taken (EXEC-2).
+	Stdin bool
 }
