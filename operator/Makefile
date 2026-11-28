@@ -167,6 +167,29 @@ conformance-client: setup-envtest ## Run conformance.md's client suite against c
 		"$$(grep -c '^    --- SKIP' "$$log") skipped"; \
 	rm -f "$$log"; exit $$status
 
+# Interface 7's server suite (api/workspace-access/v1alpha1/conformance.md) against the connector's
+# internal/workspaceaccess, served by test/workspaceaccess over stand-ins for the API server, the
+# watched namespaces and a provider. The harness is built under the e2e tag, which its test hooks
+# need, and no release carries it. The skips are the cases its fixture answers cannotModel.
+WORKSPACE_ACCESS_HARNESS ?= $(LOCALBIN)/workspaceaccess-harness
+.PHONY: conformance-workspace-access
+conformance-workspace-access: ## Run interface 7's server suite against the connector's workspace access service.
+	go build -tags e2e -o "$(WORKSPACE_ACCESS_HARNESS)" ./test/workspaceaccess
+	@dir=$$(mktemp -d); status=0; \
+	"$(WORKSPACE_ACCESS_HARNESS)" --dir "$$dir" serve >"$$dir/ready" 2>"$$dir/server.log" & pid=$$!; \
+	trap 'kill $$pid 2>/dev/null; rm -r -- "$${dir:?}"' EXIT; \
+	for _ in $$(seq 100); do [ -s "$$dir/ready" ] && break; sleep 0.1; done; \
+	[ -s "$$dir/ready" ] || { cat "$$dir/server.log" >&2; exit 1; }; \
+	cd $(CONFORMANCE_MODULE) || exit 1; \
+	CONFORMANCE_BASE_URL="$$(cat "$$dir/url")" CONFORMANCE_TRUST_FILE="$$dir/ca.pem" \
+	CONFORMANCE_FIXTURE="$(WORKSPACE_ACCESS_HARNESS) --dir $$dir" \
+		go test -tags=conformance ./workspace-access/v1alpha1/conformance/server/ -v -count=1 2>&1 | tee "$$dir/log" || status=$$?; \
+	passed=$$(grep -c '^    --- PASS' "$$dir/log"); \
+	echo "conformance-workspace-access: interface 7's server suite, against internal/workspaceaccess:" \
+		"$$passed passed, $$(grep -c '^    --- FAIL' "$$dir/log") failed, $$(grep -c '^    --- SKIP' "$$dir/log") skipped"; \
+	test "$$passed" -gt 0 || exit 1; \
+	exit $$status
+
 # How long `go test` may run the Kind suite, every phase included. Without it
 # go test's default of 10 minutes applies, and AfterSuite was killed past it
 # with all nine specs passed (#276). Sized from the slowest phases measured on
@@ -340,7 +363,7 @@ verify-build-context: ## Fail when .dockerignore leaves out a file Go source emb
 # it is the one step that needs the network, and a contributor who cannot reach
 # github.com cannot push what the rest of the set just cleared either.
 .PHONY: ci
-ci: verify-tidy lint-config lint fmt test build verify-build-context chart-check verify-pins ## Run the whole check set — module tidiness, lint, format, test, build, the image build context, the connector chart, the action pins.
+ci: verify-tidy lint-config lint fmt test build verify-build-context chart-check conformance-workspace-access verify-pins ## Run the whole check set — module tidiness, lint, format, test, build, the image build context, the connector chart, interface 7's server suite against the connector, the action pins.
 
 # The connector chart. Its crds/ are interface 1's CRDs, copied from the api module go.mod pins, so
 # `helm install --skip-crds` leaves them out; chart-check fails where the copies differ.
