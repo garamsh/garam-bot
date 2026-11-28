@@ -2,7 +2,8 @@
 // token, keeps the key it generated in one Secret, and rotates that key itself (ADR 0088, ADR 0090). It
 // applies garam's declarations to the namespaces it watches, one owner per object, and reports what they
 // hold (ADR 0089). It gives each garam-owned Bot's process the bot's garam token, bound to the key the
-// process holds (ADR 0097).
+// process holds (ADR 0097). Where a naru fleet is configured, it runs interface 3's naru Machine
+// provider as the fleet's Machine API caller (garam-bot#1209).
 package main
 
 import (
@@ -56,6 +57,7 @@ type options struct {
 	botTokenService  string
 	botTokenAudience string
 	trustConfigMap   string
+	naru             naruOptions
 }
 
 // trustKey is the key of the trust ConfigMap the serving certificates are published under.
@@ -89,6 +91,7 @@ func main() {
 	flag.StringVar(&o.trustConfigMap, "trust-configmap", "garam-connector-trust",
 		"The ConfigMap in the release namespace the serving certificates are published to, under "+trustKey+
 			". The chart creates it empty.")
+	o.naru.register(flag.CommandLine)
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
@@ -122,6 +125,16 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 	kube, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
 		return fmt.Errorf("build the Kubernetes client: %w", err)
+	}
+	naru, err := naruProvider(o.naru, kube, o.releaseNamespace, log)
+	if err != nil {
+		return err
+	}
+	if naru != nil {
+		if err := naru.Establish(ctx); err != nil {
+			return fmt.Errorf("establish the naru Machine provider: %w", err)
+		}
+		log.Info("the naru Machine provider is established")
 	}
 	identity := clusteridentity.NewService(clusteridentity.Config{
 		BaseURL:        o.garamURL,
@@ -175,6 +188,9 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error { return connection.Run(ctx) })
 	group.Go(func() error { return objects.Start(ctx) })
+	if naru != nil {
+		group.Go(func() error { return naru.Run(ctx) })
+	}
 	group.Go(func() error {
 		if !objects.WaitForCacheSync(ctx) {
 			return ctx.Err()

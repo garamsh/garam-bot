@@ -5,6 +5,7 @@ ConfigMap names are its flags' defaults, which the manager's flags name too.
 {{- define "garam-connector.serviceName" -}}garam-connector{{- end -}}
 {{- define "garam-connector.identitySecret" -}}garam-connector-identity{{- end -}}
 {{- define "garam-connector.trustConfigMap" -}}garam-connector-trust{{- end -}}
+{{- define "garam-connector.naruCallerSecret" -}}garam-connector-naru-caller{{- end -}}
 {{- define "garam-connector.claimName" -}}garam-connector-claim{{- end -}}
 {{- define "garam-connector.audience" -}}garam-connector{{- end -}}
 {{- define "garam-connector.botTokenPort" -}}8443{{- end -}}

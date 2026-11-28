@@ -2,7 +2,7 @@
 
 How a user's own cluster is connected to garam: the chart a user installs, the connector program in it, its registration and identity, the declarations it syncs both ways, the rights it holds in the cluster, and what garam owes on its side.
 
-Registration and identity are built, in `cmd/connector` and `internal/clusteridentity` (#440), except registering again after a key is lost (#450). Applying declarations and reporting are built, in `internal/declaration` (#441, #442). Bots' tokens are built, in `internal/bottoken` (garam-bot#1255). The manager's Bot reconciler is built, in `internal/controller` (garam-bot#1254). The rest is not built yet. This document states what is decided. Goal #436 lists the implementation issues, and each section names the decision it holds.
+Registration and identity are built, in `cmd/connector` and `internal/clusteridentity` (#440), except registering again after a key is lost (#450). Applying declarations and reporting are built, in `internal/declaration` (#441, #442). Bots' tokens are built, in `internal/bottoken` (garam-bot#1255). The manager's Bot reconciler is built, in `internal/controller` (garam-bot#1254). The naru Machine provider runs in the connector where the chart turns it on (garam-bot#1209). The rest is not built yet. This document states what is decided. Goal #436 lists the implementation issues, and each section names the decision it holds.
 
 ## Current decisions
 
@@ -125,6 +125,20 @@ These follow [ADR 0097](adr/0097-give-a-garam-owned-bots-process-its-token-from-
 - **What is logged.** Each answer, with the Bot's namespace and name and the outcome. Never the credential, the proof or the token.
 - **Who can reach a bot's token.** Whoever can change the Bot's StatefulSet, or exec into or read the files of its Pod, can use the bot's garam identity while that Pod runs. So the writers of workloads in a watched namespace are trusted with the bots placed there, and choosing `--watch-namespaces` grants that trust.
 
+### The naru Machine provider
+
+These follow garam-bot's ADR 0034 and naru ADR 0116. The provider is garam-bot's `pkg/naruworkspace`, interface 3's naru Machine implementation.
+
+- **The connector runs it where `--naru-url` is set.** The chart sets it under `connector.naru`, off by default.
+  - With it set, the connector refuses to start without the other options it requires: `--naru-root-file`, `--naru-registration-token-file`, `--naru-caller-secret`, `--naru-proxy-address`, `--naru-root-disk-bytes` and `--connector-deployment`.
+  - Any `--naru-*` option without `--naru-url` is refused too. `--naru-proxy-root-file` is optional, and without it the system's roots verify naru-proxy.
+- **It is established before the connector serves.**
+  - The provider loads its caller pair from the caller Secret. With none, it registers once with the token file's token. A failure stops the start.
+  - It then follows the caller's event log, and renews the certificate in its last 30 days, for as long as the connector runs.
+- **The caller key and certificate stay in the caller Secret**, which the chart creates empty and the connector alone writes. They are never logged, reported or put in a workspace.
+- **A refused renewal is a Warning Event on the connector's Deployment**, reason `NaruCallerCertificate`, and an error line in the log. The certificate then renews no more, and the operator places a new registration token before it expires. Interface 4's report carries no such warning yet (garam-bot#1248).
+- **Its egress** is the ranges and ports `connector.naru.egress` names, for orch and naru-proxy.
+
 ### Rights in the user's cluster
 
 These follow [ADR 0091](adr/0091-hold-only-namespaced-rights-in-a-users-cluster-open-no-inbound-port-and-keep-secrets-in-it.md).
@@ -137,13 +151,14 @@ These follow [ADR 0091](adr/0091-hold-only-namespaced-rights-in-a-users-cluster-
 - **The connector reads Pods and StatefulSets** in each watched namespace, `get` alone, to bind a credential to the Bot's Pod (ADR 0097).
 - **The trust ConfigMap is the chart's to create, empty, and the connector's to write**, as the identity Secret is: `get` and `update` on that one ConfigMap by `resourceNames`, and no `create`, `list` or `watch`. Every write carries the `resourceVersion` read. The connector reads the API server's ServiceAccount issuer and keys through the default `system:service-account-issuer-discovery` binding, and holds no other right for it (ADR 0097).
 - **The identity Secret is the chart's to create, empty, and the connector's to write.** The connector never creates a Secret, because RBAC cannot narrow `create` by name. Its Role grants `get` and `update` on that one Secret by `resourceNames`, and no `create`, `list` or `watch`. The chart never writes the Secret's data after creating it, so an upgrade keeps the key.
+- **Where `connector.naru` is on, the naru caller Secret** is held the same way: `get` and `update` on it by `resourceNames`. The connector's Role also grants `create` on Events in the release namespace, for the provider's Warning Event. `test/chart` fails a render that grants either with `connector.naru` off.
 - **The connector's Role in each watched namespace** grants `list`, `watch`, `create`, `patch` and `delete` on interface 1's four kinds, `get`, `list` and `watch` on Leases with `resourceNames: [garam-connector-claim]`, and `get` on Pods and StatefulSets.
   - Every read goes through the cache, which lists and watches, so no `get` is needed on the four kinds. Server-side apply and both JSON patches are `patch`.
   - The cache asks for the claim by a field selector on its name, and RBAC applies `resourceNames` to a `list` or `watch` that carries one, so no other Lease is readable.
   - It never writes a Lease (CLAIM-2).
   - `internal/declaration/kube`'s tests run every read and write as a ServiceAccount bound to exactly this Role, and `test/chart` fails a chart that renders any other.
 - **CRDs:** installed by Helm with the installer's rights, and the only cluster-scoped objects the chart renders.
-- **No inbound path from outside the cluster:** no LoadBalancer or NodePort Service, no external IPs, no Ingress, no webhook. A NetworkPolicy admits no ingress to the manager, and reaches the API server alone. The connector's admits ingress to its bot token port alone, from the bots' Pods of the watched namespaces alone (ADR 0097). Its egress goes to the configured proxy, or else to garam on 443, plus DNS, plus the API server's range given as a value. `test/chart` fails a chart that renders otherwise.
+- **No inbound path from outside the cluster:** no LoadBalancer or NodePort Service, no external IPs, no Ingress, no webhook. A NetworkPolicy admits no ingress to the manager, and reaches the API server alone. The connector's admits ingress to its bot token port alone, from the bots' Pods of the watched namespaces alone (ADR 0097). Its egress goes to the configured proxy, or else to garam on 443, plus DNS, plus the API server's range given as a value, plus `connector.naru.egress` where the naru Machine provider is on. `test/chart` fails a chart that renders otherwise.
 - **PodSecurity `restricted`** admits both programs' Pods. `test/chart` creates each from its installed Deployment in a namespace enforcing it.
 - **Metrics:** off by default. Turned on, the manager serves plain HTTP inside the cluster, admitted from the peers the installer names alone. The connector serves none.
 - **Secrets:** no Secret or ConfigMap is ever reported, and no credential reaches a log, metric, event, status or report. A report does carry two free-text fields of a cluster-owned object as written, `spec.persona.instructions` and a status condition's `message` (REP-2, REP-9), so it holds no credential only while nobody types one into them.

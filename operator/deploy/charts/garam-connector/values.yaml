@@ -51,6 +51,34 @@ connector:
   reportOnly: false
   # rotationPeriod is how long the cluster's key signs before the connector rotates it.
   rotationPeriod: 720h
+  # naru runs interface 3's naru Machine provider in the connector, as the Machine API's caller of a
+  # naru fleet (garam-bot#1209). Off by default.
+  naru:
+    enabled: false
+    # url is orch's Machine API base URL, https, without /machines/v1alpha1.
+    url: ""
+    # root is the ConfigMap holding the PEM root orch's certificate chains to, under key.
+    root:
+      configMap: ""
+      key: ca.crt
+    # registrationToken is the Secret you create holding naru's one-time caller registration token,
+    # under key. It is read only while the connector holds no caller certificate, and may be deleted
+    # after.
+    registrationToken:
+      secret: garam-connector-naru-registration
+      key: token
+    # proxyAddress is naru-proxy's host:port, which a workspace's port is dialled through.
+    proxyAddress: ""
+    # proxyRoot is the ConfigMap holding the PEM root naru-proxy's certificate chains to, under key.
+    # Empty, the image's system roots.
+    proxyRoot:
+      configMap: ""
+      key: ca.crt
+    # rootDiskBytes is the root disk of every workspace's Machine, in bytes.
+    rootDiskBytes: 0
+    # egress are the address ranges and ports the connector reaches orch and naru-proxy at:
+    # a list of {cidr, port}.
+    egress: []
   resources:
     requests:
       cpu: 50m
