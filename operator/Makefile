@@ -191,6 +191,33 @@ conformance-workspace-access: ## Run interface 7's server suite against the conn
 	test "$$passed" -gt 0 || exit 1; \
 	exit $$status
 
+# Interface 5's server suite (api/model-gateway/v1alpha1/conformance.md) against the cluster's model
+# gateway, internal/modelgateway, served by test/modelgateway over stand-ins for the API server's keys
+# and Secrets, with gatewayfake's provider as its upstream. It runs once per profile (PRO-1, PRO-2):
+# the place profile with the base URL below a path of its own, and the model profile at the root
+# (T-2). The harness is built under the e2e tag, and no release carries it.
+MODEL_GATEWAY_HARNESS ?= $(LOCALBIN)/modelgateway-harness
+model_gateway_base_place = /gateway
+model_gateway_base_model =
+.PHONY: conformance-model-gateway conformance-model-gateway-place conformance-model-gateway-model
+conformance-model-gateway: conformance-model-gateway-place conformance-model-gateway-model ## Run interface 5's server suite against the cluster's model gateway, in each profile.
+conformance-model-gateway-place conformance-model-gateway-model: conformance-model-gateway-%:
+	go build -tags e2e -o "$(MODEL_GATEWAY_HARNESS)" ./test/modelgateway
+	@dir=$$(mktemp -d); status=0; \
+	"$(MODEL_GATEWAY_HARNESS)" --dir "$$dir" serve --base-path "$(model_gateway_base_$*)" >"$$dir/ready" 2>"$$dir/server.log" & pid=$$!; \
+	trap 'kill $$pid 2>/dev/null; rm -r -- "$${dir:?}"' EXIT; \
+	for _ in $$(seq 100); do [ -s "$$dir/ready" ] && break; sleep 0.1; done; \
+	[ -s "$$dir/ready" ] || { cat "$$dir/server.log" >&2; exit 1; }; \
+	cd $(CONFORMANCE_MODULE) || exit 1; \
+	CONFORMANCE_PROFILE=$* CONFORMANCE_BASE_URL="$$(cat "$$dir/url")" CONFORMANCE_TRUST_FILE="$$dir/ca.pem" \
+	CONFORMANCE_FIXTURE="$(MODEL_GATEWAY_HARNESS) --dir $$dir" \
+		go test -tags=conformance ./model-gateway/v1alpha1/conformance/server/ -v -count=1 2>&1 | tee "$$dir/log" || status=$$?; \
+	passed=$$(grep -c '^    --- PASS' "$$dir/log"); \
+	echo "conformance-model-gateway: interface 5's server suite, against internal/modelgateway, profile $*, base path '$(model_gateway_base_$*)':" \
+		"$$passed passed, $$(grep -c '^    --- FAIL' "$$dir/log") failed, $$(grep -c '^    --- SKIP' "$$dir/log") skipped"; \
+	test "$$passed" -gt 0 || exit 1; \
+	exit $$status
+
 # How long `go test` may run the Kind suite, every phase included. Without it
 # go test's default of 10 minutes applies, and AfterSuite was killed past it
 # with all nine specs passed (#276). Sized from the slowest phases measured on
@@ -364,7 +391,7 @@ verify-build-context: ## Fail when .dockerignore leaves out a file Go source emb
 # it is the one step that needs the network, and a contributor who cannot reach
 # github.com cannot push what the rest of the set just cleared either.
 .PHONY: ci
-ci: verify-tidy lint-config lint fmt test build verify-build-context chart-check conformance-workspace-access verify-pins ## Run the whole check set — module tidiness, lint, format, test, build, the image build context, the connector chart, interface 7's server suite against the connector, the action pins.
+ci: verify-tidy lint-config lint fmt test build verify-build-context chart-check conformance-workspace-access conformance-model-gateway verify-pins ## Run the whole check set — module tidiness, lint, format, test, build, the image build context, the connector chart, interface 7's server suite against the connector, interface 5's against the model gateway, the action pins.
 
 # The connector chart. Its crds/ are interface 1's CRDs, copied from the api module go.mod pins, so
 # `helm install --skip-crds` leaves them out; chart-check fails where the copies differ.
@@ -385,10 +412,11 @@ chart-check: helm setup-envtest ## Render and install the connector chart, and c
 ##@ Build
 
 .PHONY: build
-build: manifests generate fmt vet ## Build the manager, control and connector binaries.
+build: manifests generate fmt vet ## Build the manager, control, connector and model gateway binaries.
 	go build -o bin/manager cmd/main.go
 	go build -o bin/control ./cmd/control
 	go build -o bin/connector ./cmd/connector
+	go build -o bin/model-gateway ./cmd/model-gateway
 
 # Departs from the scaffold, and a regeneration restores the scaffold's form: the
 # manager refuses to start without an image for its init containers, so run takes
@@ -425,11 +453,19 @@ CONNECTOR_IMG ?= connector:latest
 docker-build-connector: ## Build docker image with the connector.
 	$(CONTAINER_TOOL) build --build-arg REVISION=$$(git rev-parse HEAD) -f build/connector.Dockerfile -t ${CONNECTOR_IMG} .
 
-# The three images this project publishes, built for publishing and pushed by nothing
+# The model gateway's image, from build/model-gateway.Dockerfile, built as the connector's is.
+MODEL_GATEWAY_IMG ?= model-gateway:latest
+
+.PHONY: docker-build-model-gateway
+docker-build-model-gateway: ## Build docker image with the model gateway.
+	$(CONTAINER_TOOL) build --build-arg REVISION=$$(git rev-parse HEAD) -f build/model-gateway.Dockerfile -t ${MODEL_GATEWAY_IMG} .
+
+# The four images this project publishes, built for publishing and pushed by nothing
 # here (delivery.md, ADR 0051): the manager's from Dockerfile, the control service's
-# from build/control.Dockerfile and the connector's from build/connector.Dockerfile,
-# each one linux/amd64 manifest, tagged locally garam-bot/operator-<image>:<REVISION>
-# and labelled with REVISION. The release workflow and the manual procedure for a
+# from build/control.Dockerfile, the connector's from build/connector.Dockerfile and
+# the model gateway's from build/model-gateway.Dockerfile, each one linux/amd64
+# manifest, tagged locally garam-bot/operator-<image>:<REVISION> and labelled with
+# REVISION. The release workflow and the manual procedure for a
 # development image both build through this target, then tag and push what it built.
 #
 # The default driver writes each image into the local image store, where `docker
@@ -443,11 +479,12 @@ REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
 IMAGE_PLATFORM = linux/amd64
 
 .PHONY: build-images
-build-images: ## Build the manager's, the control service's and the connector's images to publish, one linux/amd64 manifest each, and push nothing.
+build-images: ## Build the manager's, the control service's, the connector's and the model gateway's images to publish, one linux/amd64 manifest each, and push nothing.
 	@test -n "$(REVISION)" || { echo "build-images: REVISION is empty; pass one: make build-images REVISION=<commit>"; exit 1; }
 	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -t garam-bot/operator-manager:$(REVISION) .
 	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -f build/control.Dockerfile -t garam-bot/operator-control:$(REVISION) .
 	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -f build/connector.Dockerfile -t garam-bot/operator-connector:$(REVISION) .
+	BUILDX_NO_DEFAULT_ATTESTATIONS=1 $(CONTAINER_TOOL) build --platform=$(IMAGE_PLATFORM) --build-arg REVISION="$(REVISION)" -f build/model-gateway.Dockerfile -t garam-bot/operator-model-gateway:$(REVISION) .
 
 # Refuses IMAGE_REF where ADR 0078's tag rule forbids its push: under
 # garam-bot/operator-<image>, a release version tag (0.1.0-dev.N, 0.1.0-rc.N or 0.1.0, ADR 0081)
