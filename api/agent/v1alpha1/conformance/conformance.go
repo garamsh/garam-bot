@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/garamsh/garam-bot/api/agent/v1alpha1"
+	gateway "github.com/garamsh/garam-bot/api/model-gateway/v1alpha1"
+	"github.com/garamsh/garam-bot/api/model-gateway/v1alpha1/gatewayfake"
 )
 
 // Subject is an adapter under test.
@@ -30,6 +32,11 @@ type Subject struct {
 	Session v1alpha1.SessionSpec
 	// Timeout bounds each wait for an event. Zero is 3 minutes.
 	Timeout time.Duration
+	// Gateway, where set, is the model gateway Session's model.baseUrl reaches: interface 5's
+	// gatewayfake, which records each model call. ModelBot is the bot whose token Session's
+	// model.tokenFile holds. MODEL-1 runs only with them.
+	Gateway  *gatewayfake.Gateway
+	ModelBot gateway.TokenRequest
 }
 
 // Case is one test of the suite.

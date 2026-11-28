@@ -27,14 +27,33 @@ func Cases() []Case {
 		{Requirement: "EVT-1", Name: "an events read holds until an event is added", run: eventsHold},
 		{Requirement: "EVT-2", Name: "a task's last event is its one taskDone", run: taskDoneLast},
 		{Requirement: "MEM-1", Name: "the harness's answer is a message event", run: answered},
-		{
-			Requirement: "MODEL-1", Name: "model requests go to the gateway with the token file's token",
-			Pending: "needs a model gateway stub that records requests, which arrives with interface 5",
-		},
+		{Requirement: "MODEL-1", Name: "model requests go to the gateway with the token file's token", run: modelCalls},
 		{
 			Requirement: "TOOL-1", Name: "the harness reaches only the session's MCP servers, with their token files' tokens",
 			Pending: "needs an MCP server stub that records calls, and a harness that a task can make call it",
 		},
+	}
+}
+
+func modelCalls(t *testing.T, s *Subject) {
+	if s.Gateway == nil {
+		t.Skip("the subject gives no recording model gateway")
+	}
+	before, refused := len(s.Gateway.Requests()), s.Gateway.Refused()
+	s.session(t, "model")
+	s.task(t, "model", "model", "Reply with the word ready.")
+	s.until(t, "model", 0, doneOf("model"))
+	calls := s.Gateway.Requests()[before:]
+	if len(calls) == 0 {
+		t.Fatal("the task made no model request to the gateway")
+	}
+	for _, c := range calls {
+		if c.Bot != s.ModelBot {
+			t.Fatalf("a model request carried the token of %+v, want the token file's, of %+v", c.Bot, s.ModelBot)
+		}
+	}
+	if n := s.Gateway.Refused() - refused; n > 0 {
+		t.Fatalf("the gateway refused %d model requests: the harness sent another credential", n)
 	}
 }
 
