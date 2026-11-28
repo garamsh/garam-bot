@@ -25,14 +25,14 @@ The package's types are the schema, as `garamsh/naru`'s `lib/machineapi` holds i
 | Implementation | Harness | State |
 |---|---|---|
 | `agentfake` | none: it echoes a task's input and calls no model | the reference implementation, built, passing the suite |
-| claude-code | Claude Code | first production implementation; to build |
+| claude-code | Claude Code | first production implementation, `internal/claudeadapter/`, built; passes the suite against its image with `make test-claude-code` |
 | codex | Codex | second production implementation; to build |
 
 The first two implementations the suite runs against are `agentfake` and the claude-code adapter.
 
 ## Transport
 
-- **T-1.** The adapter MUST serve HTTP/1.1 on port `Port`, 7700, of the workspace, with every operation under `PathPrefix`, `/agent/v1alpha1/`. The caller reaches it only through interface 3's `Dial`, so the provider carries the connection and the adapter opens no other listener.
+- **T-1.** The adapter MUST serve HTTP/1.1 on port `Port`, 7700, of the workspace, with every operation under `PathPrefix`, `/agent/v1alpha1/`. The caller reaches it only through interface 3's `Dial`, so the provider carries the connection. The adapter opens no listener beyond that port except loopback-only proxies that forward solely to `model.baseUrl` and the session's tool URLs. Each binds 127.0.0.1 on a port the kernel picks, refuses any upstream but the one configured and follows no redirect, reads its token file for each request, and logs neither a token nor a header. Anything in the workspace can reach those loopback ports, which grants it no more than the token files it can already read: the adapter and its harness run as one numeric user, so the harness can read those files too.
 - **WIRE-1.** Bodies are JSON. The adapter MUST refuse a request body naming a member it does not know with 400 `invalid`, so a caller newer than the adapter learns that its member was not taken. The caller MUST ignore a member it does not know in an answer.
 - Every refusal is `ErrorBody`, `{"error": <code>, "message": <text>}`. The codes are `Code`'s. A caller acts on the HTTP status when it does not know the code.
 
@@ -95,7 +95,7 @@ The first two implementations the suite runs against are `agentfake` and the cla
 
 ## Open questions
 
-- **The terms of service of wrapping each harness.** Billing is decided: by API through the gateway, with no subscription login (comment 19858505). Whether driving Claude Code or Codex from an adapter with an API key, for a bot that is not a person, is within each product's terms is not checked. Each adapter's issue checks it before the adapter ships.
+- **The terms of service of wrapping Codex.** Billing is decided: by API through the gateway, with no subscription login (comment 19858505). For Claude Code the check is recorded on garam-bot#1210: an organization's own API key through the gateway is the one mode this version supports, under the Commercial Terms, with the binary unmodified and its built-in authentication neither removed nor disabled. Whether garam may pay for a bot's usage itself is not decided and nothing here builds it. The Codex adapter's issue checks its own before it ships.
 - **Density.** How many workspaces, and so how many harnesses, an execution place runs at once is not measured. The PC daemon's and the cluster's targets wait for a measurement.
 - **Several sessions in one adapter.** This version holds one. A workspace shared by bots (interface 1's `SharedRead`) does not need more, since each bot has its own workspace for its harness.
 - **Events past a session.** The events live as long as the session. A bound on how many it keeps, with 410 for a cursor before it, is an addition.

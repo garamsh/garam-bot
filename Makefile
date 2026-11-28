@@ -1,4 +1,4 @@
-.PHONY: lint format format-fix test test-privileged test-podworkspace build build-tools build-images toolchain-image proto generate ci hooks conformance-bot-token
+.PHONY: lint format format-fix test test-privileged test-podworkspace test-claude-code build build-tools build-images toolchain-image proto generate ci hooks conformance-bot-token
 
 # The toolchain floor every go command below runs under: `go install tool@version`
 # and `go run tool@version` take the toolchain from the tool's own `go.mod` rather
@@ -208,6 +208,22 @@ test-podworkspace:
 		POD_WORKSPACE_CONFORMANCE_IMAGE=$$conformance POD_WORKSPACE_HELPER_IMAGE=$$helper POD_WORKSPACE_EGRESS=true \
 		go test -tags conformance -count=1 -timeout 30m -v ./internal/podworkspace/ -run TestConformance
 
+# The claude-code adapter's conformance run (api/agent/v1alpha1/conformance)
+# against the built claude-code image, with the real Claude Code CLI in it. The
+# model gateway and the one MCP server are stand-ins of
+# internal/claudeadapter/claudetest, served by the test on the host and reached
+# from the container as host.docker.internal, so the run needs docker and no
+# API key, and it sends nothing off the machine. It also runs what the suite
+# marks pending for MODEL-1 and TOOL-1. It is not part of `make ci`: it builds
+# an image, pulls the Claude Code package, and takes minutes.
+CLAUDE_CODE_IMAGE ?= garam-bot-claude-code:test
+
+test-claude-code:
+	$(BUILD_ENV) docker build -f $(CLAUDE_CODE_DOCKERFILE) -t $(CLAUDE_CODE_IMAGE) .
+	@image=$$(docker image inspect --format '{{.Id}}' $(CLAUDE_CODE_IMAGE)) && \
+	echo "claude-code image $$image" && \
+	CLAUDE_ADAPTER_IMAGE=$$image go test -tags conformance -count=1 -timeout 30m -v ./internal/claudeadapter/ -run TestImage
+
 # `go build ./...` prints nothing on success and reports an empty match as a
 # stderr warning rather than an error, so a module holding no packages exits
 # zero exactly like a run that compiled every one (#715, #653). The count
@@ -294,7 +310,8 @@ AGENT_DOCKERFILE = build/agent.Dockerfile
 WORKSPACE_DOCKERFILE = build/workspace.Dockerfile
 RUNTIME_DOCKERFILE = build/runtime.Dockerfile
 WORKSPACEFILE_DOCKERFILE = build/workspacefile.Dockerfile
-build_inputs = $(AGENT_DOCKERFILE) $(WORKSPACE_DOCKERFILE) $(RUNTIME_DOCKERFILE) $(WORKSPACEFILE_DOCKERFILE) $(dockerignores)
+CLAUDE_CODE_DOCKERFILE = build/claude-code.Dockerfile
+build_inputs = $(AGENT_DOCKERFILE) $(WORKSPACE_DOCKERFILE) $(RUNTIME_DOCKERFILE) $(WORKSPACEFILE_DOCKERFILE) $(CLAUDE_CODE_DOCKERFILE) $(dockerignores)
 checked_paths = $(context_paths) $(build_inputs)
 
 # Read paths that are not in the tree. They are handed to git as pathspecs,
@@ -334,7 +351,7 @@ BUILD_ENV = BUILDX_NO_DEFAULT_ATTESTATIONS=1
 # numeric Config.User: the kubelet checks `runAsNonRoot` against the image's
 # user and refuses a name it cannot resolve. The workspace image runs as root
 # in the privileged shape and is not one of them.
-non_root_images = sherlock-agent garam-bot-runtime garam-bot-workspacefile
+non_root_images = sherlock-agent garam-bot-runtime garam-bot-workspacefile garam-bot-claude-code
 
 build-images:
 	@test -n "$(REVISION)" || { echo "build-images: REVISION is empty, and it is both the tag and the label; the default reads 'git rev-parse HEAD', which a checkout with no git metadata does not answer - pass one: make build-images REVISION=<commit>"; exit 1; }
@@ -346,6 +363,7 @@ build-images:
 	$(BUILD_ENV) docker build -f $(WORKSPACE_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t sherlock-workspace:$(REVISION) .
 	$(BUILD_ENV) docker build -f $(RUNTIME_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t garam-bot-runtime:$(REVISION) .
 	$(BUILD_ENV) docker build -f $(WORKSPACEFILE_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t garam-bot-workspacefile:$(REVISION) .
+	$(BUILD_ENV) docker build -f $(CLAUDE_CODE_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t garam-bot-claude-code:$(REVISION) .
 	@for image in $(non_root_images); do user=$$(docker image inspect --format '{{.Config.User}}' $$image:$(REVISION)) && printf '%s' "$$user" | grep -Eq '^[0-9]+(:[0-9]+)?$$' || { echo "$$image:$(REVISION): Config.User is [$$user], want a numeric uid or uid:gid, which the kubelet can check runAsNonRoot against"; exit 1; }; done
 
 # The toolchain image the privileged CI job runs in, read out of the
