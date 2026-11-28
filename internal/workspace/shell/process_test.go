@@ -46,7 +46,7 @@ func (f *fakeExecutor) Run(_ context.Context, req shell.Request) (shell.Result, 
 // skips inside a run commissioned to exercise it is the defect #604
 // reports, one layer up.
 func privilegedRun() bool {
-	return os.Getenv("SHERLOCK_PRIVILEGED_TESTS") != ""
+	return os.Getenv("GARAM_BOT_PRIVILEGED_TESTS") != ""
 }
 
 // requireRoot skips the test when the current effective user cannot drop
@@ -60,7 +60,7 @@ func requireRoot(t *testing.T) {
 		return
 	}
 	if privilegedRun() {
-		t.Fatalf("SHERLOCK_PRIVILEGED_TESTS is set but this run has euid %d: the privileged family cannot be exercised and must not report as if it were",
+		t.Fatalf("GARAM_BOT_PRIVILEGED_TESTS is set but this run has euid %d: the privileged family cannot be exercised and must not report as if it were",
 			os.Geteuid())
 	}
 	t.Skip("setuid path requires root; run `make test-privileged` to exercise fork+exec")
@@ -71,7 +71,7 @@ func requireRoot(t *testing.T) {
 // account, so a child dropped to another UID cannot enter it and fails on
 // the permission rather than on what the case is about. A privileged
 // workspace has the same problem and solves it by handing the workspace
-// directory to the exec account (ADR 0008); these tests hold no workspace,
+// directory to the exec account (ADR 0005); these tests hold no workspace,
 // so they open the path instead.
 func execAccountDir(t *testing.T) string {
 	t.Helper()
@@ -144,7 +144,7 @@ func requireUnprivileged(t *testing.T) {
 	}
 }
 
-// TestProcessExecutor_UntrustedChildCarriesDefaultCaps pins the ADR 0010
+// TestProcessExecutor_UntrustedChildCarriesDefaultCaps pins the ADR 0006
 // trust-class rule on the untrusted path: an agent-supplied command
 // runs under the executor's resource caps, and carries them from its
 // first instruction — the shim applies them before exec, so a plain
@@ -162,7 +162,7 @@ func TestProcessExecutor_UntrustedChildCarriesDefaultCaps(t *testing.T) {
 // TestProcessExecutor_UntrustedChildCarriesEveryCap reads the caps from
 // the kernel's own view of the child. Single-account mode carries four:
 // RLIMIT_NPROC counts the shared account's processes, so it applies
-// only to the privileged drop (ADR 0010).
+// only to the privileged drop (ADR 0006).
 func TestProcessExecutor_UntrustedChildCarriesEveryCap(t *testing.T) {
 	requireUnprivileged(t)
 	exec := shell.NewProcessExecutor(os.Geteuid(), 5*time.Second)
@@ -264,7 +264,7 @@ func TestProcessExecutor_TrustedGoBinaryRuns(t *testing.T) {
 		"the Go helper runs to completion as a trusted child")
 }
 
-// TestProcessExecutor_PrivilegedDropRunsAsExecUID pins the ADR 0008 drop
+// TestProcessExecutor_PrivilegedDropRunsAsExecUID pins the ADR 0005 drop
 // itself: a privileged executor's child runs as the configured exec
 // account and not as the account the executor runs as. Nothing else in
 // this package can pin it. The single-account case below asserts the
@@ -289,7 +289,7 @@ func TestProcessExecutor_PrivilegedDropRunsAsExecUID(t *testing.T) {
 }
 
 // TestProcessExecutor_SingleAccountRunsAsOwnUID pins the single-account
-// mode (ADR 0008): with AgentUID equal to the process euid, an
+// mode (ADR 0005): with AgentUID equal to the process euid, an
 // unprivileged executor runs children as its own account — no privilege
 // required, no agent_uid unavailable.
 func TestProcessExecutor_SingleAccountRunsAsOwnUID(t *testing.T) {
@@ -334,13 +334,13 @@ func TestProcessExecutor_RunsInWorkspace(t *testing.T) {
 
 func TestProcessExecutor_ScrubsPlatformEnv(t *testing.T) {
 	requireRoot(t)
-	t.Setenv("SHERLOCK_TEST_PLATFORM_SECRET", "hunter2")
+	t.Setenv("GARAM_BOT_TEST_PLATFORM_SECRET", "hunter2")
 	exec := shell.NewProcessExecutor(testExecUID, 5*time.Second)
 
 	res, err := exec.Run(context.Background(), shell.Request{Command: "env"})
 
 	require.NoError(t, err)
-	assert.NotContains(t, res.Stdout, "SHERLOCK_TEST_PLATFORM_SECRET",
+	assert.NotContains(t, res.Stdout, "GARAM_BOT_TEST_PLATFORM_SECRET",
 		"platform variables must not reach child processes (ADR 0003)")
 	assert.Contains(t, res.Stdout, "PATH=", "the minimal basics still reach the child")
 }
@@ -350,8 +350,8 @@ func TestProcessExecutor_RequestEnvAppliesOnTop(t *testing.T) {
 	exec := shell.NewProcessExecutor(testExecUID, 5*time.Second)
 
 	res, err := exec.Run(context.Background(), shell.Request{
-		Command: "printf %s \"$SHERLOCK_TEST_REQUEST_VAR\"",
-		Env:     []string{"SHERLOCK_TEST_REQUEST_VAR=from-request"},
+		Command: "printf %s \"$GARAM_BOT_TEST_REQUEST_VAR\"",
+		Env:     []string{"GARAM_BOT_TEST_REQUEST_VAR=from-request"},
 	})
 
 	require.NoError(t, err)
@@ -378,7 +378,7 @@ func TestProcessExecutor_LocalGoTest(t *testing.T) {
 		uid = testExecUID
 	}
 	root := execAccountDir(t)
-	t.Setenv("SHERLOCK_TEST_PLATFORM_SECRET", "must-not-reach-test")
+	t.Setenv("GARAM_BOT_TEST_PLATFORM_SECRET", "must-not-reach-test")
 	goRoot, err := exec.Command("go", "env", "GOROOT").Output()
 	require.NoError(t, err, "locate the test runner toolchain")
 	goBinary := filepath.Join(strings.TrimSpace(string(goRoot)), "bin", "go")
@@ -389,7 +389,7 @@ import (
 )
 func TestGreeting(t *testing.T) {
     if os.Getuid() != %d { t.Fatalf("unexpected uid: %%d", os.Getuid()) }
-    if os.Getenv("SHERLOCK_TEST_PLATFORM_SECRET") != "" { t.Fatal("platform environment leaked") }
+    if os.Getenv("GARAM_BOT_TEST_PLATFORM_SECRET") != "" { t.Fatal("platform environment leaked") }
     if greeting() != "hello" { t.Fatal("wrong greeting") }
     t.Log("workspace-test-ran")
 }

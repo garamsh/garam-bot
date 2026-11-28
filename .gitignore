@@ -32,19 +32,10 @@ go.work.sum
 # Environment data (docs/architecture/environment.md)
 data/
 
-# Tool executables make build-tools compiles into each tool's directory
-/tools/*/[a-z_]*
-!/tools/*/*.go
-!/tools/*/*.md
-!/tools/*/*.yaml
-!/tools/*/*.yml
-!/tools/*/*.json
-
 # Binaries a direct build writes at the repository root, each under its package's
-# name: cmd/sherlock, and every harness package under research/. Only these
-# two names; a binary built under any other name is not covered.
-/sherlock
-/harness
+# name: cmd/garam-bot. Only this name; a binary built under any other name is
+# not covered.
+/garam-bot
 
 # The golangci-lint cache make lint keeps per checkout
 /.cache/

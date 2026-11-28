@@ -8,13 +8,12 @@ import (
 )
 
 // workspaceAddrKey is the listener address the workspace operation
-// subcommands call. It is the key the agent resolves for the same
-// address, so its environment form is SHERLOCK_WORKSPACE_ADDR, the
-// variable every spawned tool already holds.
+// subcommands call. Its environment form is GARAM_BOT_WORKSPACE_ADDR,
+// the variable a harness's tools hold.
 const workspaceAddrKey = "workspace-addr"
 
 // AddWorkspaceClientFlags registers the workspace operation subcommands'
-// one setting as a flag on fs (ADR 0027).
+// one setting as a flag on fs (ADR 0011).
 func AddWorkspaceClientFlags(fs *pflag.FlagSet) {
 	fs.String(workspaceAddrKey, defaultWorkspaceAddr, "gRPC address of the workspace listener to call")
 }
@@ -27,13 +26,13 @@ type WorkspaceClientConfig struct {
 }
 
 // ResolveWorkspaceClient builds the operation subcommands' settings from
-// fs: the flag, then SHERLOCK_WORKSPACE_ADDR, then the default. No config
+// fs: the flag, then GARAM_BOT_WORKSPACE_ADDR, then the default. No config
 // file is read, so the shared flags that name one are refused rather
-// than ignored (ADR 0027).
+// than ignored (ADR 0011).
 func ResolveWorkspaceClient(fs *pflag.FlagSet) (WorkspaceClientConfig, error) {
 	for _, name := range []string{"config", strictConfigFlag} {
 		if flag := fs.Lookup(name); flag != nil && flag.Changed {
-			return WorkspaceClientConfig{}, fmt.Errorf("--%s: the workspace operations read no config file; give the address with --%s or SHERLOCK_WORKSPACE_ADDR", name, workspaceAddrKey)
+			return WorkspaceClientConfig{}, fmt.Errorf("--%s: the workspace operations read no config file; give the address with --%s or GARAM_BOT_WORKSPACE_ADDR", name, workspaceAddrKey)
 		}
 	}
 	v := newConfigViper()

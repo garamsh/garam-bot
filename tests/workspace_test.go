@@ -19,12 +19,12 @@ import (
 	"github.com/garamsh/garam-bot/internal/workspace"
 )
 
-// TestEndToEnd_WorkspaceServesContract drives "sherlock workspace" as a
+// TestEndToEnd_WorkspaceServesContract drives "garam-bot workspace" as a
 // subprocess — real binary, real gRPC, nothing mocked: the agent's
 // tools (or a test driver) dial the workspace gRPC and call
-// Read/Write/List (ADR 0017).
+// Read/Write/List (ADR 0006).
 func TestEndToEnd_WorkspaceServesContract(t *testing.T) {
-	binary := buildSherlockBinary(t)
+	binary := buildGaramBotBinary(t)
 	workspaceDir := filepath.Join(t.TempDir(), "workspace")
 
 	cmd, addr, exited := startWorkspaceBinary(t, binary, workspaceDir, emptyConfig(t, "workspace.yaml"))
@@ -69,9 +69,9 @@ func TestEndToEnd_WorkspaceServesContract(t *testing.T) {
 // TestEndToEnd_WorkspaceNonLoopbackFailsStartup runs the workspace with
 // a non-loopback --addr: startup must fail with an error stating the
 // loopback-only requirement — an unauthenticated gRPC listener is a
-// remote shell into the workspace (ADR 0012, issue #209).
+// remote shell into the workspace (ADR 0005, issue #209).
 func TestEndToEnd_WorkspaceNonLoopbackFailsStartup(t *testing.T) {
-	binary := buildSherlockBinary(t)
+	binary := buildGaramBotBinary(t)
 	configPath := emptyConfig(t, "workspace.yaml")
 
 	for _, addr := range []string{"0.0.0.0:8081", ":8081"} {
@@ -85,10 +85,10 @@ func TestEndToEnd_WorkspaceNonLoopbackFailsStartup(t *testing.T) {
 	}
 }
 
-// startWorkspaceBinary starts "sherlock workspace" as a subprocess on a
+// startWorkspaceBinary starts "garam-bot workspace" as a subprocess on a
 // free loopback port with workspace as the workspace directory and
 // exec-uid set to the test process's own UID (single-account mode,
-// ADR 0008), waits until it serves gRPC, and returns the process
+// ADR 0005), waits until it serves gRPC, and returns the process
 // handle, the gRPC address, and a channel receiving the process's exit
 // result. Test cleanup kills the process if it is still running.
 func startWorkspaceBinary(t *testing.T, binary, workspaceDir, configPath string) (*exec.Cmd, string, <-chan error) {
@@ -162,4 +162,14 @@ func dialWorkspace(t *testing.T, addr string) (workspace.WorkspaceClient, func()
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	return workspace.NewWorkspaceClient(conn), func() { _ = conn.Close() }
+}
+
+// emptyConfig writes an empty config file — it keeps a binary run hermetic against
+// ./configs/workspace.yaml and the XDG config files on the host — and returns its path.
+func emptyConfig(t *testing.T, name string) string {
+	t.Helper()
+	configPath := filepath.Join(t.TempDir(), name)
+	require.NoError(t, os.WriteFile(configPath, nil, 0o600))
+
+	return configPath
 }

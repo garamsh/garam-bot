@@ -23,11 +23,11 @@ type ServeOptions struct {
 	// Addr is the gRPC listener's address. It must already be one the
 	// caller has decided may be served — the listener carries no
 	// authentication in this phase, so a non-loopback bind is a remote
-	// shell into the workspace (ADR 0012).
+	// shell into the workspace (ADR 0005).
 	Addr string
 	// Dir is the workspace directory, created on first use.
 	Dir string
-	// ExecUID is the UID exec children run as (ADR 0008).
+	// ExecUID is the UID exec children run as (ADR 0005).
 	ExecUID int
 	// ExecTimeout is the per-call ceiling for Exec commands.
 	ExecTimeout time.Duration
@@ -35,7 +35,7 @@ type ServeOptions struct {
 
 // Serve runs the workspace's gRPC listener until ctx is done.
 //
-// The workspace is the data plane (ADR 0017): it owns the workspace
+// The workspace is the data plane (ADR 0006): it owns the workspace
 // directory, serves Read/Write/List, and runs Exec children through its
 // own executor — the agent executes nothing itself. It chowns its root
 // to the exec UID when privileged, so files written through the gRPC

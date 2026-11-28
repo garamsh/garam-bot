@@ -11,7 +11,7 @@ import (
 // ShimCommand is the argv verb that runs the platform binary as the
 // resource-limit shim: it applies the caps to itself and execs the
 // command, so the caps are in force before the child's first
-// instruction (ADR 0008).
+// instruction (ADR 0005).
 const ShimCommand = "exec-limits"
 
 // shimSeparator ends the cap list; the program path and its argv

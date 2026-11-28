@@ -20,7 +20,7 @@ Every claim about another repository below holds at the revision it names:
 
 ### Declare anywhere, manage in garam
 
-- **One schema, three places to declare** (ADR 0036). Interface 1, `bot.garam.sh` at `v1alpha1`, reads the same from a file and a CRD (ADR 0032). A bot is declared:
+- **One schema, three places to declare** (ADR 0018). Interface 1, `bot.garam.sh` at `v1alpha1`, reads the same from a file and a CRD (ADR 0014). A bot is declared:
 
   | Where | Owner | Marker |
   |---|---|---|
@@ -30,16 +30,16 @@ Every claim about another repository below holds at the revision it names:
 
   Interface 1's OWN-1 calls an object marked `cluster` "the cluster's". It is to name the place's own objects at every kind of place, by a wording release of interface 1 (§Goals ④ and ⑤, G7).
 - **garam shows every bot of every place** from the place's reports, and changes only what it owns. A place applies garam's declarations and never changes its own objects on garam's word (the cluster-connection protocol's DECL-11 to DECL-14).
-- **A bot runs without garam** (ADR 0031). A place that loses garam keeps running what it runs, and a bot declared at its place needs no garam.
+- **A bot runs without garam** (ADR 0013). A place that loses garam keeps running what it runs, and a bot declared at its place needs no garam.
 - **Only a bot garam declared and placed has a garam identity.** Its connector obtains its token (§Authentication). A bot declared at its place runs with no garam token: garam ADR-0184's decision "A cluster's token reaches the cluster-connection routes, and the mint of the tokens of a bot placed on that cluster by a live declaration, and nothing else" and the protocol's AUTH-5 refuse one. Whether such a bot gets a garam identity is open with garam (§Open questions).
 
 ### Execution places and their connectors
 
-- **An execution place is a cluster, a PC or a naru-host place, and each runs one connector, registered once** (ADR 0036, ADR 0039).
+- **An execution place is a cluster, a PC or a naru-host place, and each runs one connector, registered once** (ADR 0018, ADR 0021).
 
   | Place | Connector | Installed by | A bot's process runs as | Workspace providers (interface 3) |
   |---|---|---|---|---|
-  | Kubernetes cluster | the connector in `operator/`, beside its manager (garam-bot-operator ADR 0090) | its Helm chart | one StatefulSet of one, the runtime image (ADR 0033) | Pod; naru Machine where the cluster reaches a naru fleet |
+  | Kubernetes cluster | the connector in `operator/`, beside its manager (garam-bot-operator ADR 0090) | its Helm chart | one StatefulSet of one, the runtime image (ADR 0015) | Pod; naru Machine where the cluster reaches a naru fleet |
   | Linux PC | `garam-bot daemon` | a system package, a systemd service | a child `garam-bot run` | container, and mvmd with KVM |
   | Mac | `garam-bot daemon` | a package, a launchd service | a child `garam-bot run` | container |
   | naru-host place | `garam-bot daemon`, on a machine beside the fleet | its own package | a child `garam-bot run` | naru Machine |
@@ -55,7 +55,7 @@ Every claim about another repository below holds at the revision it names:
 
 ### Pull only
 
-- **Every connection is opened by the place** (ADR 0036). garam opens no connection to a place, and a place opens no inbound port (garam-bot-operator ADR 0087, ADR 0091; the protocol's T-1).
+- **Every connection is opened by the place** (ADR 0018). garam opens no connection to a place, and a place opens no inbound port (garam-bot-operator ADR 0087, ADR 0091; the protocol's T-1).
 - **Declarations** are long-polled with a cursor, tombstones and a purge point (the protocol's DECL-1 to DECL-6; garam ADR-0187).
 - **Reports** are pushed by the place, as its whole view, within 10 seconds of a change and every 5 minutes (the protocol's REP-1 to REP-9). garam keeps the latest as untrusted display data (garam ADR-0188).
 - **Messages to a bot** reach its process by long poll or stream that the bot's process opens with its token. garam's mailbox long poll for a bot is garam's to build (G4).
@@ -63,7 +63,7 @@ Every claim about another repository below holds at the revision it names:
 
 ### Authentication
 
-The standards are ADR 0037's.
+The standards are ADR 0019's.
 
 | Party | Standard | Token | What exists | What is to build |
 |---|---|---|---|---|
@@ -71,13 +71,13 @@ The standards are ADR 0037's.
 | The CLI | RFC 8628 device authorization | a session held as a bearer | garam ADR-0120 | — |
 | The PC app | RFC 8628 device authorization | a session held as a bearer | — | goal ⑤, on the CLI's endpoints |
 | A connector | `private_key_jwt` (RFC 7523) | one hour, read on every request | garam ADR-0184, garam#2046 | the PC and naru-host place records (§Goals ④ and ⑤, 5.1) |
-| A bot garam declared and placed | RFC 8693 token exchange by its place's connector, bound to the bot process's key by DPoP (RFC 9449), below | at most one hour, DPoP-bound, held by the bot's process, never in a workspace | the exchange and its binding at garam `371af83ebcc3a3af033929578e0b12abf54ed872`: garam#2049 (PR garam#2077) and garam#2078 (PR garam#2123), under garam ADR-0191 | at a cluster, the proof's way from the bot's process to its connector and the token's way back: interface 6 (ADR 0042), garam-bot#1255 | the same at a PC and a naru host, with the daemon (ADR 0039); a garam route that accepts the token |
+| A bot garam declared and placed | RFC 8693 token exchange by its place's connector, bound to the bot process's key by DPoP (RFC 9449), below | at most one hour, DPoP-bound, held by the bot's process, never in a workspace | the exchange and its binding at garam `371af83ebcc3a3af033929578e0b12abf54ed872`: garam#2049 (PR garam#2077) and garam#2078 (PR garam#2123), under garam ADR-0191 | at a cluster, the proof's way from the bot's process to its connector and the token's way back: interface 6 (ADR 0024), garam-bot#1255 | the same at a PC and a naru host, with the daemon (ADR 0021); a garam route that accepts the token |
 | A bot declared at its place | none from garam | — | — | open with garam |
 | A tool or a model | garam's model and tool tokens, DPoP-bound to the bot process's key; in the workspace, tokens the place's gateway and tool proxy issue for their own use | at most one hour; the workspace's in token files (interface 2's CRED-1) | — | interface 5 (G3); the tool proxy (G6, B6); garam#2078 |
 | A first-party service (cowork, codehub) | `private_key_jwt` with a key in Transit | at most 300 seconds, for the policy service | garam ADR-0129, `docs/architecture/machine-identity.md` §cowork's principal | garam#2061, codehub#327 |
 | A naru caller | a certificate the signer issues, renewed by its holder | 90 days at most | `naructl caller credential`, by hand | naru#409 |
 
-- **The bot-token exchange** (ADR 0037), for garam#2049 to specify:
+- **The bot-token exchange** (ADR 0019), for garam#2049 to specify:
   - the connector calls garam's token endpoint with `grant_type` `urn:ietf:params:oauth:grant-type:token-exchange`;
   - `actor_token` is the connector's own access token;
   - `subject_token` is of a garam-defined token type whose value names the bot's GRN;
@@ -85,14 +85,14 @@ The standards are ADR 0037's.
   - the issued token's `sub` is the bot's GRN, `act.sub` the place's GRN, `aud` garam's audience, `scope` what was asked and allowed, and it expires within an hour;
   - garam refuses a bot that no live declaration places on that place;
   - the request carries a DPoP proof the bot's process signed, and the issued token is bound to that key (below).
-- **Every token garam issues to a bot's process is bound to that process's key** (sauce, `garamsh/discussions` discussion 6, comment 19863377; ADR 0037; garam ADR-0191, `docs/architecture/adr/0191-every-token-garam-issues-to-a-bots-process-is-bound-to-that-processs-key-by-dpop.md` at garam `371af83ebcc3a3af033929578e0b12abf54ed872`, built by garam#2078):
+- **Every token garam issues to a bot's process is bound to that process's key** (sauce, `garamsh/discussions` discussion 6, comment 19863377; ADR 0019; garam ADR-0191, `docs/architecture/adr/0191-every-token-garam-issues-to-a-bots-process-is-bound-to-that-processs-key-by-dpop.md` at garam `371af83ebcc3a3af033929578e0b12abf54ed872`, built by garam#2078):
   - **What is bound:** the access token the exchange issues, and the model and tool tokens garam issues to bots (the ai-gateway's, and the brokered apps' of §External apps). Each is a DPoP token (RFC 9449), `token_type` `DPoP`, carrying the key's thumbprint as `cnf.jkt`. A token garam does not issue, such as a `secretRef` tool's credential, is outside this.
   - **The key** is made in the bot's process when it starts, and never leaves it: not to a file, a Secret, the connector or a workspace. A new process makes a new key and needs a new exchange, so a token bound to an earlier process's key is never used again.
   - **Every request** carries a proof signed by that key, with `htm`, `htu`, `iat`, `jti`, and `ath` where a token is sent. garam's resource servers verify the proof and `cnf.jkt`, refuse a `jti` seen within the `iat` window, and refuse a bound token presented as `Bearer`.
   - **The token endpoint always requires garam's nonce** (RFC 9449 §8). A connector's first exchange of a process is answered 400 `use_dpop_nonce` with the nonce in `DPoP-Nonce`, and the connector retries with a proof carrying it. Every answer of the exchange carries the current nonce; one nonce serves a five-minute period and is accepted through the next. The proof is ES256 with its public `jwk` in the header, `typ` `dpop+jwt`, and `htu` the token endpoint's URL; a bad one is 400 `invalid_dpop_proof`. `platform/api/machine.yaml` §exchangeClientAssertion at garam `371af83ebcc3a3af033929578e0b12abf54ed872` is authoritative for the form.
   - **What garam built** (garam#2078, at garam `371af83ebcc3a3af033929578e0b12abf54ed872`): the exchange requires the proof, answers `token_type` `DPoP` and keeps `cnf.jkt` beside the token; a proof's `jti` is spent only once the connector's token authenticated; the resource-server check and the read of a token with its key exist, and no garam route accepts a bot token yet. Bot tokens minted before the binding were deleted, so a connector that exchanges without a proof is refused; the cluster's connector carries one (garam-bot#1255).
   - **The exchange's proof is the bot's process's.** The connector sends a proof the bot's process signed for the token endpoint, beside its own token as the `actor_token`, so the connector never holds the bot's key.
-  - **The proof and the token travel by interface 6** (`api/bot-token/v1alpha1/`, ADR 0042). The bot's process calls its connector with the place's credential naming the bot and its proof, and the connector answers garam's token. No bot token is at rest: the process holds it in memory, and the connector keeps none past its answer. A place credential obtains one token, so one read after its use obtains nothing.
+  - **The proof and the token travel by interface 6** (`api/bot-token/v1alpha1/`, ADR 0024). The bot's process calls its connector with the place's credential naming the bot and its proof, and the connector answers garam's token. No bot token is at rest: the process holds it in memory, and the connector keeps none past its answer. A place credential obtains one token, so one read after its use obtains nothing.
     - **At a cluster** the connector serves the call over TLS with a certificate it makes itself, and the place's credential is the Bot's projected ServiceAccount token, checked against the API server's keys (garam-bot-operator ADR 0097).
     - **At a PC and a naru host** the daemon serves it, with a credential decided with the daemon (§Open questions).
   - **Not mTLS binding (RFC 8705):** a place does not control where TLS is terminated between it and garam, and a DPoP proof passes any proxy.
@@ -113,7 +113,7 @@ The standards are ADR 0037's.
 
 ### Key management
 
-- **The target** (sauce, `garamsh/discussions` discussion 6, comment 19857399; ADR 0037):
+- **The target** (sauce, `garamsh/discussions` discussion 6, comment 19857399; ADR 0019):
   - **Nothing made by hand.** No key is made, placed or renewed by a person. The root of trust is AWS KMS, which holds no value. People handle it and external service tokens (GitHub, Proxmox, Cloudflare), and nothing else.
   - **Recovery keys are kept offline** (comment 19858505). OpenBao's recovery keys and naru's recovery key are emergency keys the system makes once and uses only in a disaster. They stay on USB, offline, and do not move to KMS. Only day-to-day operating keys are in KMS and Transit.
   - **KEKs and signing keys** are held in OpenBao Transit or KMS, and never leave it.
@@ -129,14 +129,14 @@ The standards are ADR 0037's.
      - naru#412: the signer's authorities in KMS, certificates renewed by their holders, ACME DNS-01 for the proxy;
      - codehub#327: the AuthZEN and registry keys in Transit, no shared secrets.
   3. garam-bot#1207: the manager and the control service through the connector, bot tokens by RFC 8693, no gateway TLS.
-  4. aurora#864. aurora ADR 0037 (aurora#862) built ahead of the switch:
+  4. aurora#864. aurora ADR 0019 (aurora#862) built ahead of the switch:
      - the Transit keys `garam-kek`, `garam-issuer`, `garam-policy-feed`, `garam-message`, `codehub-authzen` and `cowork-deployment`;
      - a PKI root with the intermediates `pki_garam_machine` and `pki_int`;
      - the issuers `openbao-internal` and `openbao-garam-machine`;
      - trust-manager's bundle `aurora-internal-ca`.
 
      Nothing reads them yet. What remains:
-     - a Transit key for codehub's registry tokens, which aurora ADR 0037 does not declare;
+     - a Transit key for codehub's registry tokens, which aurora ADR 0019 does not declare;
      - the Transit roles from the PM's map of ServiceAccount to key;
      - the switch, at the registration step: garam's switch release, aurora connected by the connector's registration token, and every hand-placed key deleted.
 
@@ -144,7 +144,7 @@ The standards are ADR 0037's.
 
 ### Workspaces and agents
 
-- **One workspace interface, many implementations** (ADR 0034). Interface 3 is the Go driver interface `Provider`, `api/workspace/v1alpha1/` (garam-bot#1206):
+- **One workspace interface, many implementations** (ADR 0016). Interface 3 is the Go driver interface `Provider`, `api/workspace/v1alpha1/` (garam-bot#1206):
   - its operations are create, get, list, start, stop, delete, exec, files, dial and snapshot;
   - its specification maps every operation, phase and error onto naru's `machines/v1alpha1`;
   - a workspace's state is one data volume at `/workspace`, and it sends nothing out but what its egress rules allow.
@@ -156,7 +156,7 @@ The standards are ADR 0037's.
   | Mac | container |
   | naru-host place | naru Machine |
 
-- **The agent interface** (ADR 0035) is the HTTP protocol `agent/v1alpha1`, `api/agent/v1alpha1/` (garam-bot#1206):
+- **The agent interface** (ADR 0017) is the HTTP protocol `agent/v1alpha1`, `api/agent/v1alpha1/` (garam-bot#1206):
   - an adapter in the workspace image serves it on port 7700, and the bot's process reaches it through `Dial`;
   - a session runs one harness: Claude Code, Codex or another adapter;
   - tasks carry the bot's mailbox, and events are long-polled. The bot's process keeps the bot's memory from them.
@@ -169,7 +169,7 @@ The standards are ADR 0037's.
 
 ### External apps
 
-- **garam brokers external apps** (ADR 0038; sauce, comment 19857097):
+- **garam brokers external apps** (ADR 0020; sauce, comment 19857097):
   - **one official app per external service,** GitHub first, installed once per organization; garam records each installation under the organization;
   - **the scope lives in garam IAM:** a grant names which bot may use which installation with which scope, and garam's policy service decides each request as an AuthZEN evaluation. There is no Connection resource (comment 19791501);
   - **short narrowed tokens:** a bot's tool proxy at the place exchanges the bot's token by RFC 8693 for one installation and one scope, and garam mints the service's narrowest token, at most an hour long. For GitHub that is an installation token with `repositories` and `permissions` set. garam calls the service, never the place;
@@ -203,12 +203,12 @@ The standards are ADR 0037's.
   | the products (qnt, knowno, neocity, murim-24, janggi12) | unchanged |
 
 - **garam-bot is not merged into garam** (comment 19857166):
-  - a bot must run without garam (ADR 0031), and the boundary is crossed only through versioned public interfaces;
+  - a bot must run without garam (ADR 0013), and the boundary is crossed only through versioned public interfaces;
   - garam is deployed to one cluster of ours, while garam-bot is installed in users' clusters and PCs, so it needs its own compatibility promise;
   - kept apart, it is easier to publish as open source.
 
   garam pins a released version of `garam-bot/api`, and a breaking change only comes with a new version.
-- **`cmd/sherlock` goes** (ADR 0040):
+- **`cmd/sherlock` goes** (ADR 0022):
   - `sherlock agent` and the in-house loop are removed;
   - the workspace server, its operations and its MCP server move under `garam-bot workspace`;
   - the memory store stays as the candidate for the bot's memory.
@@ -217,7 +217,7 @@ The standards are ADR 0037's.
 
 ### The PC daemon and the PC app
 
-These are designed in goal ④ and built in goal ⑤ (sauce, comment 19857097; ADR 0039).
+These are designed in goal ④ and built in goal ⑤ (sauce, comment 19857097; ADR 0021).
 
 - **Ownership.** garam-bot owns both: `garam-bot daemon` in the root module, the PC app in `app/`.
 - **Registration:**
@@ -246,7 +246,7 @@ These are designed in goal ④ and built in goal ⑤ (sauce, comment 19857097; A
   - G5. garam-bot: interface 3's Pod provider for a cluster. Needs garam-bot#1206.
   - G6. garam-bot: the tool proxy at the place, in the `secretRef` and `federated` modes. Needs garam-bot#1206.
   - G7. garam-bot: a wording release of interface 1, in which OWN-1's `cluster` names the place's own objects at every kind of place.
-  - G8. garam-bot: ADR 0040's removal of `sherlock agent` and the move of `sherlock workspace` under `garam-bot`. Needs garam-bot#1205.
+  - G8. garam-bot: ADR 0022's removal of `sherlock agent` and the move of `sherlock workspace` under `garam-bot`. Needs garam-bot#1205.
   - G9. garam-bot: the callers' suites of interfaces 2 and 3, their pending cases (CRED-1, VER-2) included. Needs G1 and G2.
   - G10. End to end on aurora: a bot declared in garam runs through the cluster connector in a naru Machine, reached through naru-proxy, with the claude-code adapter, the gateway, its messages and a tool by `secretRef`, and a cluster-declared bot shows in garam. Needs G1 to G6, garam-bot-operator#443 to #446, and garam#2049.
   - 5.1. garam: a place record for every kind of place (cluster, PC, naru-host place), widening garam ADR-0184's cluster record, and a registration token minted for a PC or a naru-host place.
@@ -267,11 +267,11 @@ These are designed in goal ④ and built in goal ⑤ (sauce, comment 19857097; A
 |---|---|---|
 | garam | Connected-cluster records (garam#2045) and their registration, `private_key_jwt` exchange and rotation (garam#2046), ADR-0184 to ADR-0186. Declarations long-polled (garam#2048, ADR-0187). Reports kept as untrusted display data (garam#2050, ADR-0188). The bot-token mint as RFC 8693 (garam#2049, PR garam#2077) and its DPoP binding (garam#2078, ADR-0191), at garam `371af83ebcc3a3af033929578e0b12abf54ed872`. OIDC with PKCE, the CLI's device grant (ADR-0120), the OIDC issuer (ADR-0141), Transit for message keys (ADR-0104) | The cluster-connection server suite in CI (garam#2047). The bot's identity under IAM (garam#2027). garam declares and never calls naru (garam#2042). The vendored cluster-connection specification re-pinned to `api/cluster-connection/v1alpha1/` after #1205, deciding there whether ADR-0186 needs a successor (#1205's consumers). Messages to a bot (G4). Place records (5.1, 5.3). The broker (B2 to B5, B7, B8). Keys (garam#2061) |
 | garam-bot's `operator/`, moved from garam-bot-operator (#1205) | The connector's registration, key custody and rotation (garam-bot-operator#449, ADR 0088, ADR 0093). Declarations applied with one owner per object (garam-bot-operator#452). Reports (garam-bot-operator#454). The cluster-connection interface and its reference server (ADR 0092, garam-bot-operator#447), now in `api/` (#1205). Conformance suites and the rotation period as a flag (garam-bot-operator#439, ADR 0094). Bot tokens by interface 6 (garam-bot#1255, operator ADR 0097) | The Bot reconciler (garam-bot-operator#444). The chart (garam-bot-operator#445). End to end (garam-bot-operator#446). Registering again (garam-bot-operator#450). The manager and the control service through the connector (garam-bot#1207) |
-| garam-bot | Interface 1 (ADR 0032). The runtime that runs one Bot (ADR 0033). Interfaces 2 and 3 with reference implementations (garam-bot#1206, ADR 0034, ADR 0035). The module rename and the operator's move (#1205). Interface 6 and the runtime's bot token from its connector (garam-bot#1255, ADR 0042). The manager's Bot reconciler, one StatefulSet of one per Bot (garam-bot#1254, garam-bot-operator ADR 0098). The naru Machine provider, `pkg/naruworkspace`, run in the cluster connector where its chart turns it on, passing interface 3's suite against naru's `machineapifake` (G1, garam-bot#1209; the run against orch is pending) | `cmd/sherlock` (G8). The naru Machine provider's run against orch (G1) and the Pod provider (G5). The adapters (G2, 5.10). Interface 5 and the gateway (G3). The tool proxy (G6, B6). Interface 1's wording release (G7). The callers' suites (G9). Interface 4 `v1alpha2` (5.2). The daemon (5.4) and the naru-host place (5.5). The other providers (5.6). The PC app (5.7 to 5.9). Keys (garam-bot#1207) |
+| garam-bot | Interface 1 (ADR 0014). The runtime that runs one Bot (ADR 0015). Interfaces 2 and 3 with reference implementations (garam-bot#1206, ADR 0016, ADR 0017). The module rename and the operator's move (#1205). Interface 6 and the runtime's bot token from its connector (garam-bot#1255, ADR 0024). The manager's Bot reconciler, one StatefulSet of one per Bot (garam-bot#1254, garam-bot-operator ADR 0098). The naru Machine provider, `pkg/naruworkspace`, run in the cluster connector where its chart turns it on, passing interface 3's suite against naru's `machineapifake` (G1, garam-bot#1209; the run against orch is pending) | `cmd/sherlock` (G8). The naru Machine provider's run against orch (G1) and the Pod provider (G5). The adapters (G2, 5.10). Interface 5 and the gateway (G3). The tool proxy (G6, B6). Interface 1's wording release (G7). The callers' suites (G9). Interface 4 `v1alpha2` (5.2). The daemon (5.4) and the naru-host place (5.5). The other providers (5.6). The PC app (5.7 to 5.9). Keys (garam-bot#1207) |
 | naru | The Machine API's types, client, conformance test and in-memory implementation (`lib/machineapi`, ADR 0108). orch serving the Machine API on its listener, with its records and each caller's event log, and no Machine placed (naru#381). The caller certificate (signer `POST /v1/caller`) | Placement, moves, exec and files, and the proxy (goal naru#378). Callers registering themselves (naru#409), with `machines.md` §The first user, which still names garam as the caller, rewritten. Keys (naru#412) |
 | mvmd | One host's Machines behind the runtime API `v1alpha2` (gRPC on a Unix socket), with exec, files and disk snapshots | Nothing for this design beyond what naru#378 takes. The mvmd provider (5.6) is garam-bot's |
 | codehub | A service principal in garam (garam `docs/architecture/machine-identity.md` §codehub's principal), AuthZEN with `private_key_jwt`, and a registry token issuer | Keys (codehub#327) |
-| aurora | Transit keys, PKI, cert-manager issuers and a trust bundle built ahead of the switch (aurora ADR 0037, aurora#862) | The registry's Transit key, the Transit roles, and the switch (aurora#864) |
+| aurora | Transit keys, PKI, cert-manager issuers and a trust bundle built ahead of the switch (aurora ADR 0019, aurora#862) | The registry's Transit key, the Transit roles, and the switch (aurora#864) |
 
 ### Auth inventory
 
@@ -282,7 +282,7 @@ Every issued PEM, hand-made certificate, hand-made key and signing key shared ac
 - **garam-bot-operator:** `deploy/charts/` and `docs/architecture/configuration.md` and `connector.md`;
 - **naru:** `docs/architecture/signer.md`, `orch.md`, `machines.md` and `proxy.md`;
 - **codehub:** `docs/guide/deployment.md` and `docs/architecture/registry.md`;
-- **aurora:** `docs/architecture/secrets.md` and `tls.md`, `platform/openbao/`, and its ADR 0037;
+- **aurora:** `docs/architecture/secrets.md` and `tls.md`, `platform/openbao/`, and its ADR 0019;
 - **garam-bot:** this repository's `deploy/local/` and `docs/architecture/`;
 - **shell key generation:** `grep -rln "openssl genpkey\|openssl req\|openssl rand"` over every `*.sh` in each repository, and in this repository `openssl x509` as well. Every script it matched has a row.
 
@@ -302,8 +302,8 @@ A key made in code from a template that names it in no document or script is out
 | garam | `tooling/codehub-e2e.sh`, `tooling/cowork-image-e2e.sh` | `tooling/` | shell key generation in test fixtures | material in memory | garam#2061 |
 | garam | the earlier per-organization CA keys, sealed under the KEK | the `certificate_authorities` rows (ADR-0118) | hand-made keys | dropped | garam#1630 |
 | garam | naru `caller` pair named `garam` | naru `docs/architecture/machines.md` §The first user: "garam holds a `caller` pair named `garam` in AWS Secrets Manager", replaced by naru#378's comment of 2026-11-24T12:39:34Z | issued certificate, by hand | none: garam does not call naru | naru#409, garam#2042 |
-| garam-bot | the sherlock gateway's CA, server and client certificates (ADR 0012) | `deploy/local/README.md` §Certificates, `openssl` | hand-made certificates | none: `sherlock agent` is removed | ADR 0040, garam-bot#1207 |
-| garam-bot | trusted issuers' `keys-ca-file`, pinning garam's server root | `internal/config/issuers.go` (ADR 0026) | pin of a hand-made root | none: removed with the gateway | ADR 0040, garam-bot#1207 |
+| garam-bot | the sherlock gateway's CA, server and client certificates | `deploy/local/README.md` §Certificates, `openssl` | hand-made certificates | none: `sherlock agent` is removed | ADR 0022, garam-bot#1207 |
+| garam-bot | trusted issuers' `keys-ca-file`, pinning garam's server root | `internal/config/issuers.go` | pin of a hand-made root | none: removed with the gateway | ADR 0022, garam-bot#1207 |
 | garam-bot | `deploy/local/smoke.sh`, by `openssl req` and `openssl x509 -CA` | `deploy/local/` | shell key generation in a test fixture | material in memory, or none once the gateway goes | garam-bot#1207 |
 | garam-bot-operator | the connector's `--garam-root-file`, the root garam's certificate chains to (T-2) | `configuration.md`; ADR 0088's decision "Registration is one call that spends a one-time token" verifies garam against "the server root the chart was given" | hand-placed trust root | the `aurora-internal-ca` bundle, or a public CA | garam-bot#1207, aurora#864 |
 | garam-bot-operator | the manager's `--garam-private-key-file` and its client id, token URL and trust files | `docs/architecture/configuration.md`; aurora's `garam-agent-operator-system/garam-credential`, placed by hand | issued PEM | the connector's token | garam-bot#1207, aurora#864 |
@@ -319,15 +319,15 @@ A key made in code from a template that names it in no document or script is out
 | naru | `*.m.garam.sh` certificate | a file; `proxy.md`: "DNS-01 issuance needs a DNS provider's credential, which is not granted" | hand-placed certificate | ACME DNS-01 with a Cloudflare token limited to the `m.garam.sh` zone's DNS, issued at the registration step (comment 19858505) | naru#412 |
 | naru | enrollment keys, up to 365 days | `orch.md` §Enrollment | long-lived registration secret | one-time, a day at most | naru#412 |
 | codehub | `CODEHUB_AUTHZEN_KEY_FILE` | aurora's `aurora/signing-key/codehub-authzen-key` | hand-made key | Transit `codehub-authzen`, JWKS | codehub#327, aurora#864 |
-| codehub | `CODEHUB_REGISTRY_KEY_FILE` and its derived JWKS | aurora's `aurora/signing-key/codehub-registry-signing` | hand-made signing key | a Transit key, rotated, JWKS; aurora ADR 0037 declares none for it | codehub#327, aurora#864 |
+| codehub | `CODEHUB_REGISTRY_KEY_FILE` and its derived JWKS | aurora's `aurora/signing-key/codehub-registry-signing` | hand-made signing key | a Transit key, rotated, JWKS; aurora ADR 0019 declares none for it | codehub#327, aurora#864 |
 | codehub | `CODEHUB_AUTHZEN_CLIENT_SECRET`, the runner's `--client-secret-env` | `docs/guide/deployment.md` | shared secrets | `private_key_jwt`, registration | codehub#327 |
 | codehub | `deploy/helm/tests/kind-faults.sh`, `dev/gaon/run.sh` | `deploy/helm/tests/`, `dev/gaon/` | shell key generation in test fixtures | material in memory | codehub#327 |
 | aurora | `openbao-root`, five years, `rotationPolicy: Never` | `kubernetes/applications/openbao.yaml` | a root that never rotates | rotating, or the reason recorded | aurora#864 |
-| aurora | the PKI root (twenty years) and its intermediates `pki_garam_machine` (ten years) and `pki_int` (five years) | `platform/openbao/pki.tf`, aurora ADR 0037 | certificates re-signed by a person's plan, not rotated; the first is due in 2031 | re-signed on a schedule, or the reason recorded | aurora#864 |
+| aurora | the PKI root (twenty years) and its intermediates `pki_garam_machine` (ten years) and `pki_int` (five years) | `platform/openbao/pki.tf`, aurora ADR 0019 | certificates re-signed by a person's plan, not rotated; the first is due in 2031 | re-signed on a schedule, or the reason recorded | aurora#864 |
 | aurora | the committed `garam-service-keys` | `kubernetes/components/garam/service-keys.yaml`, replaced by hand with each key | hand-placed trust | rendered from Transit, or each service's JWKS URL | aurora#864, garam#2061 |
 | aurora | `garam-trust` in `cowork` and `codehub` | rendered from the policy CA's and the server root's certificates in KV | hand-placed trust | trust-manager's `aurora-internal-ca` | aurora#864 |
 | aurora | the Transit key `aurora-garam-machine`, with the `garam-machine` role and policy | `platform/openbao/garam-machine.tf` | declared, read by nothing | used by garam, or removed (aurora `secrets.md`'s open question) | aurora#864 |
-| aurora | the Transit keys `garam-kek`, `garam-issuer`, `garam-policy-feed`, `garam-message`, `codehub-authzen`, `cowork-deployment` | `platform/openbao/transit.tf`, aurora ADR 0037 | built, read by nothing until the switch | read by their consumers through roles from the PM's map | aurora#864 |
+| aurora | the Transit keys `garam-kek`, `garam-issuer`, `garam-policy-feed`, `garam-message`, `codehub-authzen`, `cowork-deployment` | `platform/openbao/transit.tf`, aurora ADR 0019 | built, read by nothing until the switch | read by their consumers through roles from the PM's map | aurora#864 |
 | aurora | RustFS's pairs `rustfs/user/root`, `rustfs/user/codehub`, `rustfs/user/qnt-github-actions` | OpenBao KV, each pair made by a person (aurora `secrets.md` §RustFS's credentials) | hand-made credentials | generated in place and rotated | aurora#864 |
 | aurora | OpenBao's unseal and recovery output | sauce's USB, `clusters/aurora/openbao-init.txt` | emergency keys | stay offline on USB (comment 19858505) | — |
 | aurora | `github/token/aurora-argocd`, `proxmox/api-token/infra`, `cloudflare/token/aurora-cert-manager`, `minimax/api-key/garam`, `google/client/garam-console-dev` | AWS Secrets Manager and OpenBao | external service tokens | stay, handled by people | — |
@@ -339,24 +339,24 @@ A key made in code from a template that names it in no document or script is out
 
 ## Rationale
 
-- ADR 0031: the bot is the unit, an agent is its harness, and garam is optional.
-- ADR 0032: interface 1, one schema for a file and a CRD.
-- ADR 0034: why the workspace provider is a Go driver interface, and why a naru Machine is its first production implementation.
-- ADR 0035: why the agent interface is an HTTP protocol through `Dial`, and why tools are MCP servers outside the workspace.
-- ADR 0036: why a bot is declared anywhere and managed in garam, why one connector per place, and why only pull.
-- ADR 0037: why OAuth and OIDC standards, why one signing key per purpose, why no key is made by hand, and why recovery keys stay offline.
-- ADR 0038: why garam brokers external apps through one official app per service, with grants in IAM.
-- ADR 0039: why one daemon is the connector of a PC and a naru-host place, and why the PC app only shows and drives it.
-- ADR 0040: why `cmd/sherlock` goes, and what moves under `garam-bot`.
+- ADR 0013: the bot is the unit, an agent is its harness, and garam is optional.
+- ADR 0014: interface 1, one schema for a file and a CRD.
+- ADR 0016: why the workspace provider is a Go driver interface, and why a naru Machine is its first production implementation.
+- ADR 0017: why the agent interface is an HTTP protocol through `Dial`, and why tools are MCP servers outside the workspace.
+- ADR 0018: why a bot is declared anywhere and managed in garam, why one connector per place, and why only pull.
+- ADR 0019: why OAuth and OIDC standards, why one signing key per purpose, why no key is made by hand, and why recovery keys stay offline.
+- ADR 0020: why garam brokers external apps through one official app per service, with grants in IAM.
+- ADR 0021: why one daemon is the connector of a PC and a naru-host place, and why the PC app only shows and drives it.
+- ADR 0022: why `cmd/sherlock` goes, and what moves under `garam-bot`.
 - garam-bot-operator ADR 0087 to ADR 0093 and garam ADR-0184 to ADR-0188: the cluster's connector and registration, which this design widens to every place.
 
 ## Open questions
 
 - **The place record's GRN.** Whether garam widens `grn:<org>/iam/cluster/<id>` with a kind or takes a new type for every place is garam's, in 5.1.
 - **A place-declared bot's identity.** Whether a bot declared at its place gets a garam identity is open with garam: garam#2049 leaves it out of scope, and garam-bot-operator `connector.md` keeps it open. Until garam decides, such a bot has no garam token, no messages from garam and no `garam` tool mode.
-- **The place's credential at a PC and a naru host.** Interface 6 carries the proof and the token at every place (ADR 0042). At a cluster its credential is the Bot's projected ServiceAccount token. Where the daemon is the bot process's parent, what it issues as the credential is decided with the daemon (ADR 0039, garam-bot#1207).
+- **The place's credential at a PC and a naru host.** Interface 6 carries the proof and the token at every place (ADR 0024). At a cluster its credential is the Bot's projected ServiceAccount token. Where the daemon is the bot process's parent, what it issues as the credential is decided with the daemon (ADR 0021, garam-bot#1207).
 - **Who presents garam's bound model and tool tokens.** The bot's process itself, or the place's gateway and tool proxy asking it to sign each proof, is settled with G3 and G6. The key does not leave the bot's process either way.
 - **Messages to a bot.** Whether a bot's process long-polls garam's mailbox itself or its connector carries messages for every bot it runs is not decided. Either is pull. The first is simpler; the second keeps one connection per place.
 - **Interface 5.** The model gateway's specification, and where it runs at each place, are not written (G3).
-- **The bot's memory.** Whether the memory store ADR 0040 keeps becomes the bot-memory interface, and where it lives at each place, is not decided.
+- **The bot's memory.** Whether the memory store ADR 0022 keeps becomes the bot-memory interface, and where it lives at each place, is not decided.
 - **Density.** How many bots and workspaces a PC, a naru-host place and a cluster pod run is not measured (interface 2's open questions).

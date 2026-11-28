@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/memory"
 )
 
 // word is one token: letters and digits, joined inside by hyphens or
@@ -87,7 +87,7 @@ func linkEntities(ctx context.Context, tx *sql.Tx, mid int64, raw []string) erro
 // one written before entities were: it sends the episode's sources through
 // the synthesis call new batches take and keeps the stored summary. A store
 // with no such episode makes no call.
-func (s *Store) Link(ctx context.Context, summarizer agent.ConversationSummarizer) error {
+func (s *Store) Link(ctx context.Context, summarizer memory.ConversationSummarizer) error {
 	var mid, first, last int64
 	err := s.db.QueryRowContext(ctx, `SELECT id,source_first,source_last FROM conversation_mid WHERE linked=0 ORDER BY id LIMIT 1`).Scan(&mid, &first, &last)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -125,16 +125,16 @@ func (s *Store) Link(ctx context.Context, summarizer agent.ConversationSummarize
 
 // midEntities returns every linked mid with the names its synthesis wrote,
 // in mid order and each mid's names in the order written.
-func (s *Store) midEntities(ctx context.Context) ([]agent.ConversationHit, map[int64][]string, error) {
+func (s *Store) midEntities(ctx context.Context) ([]memory.ConversationHit, map[int64][]string, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT m.id,m.summary,m.source_first,m.source_last,e.name FROM conversation_mid m JOIN conversation_mid_entity e ON e.mid=m.id ORDER BY m.id,e.position`)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read episode entities: %v", err)
 	}
 	defer rows.Close()
-	var mids []agent.ConversationHit
+	var mids []memory.ConversationHit
 	names := map[int64][]string{}
 	for rows.Next() {
-		var mid agent.ConversationHit
+		var mid memory.ConversationHit
 		var name string
 		if err := rows.Scan(&mid.ID, &mid.Summary, &mid.SourceFirst, &mid.SourceLast, &name); err != nil {
 			return nil, nil, fmt.Errorf("read episode entities: %v", err)

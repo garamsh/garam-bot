@@ -1,53 +1,13 @@
-# Local testing only: trusted host, throwaway mTLS certs in ./tls.
-# Requires SHERLOCK_DATA_DIR; see README.md in this directory.
-# Two services, one pod shape (ADR 0017): the agent serves its gateway;
-# the workspace shares the agent's network namespace so the
-# unauthenticated gRPC listener stays on loopback (#209).
+# Local testing only: a trusted host.
+# Requires GARAM_BOT_DATA_DIR; see README.md in this directory.
+# One service: the workspace (ADR 0006, ADR 0022), whose gRPC listener
+# stays on its own loopback and is reached from inside the container.
 services:
-  agent:
-    build:
-      context: ../..
-      dockerfile: build/agent.Dockerfile
-    ports:
-      - "8080:8080"
-    # The agent executes nothing — the workspace owns process exec
-    # (ADR 0017) — so the agent needs no capabilities at all.
-    #
-    # The gateway refuses a group- or other-readable config file or
-    # server key, so only their owner can read them: the container runs
-    # as the host user who generated them.
-    user: "${SHERLOCK_AGENT_UID:?export SHERLOCK_AGENT_UID per README.md}"
-    environment:
-      # The memory file sits at the same absolute path on host and
-      # container so it is valid from either side.
-      SHERLOCK_MEMORY_PATH: "${SHERLOCK_DATA_DIR:?export SHERLOCK_DATA_DIR per README.md}/agent/memory.db"
-      # The agent image carries the first-party tools baked at
-      # /opt/sherlock/tools/ (ADR 0021); `make build-tools` populates
-      # the host directory the compose mounts on top of that path, so a
-      # contributor's edit to `tools/<name>/<name>` or `manifest.json`
-      # is reflected on the next container restart without rebuilding
-      # the image. Removing this mount leaves the baked-in set in place.
-      SHERLOCK_TOOLS_DIR: /opt/sherlock/tools
-    # The agent's volume — memory.db, its sidecars and outbox/ — is
-    # mounted here only, so no Exec child reaches it under any uid
-    # (ADR 0008).
-    volumes:
-      - "${SHERLOCK_DATA_DIR:?export SHERLOCK_DATA_DIR per README.md}/agent:${SHERLOCK_DATA_DIR:?export SHERLOCK_DATA_DIR per README.md}/agent"
-      - ./agent.yaml:/etc/sherlock/config.yaml:ro
-      - ./tls:/etc/sherlock/tls:ro
-      # Local-dev override: the host's `tools/` mounted read-only at
-      # /opt/sherlock/tools. Inode-for-inode override of the image's baked
-      # tools (ADR 0021).
-      - ../../tools:/opt/sherlock/tools:ro
-    command: ["agent", "--config", "/etc/sherlock/config.yaml", "--agent-id", "demo"]
   workspace:
     build:
       context: ../..
       dockerfile: build/workspace.Dockerfile
-    network_mode: service:agent
-    depends_on:
-      - agent
-    # The executor's privilege drop, made real (ADR 0008, ADR 0010):
+    # The executor's privilege drop, made real (ADR 0005, ADR 0006):
     # SETUID/SETGID for the child credential drop, CHOWN for the
     # workspace-directory handover, SYS_ADMIN for the netns unshare, and
     # KILL for the deadline.
@@ -68,16 +28,16 @@ services:
     cap_drop: ["ALL"]
     cap_add: ["SETUID", "SETGID", "CHOWN", "SYS_ADMIN", "KILL"]
     environment:
-      SHERLOCK_WORKSPACE: "${SHERLOCK_DATA_DIR:?export SHERLOCK_DATA_DIR per README.md}/workspace"
+      GARAM_BOT_WORKSPACE: "${GARAM_BOT_DATA_DIR:?export GARAM_BOT_DATA_DIR per README.md}/workspace"
       # The exec UID must be an account nothing else on the host runs
       # as: containers share the host's UID space, and RLIMIT_NPROC
-      # counts every process of the real UID (ADR 0010), so a shared
+      # counts every process of the real UID (ADR 0006), so a shared
       # account starves the child of its process budget. 1001 is the
       # login user on many hosts; this one is not.
-      SHERLOCK_EXEC_UID: "10001"
+      GARAM_BOT_EXEC_UID: "10001"
     # Left for the daemon to create, as root:root: the handover gives the
     # directory to the exec uid and keeps its group, whose write bit is how
     # this root process, holding no DAC_OVERRIDE, still writes into it.
     volumes:
-      - "${SHERLOCK_DATA_DIR:?export SHERLOCK_DATA_DIR per README.md}/workspace:${SHERLOCK_DATA_DIR:?export SHERLOCK_DATA_DIR per README.md}/workspace"
+      - "${GARAM_BOT_DATA_DIR:?export GARAM_BOT_DATA_DIR per README.md}/workspace:${GARAM_BOT_DATA_DIR:?export GARAM_BOT_DATA_DIR per README.md}/workspace"
     command: ["workspace"]

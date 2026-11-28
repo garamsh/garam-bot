@@ -30,11 +30,11 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // Workspace is the data plane the agent uses for its working environment
-// (ADR 0017): it serves the filesystem (Read, Write, List) and runs
+// (ADR 0006): it serves the filesystem (Read, Write, List) and runs
 // agent-influenced processes (Exec) in the workspace directory. It
 // exposes no tool hosting: tools are executables the agent's tool
 // client spawns from their manifests. Its callers are those tools and
-// the `sherlock workspace` operation subcommands (ADR 0027). The plugin
+// the `garam-bot workspace` operation subcommands (ADR 0011). The plugin
 // concept is dropped.
 type WorkspaceClient interface {
 	Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadResponse, error)
@@ -96,11 +96,11 @@ func (c *workspaceClient) Exec(ctx context.Context, in *ExecRequest, opts ...grp
 // for forward compatibility.
 //
 // Workspace is the data plane the agent uses for its working environment
-// (ADR 0017): it serves the filesystem (Read, Write, List) and runs
+// (ADR 0006): it serves the filesystem (Read, Write, List) and runs
 // agent-influenced processes (Exec) in the workspace directory. It
 // exposes no tool hosting: tools are executables the agent's tool
 // client spawns from their manifests. Its callers are those tools and
-// the `sherlock workspace` operation subcommands (ADR 0027). The plugin
+// the `garam-bot workspace` operation subcommands (ADR 0011). The plugin
 // concept is dropped.
 type WorkspaceServer interface {
 	Read(context.Context, *ReadRequest) (*ReadResponse, error)

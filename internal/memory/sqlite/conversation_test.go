@@ -14,22 +14,22 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/memory"
 	"github.com/garamsh/garam-bot/internal/memory/sqlite"
 )
 
 // firstSummary isolates persistence and ranking from model quality.
 type firstSummary struct{}
 
-func (firstSummary) Summarize(_ context.Context, updates []string) (agent.Synthesis, error) {
-	return agent.Synthesis{Summary: updates[0]}, nil
+func (firstSummary) Summarize(_ context.Context, updates []string) (memory.Synthesis, error) {
+	return memory.Synthesis{Summary: updates[0]}, nil
 }
 
 type summaryFunc func(context.Context, []string) (string, error)
 
-func (f summaryFunc) Summarize(ctx context.Context, updates []string) (agent.Synthesis, error) {
+func (f summaryFunc) Summarize(ctx context.Context, updates []string) (memory.Synthesis, error) {
 	summary, err := f(ctx, updates)
-	return agent.Synthesis{Summary: summary}, err
+	return memory.Synthesis{Summary: summary}, err
 }
 
 // wordEmbedder counts each word into a hashed dimension, so texts sharing
@@ -47,10 +47,10 @@ func (wordEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
 }
 
 // episodeSources returns one full batch of identical messages.
-func episodeSources(content string) []agent.SourceMessage {
-	var sources []agent.SourceMessage
+func episodeSources(content string) []memory.SourceMessage {
+	var sources []memory.SourceMessage
 	for i := 0; i < 4; i++ {
-		sources = append(sources, agent.SourceMessage{Role: agent.RoleUser, Content: content})
+		sources = append(sources, memory.SourceMessage{Role: memory.RoleUser, Content: content})
 	}
 	return sources
 }
@@ -60,7 +60,7 @@ func TestConversation_CredentialsAreNotPersisted(t *testing.T) {
 	store, err := sqlite.OpenConversation(filepath.Join(t.TempDir(), "memory.db"), nil)
 	require.NoError(t, err)
 	defer store.Close()
-	require.NoError(t, store.RecordTurn(ctx, []agent.SourceMessage{{Role: agent.RoleUser, Content: "api_key=sk-abcdefghijklmnop and favorite tea is cedar"}, {Role: agent.RoleAssistant, Content: "Bearer secretvalue"}}, firstSummary{}))
+	require.NoError(t, store.RecordTurn(ctx, []memory.SourceMessage{{Role: memory.RoleUser, Content: "api_key=sk-abcdefghijklmnop and favorite tea is cedar"}, {Role: memory.RoleAssistant, Content: "Bearer secretvalue"}}, firstSummary{}))
 	sources, err := store.Recent(ctx, 10)
 	require.NoError(t, err)
 	require.Len(t, sources, 2)
@@ -115,7 +115,7 @@ func TestOpenConversation_ExtractiveDatabaseRequiresExplicitNewPath(t *testing.T
 				require.NoError(t, err)
 			}
 			defer store.Close()
-			require.NoError(t, store.RecordTurn(context.Background(), []agent.SourceMessage{{Role: agent.RoleUser, Content: "new conversation"}}, firstSummary{}))
+			require.NoError(t, store.RecordTurn(context.Background(), []memory.SourceMessage{{Role: memory.RoleUser, Content: "new conversation"}}, firstSummary{}))
 		})
 	}
 }
@@ -132,7 +132,7 @@ func TestRecordTurn_CrossTurnEpisodesRestartAndRetry(t *testing.T) {
 		return updates[0], nil
 	})
 	for i := 0; i < 1; i++ {
-		require.NoError(t, store.RecordTurn(ctx, []agent.SourceMessage{{Role: agent.RoleUser, ExternalID: fmt.Sprintf("input-%d", i), Content: fmt.Sprintf("fact-%d", i)}, {Role: agent.RoleAssistant, Content: "Noted."}}, summarize))
+		require.NoError(t, store.RecordTurn(ctx, []memory.SourceMessage{{Role: memory.RoleUser, ExternalID: fmt.Sprintf("input-%d", i), Content: fmt.Sprintf("fact-%d", i)}, {Role: memory.RoleAssistant, Content: "Noted."}}, summarize))
 	}
 	assert.Zero(t, calls)
 	pending, err := store.PendingSources(ctx)
@@ -144,7 +144,7 @@ func TestRecordTurn_CrossTurnEpisodesRestartAndRetry(t *testing.T) {
 	defer store.Close()
 	require.NoError(t, store.Accumulate(ctx, summarize))
 	assert.Zero(t, calls)
-	turn := []agent.SourceMessage{{Role: agent.RoleUser, ExternalID: "last", Content: "fact-3"}, {Role: agent.RoleAssistant, Content: "Noted."}}
+	turn := []memory.SourceMessage{{Role: memory.RoleUser, ExternalID: "last", Content: "fact-3"}, {Role: memory.RoleAssistant, Content: "Noted."}}
 	require.NoError(t, store.RecordTurn(ctx, turn, summarize))
 	assert.Equal(t, 1, calls)
 	require.NoError(t, store.RecordTurn(ctx, turn, summarize))
@@ -237,7 +237,7 @@ func TestSearch_SimilarityThenRecency(t *testing.T) {
 	assert.Empty(t, hits)
 }
 
-func hitIDs(hits []agent.ConversationHit) []int64 {
+func hitIDs(hits []memory.ConversationHit) []int64 {
 	var ids []int64
 	for _, hit := range hits {
 		ids = append(ids, hit.ID)
@@ -269,7 +269,7 @@ func TestAccumulate_EmbeddingFailureRetriesAtNextCompletion(t *testing.T) {
 	hits, err := store.Search(ctx, "Blue Cedar", 5)
 	require.NoError(t, err)
 	assert.Empty(t, hits, "an episode without an embedding is not ranked")
-	require.NoError(t, store.RecordTurn(ctx, []agent.SourceMessage{{Role: agent.RoleUser, Content: "next"}}, firstSummary{}))
+	require.NoError(t, store.RecordTurn(ctx, []memory.SourceMessage{{Role: memory.RoleUser, Content: "next"}}, firstSummary{}))
 	hits, err = store.Search(ctx, "Blue Cedar", 5)
 	require.NoError(t, err)
 	assert.Equal(t, []int64{mids[0].ID}, hitIDs(hits))
@@ -415,8 +415,8 @@ func TestHoldsInbound_ScopesIDToSender(t *testing.T) {
 	store, err := sqlite.OpenConversation(filepath.Join(t.TempDir(), "memory.db"), wordEmbedder{})
 	require.NoError(t, err)
 	defer store.Close()
-	require.NoError(t, store.RecordTurn(ctx, []agent.SourceMessage{{Role: agent.RoleUser, Sender: "alice", ExternalID: "m1", Content: "from alice"}, {Role: agent.RoleAssistant, Content: "Noted."}}, firstSummary{}))
-	require.NoError(t, store.RecordTurn(ctx, []agent.SourceMessage{{Role: agent.RoleUser, Sender: "bob", ExternalID: "m1", Content: "from bob"}, {Role: agent.RoleAssistant, Content: "Noted."}}, firstSummary{}),
+	require.NoError(t, store.RecordTurn(ctx, []memory.SourceMessage{{Role: memory.RoleUser, Sender: "alice", ExternalID: "m1", Content: "from alice"}, {Role: memory.RoleAssistant, Content: "Noted."}}, firstSummary{}))
+	require.NoError(t, store.RecordTurn(ctx, []memory.SourceMessage{{Role: memory.RoleUser, Sender: "bob", ExternalID: "m1", Content: "from bob"}, {Role: memory.RoleAssistant, Content: "Noted."}}, firstSummary{}),
 		"another sender's ID does not collide")
 
 	held, same, err := store.HoldsInbound(ctx, "", "alice", "m1", "from alice")
@@ -440,7 +440,7 @@ func TestHoldsInbound_ComparesAsStored(t *testing.T) {
 	require.NoError(t, err)
 	defer store.Close()
 	content := "api_key=sk-abcdefghijklmnop and favorite tea is cedar"
-	require.NoError(t, store.RecordTurn(ctx, []agent.SourceMessage{{Role: agent.RoleUser, ExternalID: "m1", Content: content}, {Role: agent.RoleAssistant, Content: "Noted."}}, firstSummary{}))
+	require.NoError(t, store.RecordTurn(ctx, []memory.SourceMessage{{Role: memory.RoleUser, ExternalID: "m1", Content: content}, {Role: memory.RoleAssistant, Content: "Noted."}}, firstSummary{}))
 	source, err := store.Source(ctx, 1)
 	require.NoError(t, err)
 	require.NotEqual(t, content, source.Content, "the store holds the redacted copy")
@@ -474,14 +474,14 @@ INSERT INTO conversation_sources(role,external_id,content) VALUES ('user','msg-1
 	require.NoError(t, err)
 	assert.True(t, held)
 	assert.True(t, same)
-	require.NoError(t, store.RecordTurn(ctx, []agent.SourceMessage{{Role: agent.RoleUser, Sender: "alice", ExternalID: "msg-1", Content: "new message"}, {Role: agent.RoleAssistant, Content: "Noted."}}, firstSummary{}))
+	require.NoError(t, store.RecordTurn(ctx, []memory.SourceMessage{{Role: memory.RoleUser, Sender: "alice", ExternalID: "msg-1", Content: "new message"}, {Role: memory.RoleAssistant, Content: "Noted."}}, firstSummary{}))
 	held, same, err = store.HoldsInbound(ctx, "", "alice", "msg-1", "new message")
 	require.NoError(t, err)
 	assert.True(t, held)
 	assert.True(t, same)
 }
 
-// A file from before signed senders (ADR 0026) keeps every row, which
+// A file from before signed senders keeps every row, which
 // reads as a transport principal's: its scope and its poster are its
 // sender. A signed source under the same sender and ID is another scope's,
 // and answers its own poster.
@@ -509,9 +509,9 @@ INSERT INTO conversation_sources(role,sender,external_id,content) VALUES ('user'
 	require.NoError(t, err)
 	assert.False(t, posted, "control: another poster does not hold it")
 
-	require.NoError(t, store.RecordTurn(ctx, []agent.SourceMessage{
-		{Role: agent.RoleUser, Issuer: "https://issuer.example", Sender: "alice", Poster: "", ExternalID: "msg-1", Content: "signed message"},
-		{Role: agent.RoleAssistant, Content: "Noted."},
+	require.NoError(t, store.RecordTurn(ctx, []memory.SourceMessage{
+		{Role: memory.RoleUser, Issuer: "https://issuer.example", Sender: "alice", Poster: "", ExternalID: "msg-1", Content: "signed message"},
+		{Role: memory.RoleAssistant, Content: "Noted."},
 	}, firstSummary{}), "the signed alice's msg-1 is not the transport alice's")
 	held, same, err = store.HoldsInbound(ctx, "https://issuer.example", "alice", "msg-1", "signed message")
 	require.NoError(t, err)
@@ -525,8 +525,8 @@ INSERT INTO conversation_sources(role,sender,external_id,content) VALUES ('user'
 }
 
 // TestOpenInitializedConversation_RefusesAnUninitializedStore holds the
-// opt-in startup refusal (ADR 0025): a memory.db that is absent, empty or
-// holds no Sherlock schema is refused with ErrStoreUninitialized, and the
+// opt-in startup refusal: a memory.db that is absent, empty or
+// holds no conversation schema is refused with ErrStoreUninitialized, and the
 // refusal creates no store and changes no file.
 //
 // Each refusal carries its control on the same input: OpenConversation
@@ -573,7 +573,7 @@ func TestOpenInitializedConversation_RefusesAnUninitializedStore(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotZero(t, info.Size(), "control: the open without the check initialized the file")
 	})
-	t.Run("file without a Sherlock schema refuses and is left unchanged", func(t *testing.T) {
+	t.Run("file without a conversation schema refuses and is left unchanged", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "memory.db")
 		raw, err := sql.Open("sqlite", path)
 		require.NoError(t, err)
@@ -610,7 +610,7 @@ func TestOpenInitializedConversation_RefusesAnUninitializedStore(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "memory.db")
 		store, err := sqlite.OpenConversation(path, wordEmbedder{})
 		require.NoError(t, err)
-		require.NoError(t, store.RecordTurn(ctx, []agent.SourceMessage{{Role: agent.RoleUser, Content: "remember cedar"}}, firstSummary{}))
+		require.NoError(t, store.RecordTurn(ctx, []memory.SourceMessage{{Role: memory.RoleUser, Content: "remember cedar"}}, firstSummary{}))
 		require.NoError(t, store.Close())
 
 		store, err = sqlite.OpenInitializedConversation(path, wordEmbedder{})

@@ -15,7 +15,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/memory"
 )
 
 const conversationSchema = `
@@ -53,7 +53,7 @@ DROP TABLE IF EXISTS conversation_mid_fts;
 var ErrSourceNotFound = errors.New("conversation source not found")
 
 // RecordTurn archives completed messages before retryable summary maintenance.
-func (s *Store) RecordTurn(ctx context.Context, sources []agent.SourceMessage, summarizer agent.ConversationSummarizer) error {
+func (s *Store) RecordTurn(ctx context.Context, sources []memory.SourceMessage, summarizer memory.ConversationSummarizer) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin conversation: %v", err)
@@ -83,7 +83,7 @@ func (s *Store) RecordTurn(ctx context.Context, sources []agent.SourceMessage, s
 	}
 	if matched == 0 {
 		for _, part := range sources {
-			if part.Role != agent.RoleUser && part.Role != agent.RoleAssistant {
+			if part.Role != memory.RoleUser && part.Role != memory.RoleAssistant {
 				continue
 			}
 			content := redactSecrets(part.Content)
@@ -103,9 +103,9 @@ func (s *Store) RecordTurn(ctx context.Context, sources []agent.SourceMessage, s
 
 // synthesize asks the summarizer for one episode over the sources, each
 // sent as "role: content", and bounds its redacted summary.
-func synthesize(ctx context.Context, summarizer agent.ConversationSummarizer, sources []agent.SourceMessage) (agent.Synthesis, error) {
+func synthesize(ctx context.Context, summarizer memory.ConversationSummarizer, sources []memory.SourceMessage) (memory.Synthesis, error) {
 	if summarizer == nil {
-		return agent.Synthesis{}, errors.New("conversation requires a summarizer")
+		return memory.Synthesis{}, errors.New("conversation requires a summarizer")
 	}
 	updates := make([]string, 0, len(sources))
 	for _, source := range sources {
@@ -113,16 +113,16 @@ func synthesize(ctx context.Context, summarizer agent.ConversationSummarizer, so
 	}
 	synthesis, err := summarizer.Summarize(ctx, updates)
 	if err != nil {
-		return agent.Synthesis{}, fmt.Errorf("synthesize conversation: %v", err)
+		return memory.Synthesis{}, fmt.Errorf("synthesize conversation: %v", err)
 	}
 	synthesis.Summary = strings.TrimSpace(redactSecrets(synthesis.Summary))
 	if synthesis.Summary == "" || len([]rune(synthesis.Summary)) > 2000 {
-		return agent.Synthesis{}, errors.New("conversation summary must contain 1 to 2000 characters")
+		return memory.Synthesis{}, errors.New("conversation summary must contain 1 to 2000 characters")
 	}
 	return synthesis, nil
 }
 
-func (s *Store) Recent(ctx context.Context, limit int) ([]agent.SourceMessage, error) {
+func (s *Store) Recent(ctx context.Context, limit int) ([]memory.SourceMessage, error) {
 	// SQLite treats a negative LIMIT as unbounded for disabled compaction.
 	if limit == 0 {
 		return nil, nil
@@ -132,9 +132,9 @@ func (s *Store) Recent(ctx context.Context, limit int) ([]agent.SourceMessage, e
 		return nil, err
 	}
 	defer rows.Close()
-	var out []agent.SourceMessage
+	var out []memory.SourceMessage
 	for rows.Next() {
-		var m agent.SourceMessage
+		var m memory.SourceMessage
 		if err := rows.Scan(&m.ID, &m.ExternalID, &m.Role, &m.Content); err != nil {
 			return nil, err
 		}
@@ -145,7 +145,7 @@ func (s *Store) Recent(ctx context.Context, limit int) ([]agent.SourceMessage, e
 
 // Search ranks embedded mid episodes by cosine similarity to the query, newest
 // first among equals. The bounded limit applies before content enters model context.
-func (s *Store) Search(ctx context.Context, query string, limit int) ([]agent.ConversationHit, error) {
+func (s *Store) Search(ctx context.Context, query string, limit int) ([]memory.ConversationHit, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
@@ -154,10 +154,10 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]agent.Co
 		return nil, fmt.Errorf("search conversation: %v", err)
 	}
 	defer rows.Close()
-	var hits []agent.ConversationHit
+	var hits []memory.ConversationHit
 	var vectors [][]byte
 	for rows.Next() {
-		var hit agent.ConversationHit
+		var hit memory.ConversationHit
 		var vector []byte
 		if err := rows.Scan(&hit.ID, &hit.Summary, &hit.SourceFirst, &hit.SourceLast, &vector); err != nil {
 			return nil, fmt.Errorf("read conversation candidates: %v", err)
@@ -219,7 +219,7 @@ func cosine(a []float32, encoded []byte) float64 {
 }
 
 // RecentMid returns newest episodes independently of similarity.
-func (s *Store) RecentMid(ctx context.Context, limit int) ([]agent.ConversationHit, error) {
+func (s *Store) RecentMid(ctx context.Context, limit int) ([]memory.ConversationHit, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
@@ -228,9 +228,9 @@ func (s *Store) RecentMid(ctx context.Context, limit int) ([]agent.ConversationH
 		return nil, fmt.Errorf("read conversation candidates: %v", err)
 	}
 	defer rows.Close()
-	var out []agent.ConversationHit
+	var out []memory.ConversationHit
 	for rows.Next() {
-		var m agent.ConversationHit
+		var m memory.ConversationHit
 		if err := rows.Scan(&m.ID, &m.Summary, &m.SourceFirst, &m.SourceLast); err != nil {
 			return nil, fmt.Errorf("read conversation candidates: %v", err)
 		}
@@ -264,8 +264,8 @@ func (s *Store) SetNote(ctx context.Context, content string) error {
 	return nil
 }
 
-func (s *Store) Source(ctx context.Context, id int64) (agent.SourceMessage, error) {
-	var m agent.SourceMessage
+func (s *Store) Source(ctx context.Context, id int64) (memory.SourceMessage, error) {
+	var m memory.SourceMessage
 	err := s.db.QueryRowContext(ctx, `SELECT id,external_id,role,content FROM conversation_sources WHERE id=?`, id).Scan(&m.ID, &m.ExternalID, &m.Role, &m.Content)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, ErrSourceNotFound
@@ -292,7 +292,7 @@ func (s *Store) HoldsInbound(ctx context.Context, issuer, sender, id, content st
 
 // PostedInbound reports whether a committed source holds a message the
 // transport principal poster posted under id: an unsigned message is its
-// own sender's, and a signed one carries its poster (ADR 0026). A row from
+// own sender's, and a signed one carries its poster. A row from
 // before signed senders has no poster and is unsigned, so its sender
 // answers for it.
 func (s *Store) PostedInbound(ctx context.Context, poster, id string) (bool, error) {
@@ -309,16 +309,16 @@ WHERE external_id=? AND ((issuer='' AND sender=?) OR (issuer<>'' AND poster=?))`
 // read-only before opening the source-linked schema, so refusal leaves the old
 // file unchanged. The embedder
 // ranks episodes for Search and embeds each new one.
-func OpenConversation(path string, embedder agent.Embedder) (*Store, error) {
+func OpenConversation(path string, embedder memory.Embedder) (*Store, error) {
 	return openConversation(path, embedder, nil)
 }
 
 // OpenInitializedConversation is OpenConversation for a store that must
 // already exist: under the writer lock, and before anything migrates or
 // catches up, it returns ErrStoreUninitialized for a memory.db that is
-// absent, empty or holds no Sherlock schema, creating and changing
-// nothing (ADR 0025).
-func OpenInitializedConversation(path string, embedder agent.Embedder) (*Store, error) {
+// absent, empty or holds no conversation schema, creating and changing
+// nothing.
+func OpenInitializedConversation(path string, embedder memory.Embedder) (*Store, error) {
 	// The lock file lives beside the store, so a store whose directory is
 	// absent is absent too, and no lock can be taken for it.
 	if _, err := os.Stat(filepath.Dir(path)); errors.Is(err, fs.ErrNotExist) {
@@ -328,11 +328,11 @@ func OpenInitializedConversation(path string, embedder agent.Embedder) (*Store, 
 }
 
 // ErrStoreUninitialized reports a memory.db that is absent, empty or
-// holds no Sherlock schema, which OpenInitializedConversation refuses.
+// holds no conversation schema, which OpenInitializedConversation refuses.
 var ErrStoreUninitialized = errors.New("memory store is not initialized")
 
 // requireInitialized returns ErrStoreUninitialized unless the file at path
-// holds a Sherlock schema. It reads the file only through a read-only open.
+// holds a conversation schema. It reads the file only through a read-only open.
 func requireInitialized(path string) error {
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("%q is absent: %w", path, ErrStoreUninitialized)
@@ -356,14 +356,14 @@ func requireInitialized(path string) error {
 	}
 	// An empty file reads as a database holding no table.
 	if tables == 0 {
-		return fmt.Errorf("%q holds no Sherlock schema: %w", path, ErrStoreUninitialized)
+		return fmt.Errorf("%q holds no conversation schema: %w", path, ErrStoreUninitialized)
 	}
 	return nil
 }
 
 // openConversation is OpenConversation with check, when set, run on the
 // path once the writer lock is held and before the file is otherwise read.
-func openConversation(path string, embedder agent.Embedder, check func(path string) error) (store *Store, err error) {
+func openConversation(path string, embedder memory.Embedder, check func(path string) error) (store *Store, err error) {
 	// The lock precedes the read-only inspection below, which is an open
 	// of the file too.
 	lock, err := lockWriter(path)
@@ -496,7 +496,7 @@ func prepareConversation(db *sql.DB) error {
 			return err
 		}
 	}
-	// A file from before signed senders (ADR 0026) gains the issuer and
+	// A file from before signed senders gains the issuer and
 	// the poster empty, so every existing row reads as a transport
 	// principal's; no row is rewritten.
 	for _, column := range []string{"issuer", "poster"} {

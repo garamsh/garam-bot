@@ -10,12 +10,12 @@ import (
 )
 
 func TestChildEnv_ExcludesPlatformVariables(t *testing.T) {
-	t.Setenv("SHERLOCK_TEST_PLATFORM_SECRET", "hunter2")
+	t.Setenv("GARAM_BOT_TEST_PLATFORM_SECRET", "hunter2")
 
 	env := childEnv()
 
 	for _, entry := range env {
-		assert.False(t, strings.HasPrefix(entry, "SHERLOCK_TEST_PLATFORM_SECRET="),
+		assert.False(t, strings.HasPrefix(entry, "GARAM_BOT_TEST_PLATFORM_SECRET="),
 			"platform variables must not reach tool children")
 	}
 }

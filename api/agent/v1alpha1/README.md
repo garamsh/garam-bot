@@ -15,7 +15,7 @@ The normative specification of garam-bot's interface 2, the agent, at version `v
 
 ## Scope and implementations
 
-- **The bot is the unit, and the agent is its harness** (ADR 0031). The bot's process runs outside the workspace and holds the bot's identity, memory, permissions and mailbox. The harness runs inside the workspace and does the work.
+- **The bot is the unit, and the agent is its harness** (ADR 0013). The bot's process runs outside the workspace and holds the bot's identity, memory, permissions and mailbox. The harness runs inside the workspace and does the work.
 - **The adapter** is the program in the workspace image that serves this protocol and drives one harness. The caller is the bot's process, at the execution place, which reaches the adapter through interface 3's `Dial`.
 - **One brain per session.** A session runs one harness. Another agent a bot works with is an MCP tool of the session, not a second harness in it.
 - **What the protocol carries:** a session (who the bot is, its instructions, where its model and its tools are), the tasks the bot gives it from its mailbox, and the events the harness produces. Through the events the bot's process keeps the bot's memory, so the memory belongs to the bot and not to the harness.

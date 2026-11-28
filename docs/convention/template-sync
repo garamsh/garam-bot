@@ -39,7 +39,7 @@ selection:
     §Independence and is not taken with it.
   docs/architecture/structures/ supplies alternatives for a structural choice,
     not additional project rules. The domain shape was chosen in #939 and
-    recorded as ADR 0023, with its rules in docs/architecture/structure.md;
+    recorded as ADR 0010, with its rules in docs/architecture/structure.md;
     the folder itself is not copied, as the template's architecture index
     directs once the choice has landed.
   docs/procedure/ (template 1310e430f2e1172069ec71d3822dbbd2730f3ff6) is

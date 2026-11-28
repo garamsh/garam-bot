@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -60,7 +62,7 @@ func TestResolveWorkspaceConfig_EnvOverridesFile(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "configs"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "configs", "workspace.yaml"),
 		[]byte("workspace: /from-file\n"), 0o600))
-	t.Setenv("SHERLOCK_WORKSPACE", "/from-env")
+	t.Setenv("GARAM_BOT_WORKSPACE", "/from-env")
 
 	cfg, err := config.ResolveWorkspace(workspaceFlags(t))
 	require.NoError(t, err)
@@ -70,7 +72,7 @@ func TestResolveWorkspaceConfig_EnvOverridesFile(t *testing.T) {
 
 func TestResolveWorkspaceConfig_FlagOverridesEnv(t *testing.T) {
 	t.Chdir(t.TempDir())
-	t.Setenv("SHERLOCK_WORKSPACE", "/from-env")
+	t.Setenv("GARAM_BOT_WORKSPACE", "/from-env")
 	fs := workspaceFlags(t)
 	require.NoError(t, fs.Set("workspace", "/from-flag"))
 
@@ -83,8 +85,8 @@ func TestResolveWorkspaceConfig_FlagOverridesEnv(t *testing.T) {
 func TestResolveWorkspaceConfig_XDGConfigFile(t *testing.T) {
 	t.Chdir(t.TempDir())
 	xdg := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(xdg, "sherlock"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(xdg, "sherlock", "workspace.yaml"),
+	require.NoError(t, os.MkdirAll(filepath.Join(xdg, "garam-bot"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(xdg, "garam-bot", "workspace.yaml"),
 		[]byte("workspace: /from-xdg\n"), 0o600))
 	fs := workspaceFlags(t)
 	t.Setenv("XDG_CONFIG_HOME", xdg)
@@ -148,4 +150,16 @@ func TestResolveWorkspaceConfig_StrictConfigRefusesUnknownKey(t *testing.T) {
 
 	_, err = config.ResolveWorkspace(workspaceFlags(t))
 	assert.NoError(t, err, "the same file starts without the flag, so the flag is what refused it")
+}
+
+// captureSlog routes slog's default logger at warn level into the
+// returned buffer for the lifetime of the test, and returns a cleanup
+// that restores the previous default.
+func captureSlog(t *testing.T) (*bytes.Buffer, func()) {
+	t.Helper()
+	buf := &bytes.Buffer{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+
+	return buf, func() { slog.SetDefault(prev) }
 }

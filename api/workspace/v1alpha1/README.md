@@ -17,7 +17,7 @@ The normative specification of garam-bot's interface 3, the workspace provider, 
 
 ## Scope and implementations
 
-A workspace is where a bot's agent runs and keeps its files: interface 2's adapter runs inside it, and the bot's process runs outside it (ADR 0031). A workspace provider makes workspaces of one kind. The caller is the program that runs bots at an execution place: the cluster connector, the PC daemon or the naru-host connector (`docs/architecture/bot-system.md`, garam-bot#1208). garam never calls a provider. A WorkspaceClass of interface 1 names its provider by `spec.provider`.
+A workspace is where a bot's agent runs and keeps its files: interface 2's adapter runs inside it, and the bot's process runs outside it (ADR 0013). A workspace provider makes workspaces of one kind. The caller is the program that runs bots at an execution place: the cluster connector, the PC daemon or the naru-host connector (`docs/architecture/bot-system.md`, garam-bot#1208). garam never calls a provider. A WorkspaceClass of interface 1 names its provider by `spec.provider`.
 
 The interface is the Go interface `Provider` in this package, a driver API: an implementation is a Go package that the caller links, and it reaches its backend however that backend is reached. The types in this package are the schema, and `workspace.go` holds the rules every implementation applies (`ParseName`, `Spec.Check`, `SameSpec`).
 

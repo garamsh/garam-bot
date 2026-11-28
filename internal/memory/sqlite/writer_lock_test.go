@@ -119,7 +119,7 @@ func TestOpenConversation_ReopensAfterClose(t *testing.T) {
 }
 
 // TestOpenInitializedConversation_ChecksUnderTheWriterLock holds the
-// check's place after the writer lock (ADR 0025): while another process
+// check's place after the writer lock: while another process
 // holds the lock of an absent store, the opener is refused for the lock
 // and never reaches the check. The control releases the lock, and the
 // same opener then reaches the check and refuses the absent store.

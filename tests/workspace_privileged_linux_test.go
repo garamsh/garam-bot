@@ -22,11 +22,11 @@ import (
 // TestEndToEnd_PrivilegedWorkspaceExec exercises the shipped workspace and its
 // exec-limits shim under the deployment's capabilities, with a distinct UID.
 func TestEndToEnd_PrivilegedWorkspaceExec(t *testing.T) {
-	if os.Getenv("SHERLOCK_PRIVILEGED_TESTS") == "" {
+	if os.Getenv("GARAM_BOT_PRIVILEGED_TESTS") == "" {
 		t.Skip("run make test-privileged as root to exercise the binary privilege boundary")
 	}
 	require.Equal(t, 0, os.Geteuid(), "the privileged binary suite requires root")
-	declared := os.Getenv("SHERLOCK_DEPLOYED_CAPS")
+	declared := os.Getenv("GARAM_BOT_DEPLOYED_CAPS")
 	require.NotEmpty(t, declared, "make test-privileged must declare the narrowed capability set")
 	bits := map[string]uint{"chown": 0, "kill": 5, "setgid": 6, "setuid": 7, "sys_admin": 21}
 	var wantCaps uint64
@@ -51,20 +51,20 @@ func TestEndToEnd_PrivilegedWorkspaceExec(t *testing.T) {
 		}
 	}
 	assertProcessCaps("self")
-	binary := os.Getenv("SHERLOCK_TEST_BINARY")
+	binary := os.Getenv("GARAM_BOT_TEST_BINARY")
 	require.NotEmpty(t, binary, "make test-privileged must build the shipped binary before narrowing")
 	info, err := os.Stat(binary)
 	require.NoError(t, err)
 	require.NotZero(t, info.Mode()&0o111, "the shipped binary must be executable by the exec account")
 
 	// A traversable parent separates DAC refusal from an inaccessible fixture.
-	root, err := os.MkdirTemp("", "sherlock-privileged-workspace-")
+	root, err := os.MkdirTemp("", "garam-bot-privileged-workspace-")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, os.RemoveAll(root)) })
 	require.NoError(t, os.Chmod(root, 0o755))
 	const execUID = 61040
 	workspaceDir := filepath.Join(root, "workspace")
-	t.Setenv("SHERLOCK_BINARY_TEST_SECRET", "workspace-marker")
+	t.Setenv("GARAM_BOT_BINARY_TEST_SECRET", "workspace-marker")
 	cmd, addr, _ := startWorkspaceBinaryAs(t, binary, workspaceDir, emptyConfig(t, "workspace.yaml"), execUID)
 	assertProcessCaps(strconv.Itoa(cmd.Process.Pid))
 	status, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", cmd.Process.Pid))
@@ -126,9 +126,9 @@ func TestEndToEnd_PrivilegedWorkspaceExec(t *testing.T) {
 	t.Run("workspace environment is scrubbed", func(t *testing.T) {
 		environ, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", cmd.Process.Pid))
 		require.NoError(t, err)
-		require.Contains(t, string(environ), "SHERLOCK_BINARY_TEST_SECRET=workspace-marker\x00", "the workspace actually inherited the marker")
-		assert.Equal(t, "unset\n", ok(t, "printf '%s\\n' \"${SHERLOCK_BINARY_TEST_SECRET-unset}\""))
-		control := run(t, &workspace.ExecRequest{Command: "printf '%s' \"$SHERLOCK_BINARY_TEST_SECRET\"", Env: []string{"SHERLOCK_BINARY_TEST_SECRET=explicit"}})
+		require.Contains(t, string(environ), "GARAM_BOT_BINARY_TEST_SECRET=workspace-marker\x00", "the workspace actually inherited the marker")
+		assert.Equal(t, "unset\n", ok(t, "printf '%s\\n' \"${GARAM_BOT_BINARY_TEST_SECRET-unset}\""))
+		control := run(t, &workspace.ExecRequest{Command: "printf '%s' \"$GARAM_BOT_BINARY_TEST_SECRET\"", Env: []string{"GARAM_BOT_BINARY_TEST_SECRET=explicit"}})
 		require.Zero(t, control.ExitCode, control.Stderr)
 		assert.Equal(t, "explicit", control.Stdout, "request environment is still delivered")
 	})

@@ -19,7 +19,7 @@ import (
 
 // Server is the gRPC workspace backend: Read, Write, and List against
 // the workspace filesystem, and Exec through the workspace's executor
-// (ADR 0017) — the workspace is the computer: it serves the files and
+// (ADR 0006) — the workspace is the computer: it serves the files and
 // runs the agent-influenced processes. It exposes no tool hosting:
 // tools are executables the agent's tool client spawns from their
 // manifests. The plugin concept is dropped.
@@ -59,7 +59,7 @@ func (s *Server) List(_ context.Context, req *workspace.ListRequest) (*workspace
 // Exec runs the command through the workspace's executor. An empty
 // workdir defaults to the workspace directory, so exec'd programs see
 // the files the filesystem RPCs serve. A timeout is a normal outcome —
-// the response carries timed_out: true (ADR 0008) — while a privilege
+// the response carries timed_out: true (ADR 0005) — while a privilege
 // drop the platform cannot perform fails closed with
 // agent_uid unavailable.
 func (s *Server) Exec(ctx context.Context, req *workspace.ExecRequest) (*workspace.ExecResponse, error) {

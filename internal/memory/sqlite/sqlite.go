@@ -8,7 +8,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/garamsh/garam-bot/internal/agent"
+	"github.com/garamsh/garam-bot/internal/memory"
 )
 
 // ErrAddressedStore requires an explicit migration before source-linked recall.
@@ -18,10 +18,10 @@ var ErrAddressedStore = errors.New("memory.db holds addressed memories without s
 // lock, so this one must not open the file (ADR 0002).
 var ErrStoreLocked = errors.New("another process owns the memory store")
 
-// Store is the SQLite-backed agent.ConversationMemory.
+// Store is the SQLite-backed memory.ConversationMemory.
 type Store struct {
 	db       *sql.DB
-	embedder agent.Embedder
+	embedder memory.Embedder
 	// lock is the writer lock taken before db opened; closing it
 	// releases the lock.
 	lock *os.File
