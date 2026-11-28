@@ -14,8 +14,9 @@ import (
 
 // Service runs one Bot.
 type Service interface {
-	// Run reads the Bot, then runs the Bot until ctx ends, obtaining its garam token where a connector is
-	// configured. It returns nil when ctx ends, and an error wrapping ErrBotInvalid for a Bot file that
+	// Run reads the Bot, then runs the Bot until ctx ends, obtaining its garam token where a connector
+	// and a credential file are configured, and driving its first attachment's workspace where a
+	// connector and a workspace credential file are. It returns nil when ctx ends, and an error wrapping ErrBotInvalid for a Bot file that
 	// failed the start.
 	Run(ctx context.Context) error
 }
@@ -29,8 +30,14 @@ type Options struct {
 	ConnectorURL string
 	// ConnectorTrustFile holds the certificates the connector is trusted by, read again as it changes.
 	ConnectorTrustFile string
-	// CredentialFile holds the place's credential naming the bot, read again for each request.
+	// CredentialFile holds the place's credential naming the bot for interface 6, read again for each
+	// request. Empty, the bot runs with no garam identity.
 	CredentialFile string
+	// WorkspaceCredentialFile holds the place's credential naming the bot for interface 7, read again
+	// for each request. Empty, or for a Bot with no attachment, the bot runs with no workspace.
+	WorkspaceCredentialFile string
+	// Sleep waits d, or until ctx ends. Time's own where nil.
+	Sleep func(ctx context.Context, d time.Duration) error
 	// StatusFile is the path the status contract's file is written at.
 	StatusFile string
 	// HeartbeatInterval is how often the status file is rewritten.
@@ -61,23 +68,41 @@ func (s *service) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var token *TokenSource
-	if o.ConnectorURL != "" {
-		if token, err = NewTokenSource(o.ConnectorURL, o.ConnectorTrustFile, o.CredentialFile, o.Now); err != nil {
-			return err
-		}
+	var stops []func()
+	token, space, err := s.placeClients(bot)
+	if err != nil {
+		return err
+	}
+	background := func(run func(context.Context)) {
 		ctx, stop := context.WithCancel(ctx)
 		done := make(chan struct{})
-		defer func() {
+		stops = append(stops, func() {
 			stop()
 			<-done
-		}()
+		})
 		go func() {
 			defer close(done)
+			run(ctx)
+		}()
+	}
+	defer func() {
+		for _, stop := range stops {
+			stop()
+		}
+	}()
+	if token != nil {
+		background(func(ctx context.Context) {
 			token.Run(ctx, func(err error) {
 				o.Logger.Warn("garam token not obtained; keeping the token held", "error", err)
 			})
-		}()
+		})
+	}
+	if space != nil {
+		background(func(ctx context.Context) {
+			space.Run(ctx, func(err error) {
+				o.Logger.Warn("workspace not ready; retrying", "attachment", space.cfg.Attachment, "error", err)
+			})
+		})
 	}
 	ref := BotRef{Namespace: bot.Namespace, Name: bot.Name, Generation: bot.Generation}
 	write := func(state State) error {
@@ -86,6 +111,10 @@ func (s *service) Run(ctx context.Context) error {
 			tokenStatus := token.Status()
 			status.Token = &tokenStatus
 		}
+		if space != nil {
+			spaceStatus := space.Status()
+			status.Workspace = &spaceStatus
+		}
 
 		return WriteStatus(o.StatusFile, status)
 	}
@@ -93,7 +122,7 @@ func (s *service) Run(ctx context.Context) error {
 		return err
 	}
 	o.Logger.Info("bot running", "namespace", ref.Namespace, "name", ref.Name, "generation", ref.Generation,
-		"harness", bot.Spec.Agent.Harness, "garamIdentity", token != nil)
+		"harness", bot.Spec.Agent.Harness, "garamIdentity", token != nil, "workspace", space != nil)
 
 	heartbeat := time.NewTicker(o.HeartbeatInterval)
 	defer heartbeat.Stop()
@@ -111,6 +140,46 @@ func (s *service) Run(ctx context.Context) error {
 		}
 	}
 }
+
+// placeClients builds what reaches the place's connector, both bound to one key the process makes
+// (KEY-1): interface 6's token source where a credential file is given, and interface 7's workspace of
+// the Bot's first attachment where a workspace credential file is given and the Bot has one.
+func (s *service) placeClients(bot *v1alpha1.Bot) (*TokenSource, *Workspace, error) {
+	o := s.options
+	if o.ConnectorURL == "" {
+		if o.CredentialFile != "" || o.WorkspaceCredentialFile != "" {
+			return nil, nil, errNoConnector
+		}
+		return nil, nil, nil
+	}
+	if o.ConnectorTrustFile == "" || (o.CredentialFile == "" && o.WorkspaceCredentialFile == "") {
+		return nil, nil, errNoPlace
+	}
+	key, err := NewKey()
+	if err != nil {
+		return nil, nil, err
+	}
+	var token *TokenSource
+	if o.CredentialFile != "" {
+		if token, err = NewTokenSource(o.ConnectorURL, o.ConnectorTrustFile, o.CredentialFile, key, o.Now); err != nil {
+			return nil, nil, err
+		}
+	}
+	var space *Workspace
+	if o.WorkspaceCredentialFile != "" && len(bot.Spec.Workspaces) > 0 {
+		space, err = NewWorkspace(WorkspaceConfig{
+			URL: o.ConnectorURL, TrustFile: o.ConnectorTrustFile, CredentialFile: o.WorkspaceCredentialFile,
+			Attachment: bot.Spec.Workspaces[0].Name, Key: key, Now: o.Now, Sleep: o.Sleep,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return token, space, nil
+}
+
+// errNoConnector is a credential file given with no connector to present it to.
+var errNoConnector = errors.New("--credential-file and --workspace-credential-file need --connector-url")
 
 func readBot(path string) (*v1alpha1.Bot, error) {
 	if path == "" {

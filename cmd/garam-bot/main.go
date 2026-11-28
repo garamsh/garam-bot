@@ -102,9 +102,10 @@ func newRunCommand() *cobra.Command {
 	}
 	flags := command.Flags()
 	flags.StringVar(&options.BotFile, "bot-file", "", "file holding the one Bot to run (required)")
-	flags.StringVar(&options.ConnectorURL, "connector-url", "", "base URL of the place's connector, which answers the bot's garam token; unset runs the bot with no garam identity")
+	flags.StringVar(&options.ConnectorURL, "connector-url", "", "base URL of the place's connector, which answers the bot's garam token and serves its workspace; unset runs the bot with neither")
 	flags.StringVar(&options.ConnectorTrustFile, "connector-trust-file", "", "file holding the certificates the connector is trusted by, read again as it changes")
-	flags.StringVar(&options.CredentialFile, "credential-file", "", "file holding the place's credential naming the bot, read again for each request")
+	flags.StringVar(&options.CredentialFile, "credential-file", "", "file holding the place's credential naming the bot for its garam token, read again for each request; unset runs the bot with no garam identity")
+	flags.StringVar(&options.WorkspaceCredentialFile, "workspace-credential-file", "", "file holding the place's credential naming the bot for its workspace, read again for each request; unset, or for a Bot with no workspace, runs the bot with no workspace")
 	flags.StringVar(&options.StatusFile, "status-file", defaultStatusFile, "file the status is written to")
 	flags.StringVar(&terminationLog, "termination-log", "/dev/termination-log", "file a failed start writes its reason to")
 

@@ -148,8 +148,17 @@ func TestRun_RefusesToStartOnAnInvalidBotOrConfiguration(t *testing.T) {
 		{name: "a Bot the spec refuses", want: bot.ReasonBotInvalid, setup: func(t *testing.T, f files) {
 			writeFile(t, f.bot, mira+"  image: example.com/agent:1\n")
 		}},
-		{name: "a connector without its credential file", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
+		{name: "the control: a Bot with its connector for its workspace alone starts", setup: valid, edit: func(o *bot.Options) {
+			o.ConnectorURL, o.ConnectorTrustFile, o.WorkspaceCredentialFile = "https://connector.test", "/ca.crt", "/token"
+		}},
+		{name: "a connector without any credential file", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
 			o.ConnectorURL, o.ConnectorTrustFile = "https://connector.test", "/ca.crt"
+		}},
+		{name: "a connector without its trust file", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
+			o.ConnectorURL, o.WorkspaceCredentialFile = "https://connector.test", "/token"
+		}},
+		{name: "a workspace credential file without a connector", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
+			o.WorkspaceCredentialFile = "/token"
 		}},
 		{name: "a negative heartbeat interval", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
 			o.HeartbeatInterval = -time.Second
