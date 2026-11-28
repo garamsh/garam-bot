@@ -406,12 +406,12 @@ func (r *AgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // the Agent whose fence holds it.
 func agentOfPod(_ context.Context, pod client.Object) []reconcile.Request {
 	labels := pod.GetLabels()
-	if labels["app.kubernetes.io/name"] != agentContainerName || labels["app.kubernetes.io/instance"] == "" {
+	if labels[labelName] != agentContainerName || labels[labelInstance] == "" {
 		return nil
 	}
 
 	return []reconcile.Request{{NamespacedName: client.ObjectKey{
-		Namespace: pod.GetNamespace(), Name: labels["app.kubernetes.io/instance"],
+		Namespace: pod.GetNamespace(), Name: labels[labelInstance],
 	}}}
 }
 

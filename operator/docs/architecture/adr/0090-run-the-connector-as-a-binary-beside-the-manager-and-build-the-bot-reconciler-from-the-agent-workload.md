@@ -1,6 +1,6 @@
 # ADR 0090: Run the connector as its own binary beside the manager, and build the Bot reconciler from the Agent workload code
 
-> Status: accepted; decision 7, and decision 3's tokens mounted beside the Bot, superseded by ADR-0097
+> Status: accepted; decision 7, and decision 3's tokens mounted beside the Bot, superseded by ADR-0097; decision 3's shared parts narrowed by ADR-0098
 > Date: 2026-11-24
 
 Append-only: once merged, the body below is not rewritten. A fact later found wrong is corrected in an appended note, not edited out; a revised decision is a new ADR that supersedes this one.

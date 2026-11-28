@@ -7,6 +7,17 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  - serviceaccounts
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - nodes
   verbs:
   - get
@@ -71,6 +82,28 @@ rules:
   - jobs
   verbs:
   - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - bot.garam.sh
+  resources:
+  - bots
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - bot.garam.sh
+  resources:
+  - bots/status
+  verbs:
+  - update
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
   - get
   - list
   - watch

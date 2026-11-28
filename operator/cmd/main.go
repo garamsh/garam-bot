@@ -5,18 +5,24 @@ import (
 	"crypto/tls"
 	"errors"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -24,6 +30,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	botv1 "github.com/garamsh/garam-bot/api/declaration/v1alpha1"
 	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
 	"github.com/garamsh/garam-bot/operator/internal/controller"
 	"github.com/garamsh/garam-bot/operator/internal/desired"
@@ -65,6 +72,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(agentv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(botv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -136,7 +144,7 @@ func main() {
 		"The image the init containers of an agent's Pod run to write its config file and make its outbox, "+
 			"and the image a memory move's copy and verification Jobs run. It needs a shell, install, cp, "+
 			"sha256sum, flock, stat and find, and nothing of the agent. Name it by digest, so every node runs "+
-			"one build. It has no default and is always required.")
+			"one build. It has no default, and is required wherever the Agent kind is served.")
 	flag.StringVar(&agentWorkspaceImage, "agent-workspace-image", "",
 		"The image every agent's Pod runs its workspace container from: the process serving the files an "+
 			"agent reads and writes and the commands it runs. It needs a shell, and the agent's own image "+
@@ -147,6 +155,26 @@ func main() {
 			"garam's own image, whose adapter subcommand carries messages between garam and the agent. "+
 			"It is built only where garam-address and control-address are set too. Unset builds agents' Pods "+
 			"carrying no adapter, which is an agent garam delivers no message to.")
+	var bots botOptions
+	flag.StringVar(&bots.image, "bot-image", "",
+		"The garam-bot runtime image every Bot's Pod runs, by digest. Required wherever the Bot kind is served.")
+	flag.StringVar(&bots.watchNamespaces, "watch-namespaces", "",
+		"Comma-separated namespaces the manager caches and acts in, beside release-namespace. Unset caches "+
+			"every namespace.")
+	flag.StringVar(&bots.releaseNamespace, "release-namespace", "",
+		"The connector chart's release namespace, where the connector publishes its trust bundle. Required "+
+			"wherever the Bot kind is served.")
+	flag.StringVar(&bots.releaseName, "release-name", "",
+		"The connector chart's release name. A Bot is built only in a namespace whose claim names "+
+			"<release-namespace>/<release-name>. Required wherever the Bot kind is served.")
+	flag.StringVar(&bots.connectorURL, "connector-url", "",
+		"The connector's bot token server as a Bot's runtime reaches it, such as "+
+			"https://garam-connector.<release-namespace>.svc:8443. Required wherever the Bot kind is served.")
+	flag.StringVar(&bots.trustConfigMap, "trust-configmap", "garam-connector-trust",
+		"The ConfigMap in release-namespace the connector publishes its serving certificates to, under ca.crt, "+
+			"copied into each Bot's namespace.")
+	flag.StringVar(&bots.audience, "bot-token-audience", "garam-connector",
+		"The audience of the ServiceAccount token projected into each Bot's Pod for the connector.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -222,8 +250,23 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	restConfig := ctrl.GetConfigOrDie()
+	// The kinds served decide the reconcilers, once at start (ADR 0090 decision 4).
+	served, err := servedKinds(restConfig)
+	if err != nil {
+		setupLog.Error(err, "Failed to read the kinds the API server serves")
+		os.Exit(1)
+	}
+	setupLog.Info("Kinds served", "agent", served.agent, "bot", served.bot)
+	if controlAddress != "" && !served.agent {
+		setupLog.Error(errors.New("the Agent kind is not served"),
+			"Failed to configure the control path: control-address is set")
+		os.Exit(1)
+	}
+
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:                 scheme,
+		Cache:                  cacheOptions(bots),
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
@@ -246,11 +289,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	if served.bot {
+		if err := setupBots(mgr, bots); err != nil {
+			setupLog.Error(err, "Failed to create controller", "controller", "bot")
+			os.Exit(1)
+		}
+		setupLog.Info("Started the reconciler", "controller", "bot")
+	}
+
 	// Every agent's Pod carries the init container this image runs, so an
 	// operator without one builds no workload at all. Refusing to start says so
 	// once, where a workload built without it would say nothing until its
 	// reader refused the credential.
-	if agentCopyImage == "" {
+	if served.agent && agentCopyImage == "" {
 		setupLog.Error(errors.New("agent-copy-image is required"),
 			"Failed to configure the workload an Agent is built into")
 		os.Exit(1)
@@ -260,24 +311,26 @@ func main() {
 	// misconfigured, so it is said once here and nothing is built for it. An
 	// agent built with no workspace starts and reports itself available, so
 	// this line is the whole of the notice.
-	if agentWorkspaceImage == "" {
+	if served.agent && agentWorkspaceImage == "" {
 		setupLog.Info("Building agents with no workspace: agent-workspace-image is unset, " +
 			"so their file and exec tools will fail on a connection error")
 	}
 
 	// Said once, as the workspace's absence is: an agent built with no adapter
 	// starts and reports itself available, and garam reaches it by no route.
-	if agentAdapterImage == "" || garamAddress == "" || controlAddress == "" {
+	if served.agent && (agentAdapterImage == "" || garamAddress == "" || controlAddress == "") {
 		setupLog.Info("Building agents with no adapter: agent-adapter-image, garam-address or control-address " +
 			"is unset, so garam delivers them no message")
 	}
 
-	if garamIssuer != "" && (agentAdapterImage == "" || garamAddress == "" || controlAddress == "") {
+	if served.agent && garamIssuer != "" && (agentAdapterImage == "" || garamAddress == "" || controlAddress == "") {
 		setupLog.Info("Rendering no issuer: garam-issuer is set, but agents are built with no adapter to sign "+
 			"their messages", "issuer", garamIssuer)
 	}
 
-	if err := (&controller.AgentReconciler{
+	if !served.agent {
+		setupLog.Info("Starting no Agent reconciler: the Agent kind is not served")
+	} else if err := (&controller.AgentReconciler{
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
 		APIReader:      mgr.GetAPIReader(),
@@ -292,6 +345,8 @@ func main() {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "agent")
 		os.Exit(1)
+	} else {
+		setupLog.Info("Started the reconciler", "controller", "agent")
 	}
 	// +kubebuilder:scaffold:builder
 
@@ -439,4 +494,86 @@ func main() {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}
+}
+
+// served is which of the kinds the manager reconciles the API server serves.
+type served struct {
+	agent bool
+	bot   bool
+}
+
+// servedKinds asks the API server's discovery which of Agent and Bot it serves.
+func servedKinds(config *rest.Config) (served, error) {
+	client, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		return served{}, fmt.Errorf("build the discovery client: %w", err)
+	}
+	serves := func(groupVersion, kind string) (bool, error) {
+		resources, err := client.ServerResourcesForGroupVersion(groupVersion)
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		if err != nil {
+			return false, fmt.Errorf("discover %s: %w", groupVersion, err)
+		}
+		for _, resource := range resources.APIResources {
+			if resource.Kind == kind {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	var found served
+	if found.agent, err = serves(agentv1alpha1.GroupVersion.String(), "Agent"); err != nil {
+		return served{}, err
+	}
+	if found.bot, err = serves(botv1.GroupVersion.String(), "Bot"); err != nil {
+		return served{}, err
+	}
+	return found, nil
+}
+
+// botOptions are the flags the Bot reconciler is built from.
+type botOptions struct {
+	image, watchNamespaces, releaseNamespace, releaseName, connectorURL, trustConfigMap, audience string
+}
+
+// trustKey is the key of the connector's trust ConfigMap its serving certificates are published under.
+const trustKey = "ca.crt"
+
+// cacheOptions restricts the cache to the watched namespaces and the release namespace, where
+// watch-namespaces is set.
+func cacheOptions(bots botOptions) cache.Options {
+	if bots.watchNamespaces == "" {
+		return cache.Options{}
+	}
+	namespaces := map[string]cache.Config{}
+	for name := range strings.SplitSeq(bots.watchNamespaces, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			namespaces[name] = cache.Config{}
+		}
+	}
+	if bots.releaseNamespace != "" {
+		namespaces[bots.releaseNamespace] = cache.Config{}
+	}
+	return cache.Options{DefaultNamespaces: namespaces}
+}
+
+// setupBots sets the Bot reconciler up with mgr. It needs no garam address or key (ADR 0090 decision 1).
+func setupBots(mgr ctrl.Manager, bots botOptions) error {
+	if bots.image == "" || bots.releaseNamespace == "" || bots.releaseName == "" || bots.connectorURL == "" {
+		return errors.New("bot-image, release-namespace, release-name and connector-url are required " +
+			"wherever the Bot kind is served")
+	}
+	return (&controller.BotReconciler{
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		Image:          bots.image,
+		Release:        bots.releaseNamespace + "/" + bots.releaseName,
+		TrustNamespace: bots.releaseNamespace,
+		TrustConfigMap: bots.trustConfigMap,
+		TrustKey:       trustKey,
+		ConnectorURL:   bots.connectorURL,
+		Audience:       bots.audience,
+	}).SetupWithManager(mgr)
 }

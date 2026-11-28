@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,12 +11,15 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	botv1 "github.com/garamsh/garam-bot/api/declaration/v1alpha1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/yaml"
 
 	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
@@ -46,6 +50,7 @@ var _ = BeforeSuite(func() {
 	var err error
 	err = agentv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
+	Expect(botv1.AddToScheme(scheme.Scheme)).To(Succeed())
 
 	// +kubebuilder:scaffold:scheme
 
@@ -53,6 +58,8 @@ var _ = BeforeSuite(func() {
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
+		// Interface 1's kinds, as the connector chart installs them, for the Bot reconciler.
+		CRDs: interfaceOneDefinitions(),
 	}
 
 	// Retrieve the first found binary directory to allow running tests from IDEs
@@ -77,6 +84,28 @@ var _ = AfterSuite(func() {
 		return testEnv.Stop()
 	}, time.Minute, time.Second).Should(Succeed())
 })
+
+// interfaceOneDefinitions are interface 1's CustomResourceDefinitions, from the interface's package.
+func interfaceOneDefinitions() []*apiextensionsv1.CustomResourceDefinition {
+	GinkgoHelper()
+	var out []*apiextensionsv1.CustomResourceDefinition
+	Expect(fs.WalkDir(botv1.CRDs, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		read, err := fs.ReadFile(botv1.CRDs, path)
+		if err != nil {
+			return err
+		}
+		definition := &apiextensionsv1.CustomResourceDefinition{}
+		if err := yaml.Unmarshal(read, definition); err != nil {
+			return err
+		}
+		out = append(out, definition)
+		return nil
+	})).To(Succeed())
+	return out
+}
 
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
 // ENVTEST-based tests depend on specific binaries, usually located in paths set by
