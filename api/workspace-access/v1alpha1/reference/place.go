@@ -2,8 +2,10 @@ package reference
 
 import (
 	"crypto/rand"
+	"maps"
 	"net"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -140,6 +142,13 @@ func (p *place) setPhase(key string, s *space, phase workspace.Phase, deleting b
 	}
 	if phase != workspace.PhaseRunning || deleting {
 		p.closeDials(func(d *dial) bool { return d.space == key })
+	}
+	// A stop and a recovery keep the data volume alone, as interface 3's workspaces do, so the reference
+	// passes nothing a provider's workspace would fail.
+	if phase == workspace.PhaseStopped || phase == workspace.PhaseFailed {
+		maps.DeleteFunc(s.files, func(path string, _ entry) bool {
+			return !strings.HasPrefix(path, workspace.DataPath+"/")
+		})
 	}
 }
 

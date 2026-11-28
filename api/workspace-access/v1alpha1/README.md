@@ -128,6 +128,7 @@ Interface 3's errors reach the client so:
     - It creates the workspace where none exists, and starts it where it is stopped.
     - Where it has failed, it recreates the workspace's workload, keeping its data volume as a stop and a start do. An interface 3 implementation whose failed workspace has lost its volume answers `failed` with that reason.
     - Otherwise it changes nothing.
+    - **What a start loses.** A stop and a recovery keep the data volume alone, and the token directory is not on it, so an acquire that started or recovered the workspace leaves no token there. The client writes its tokens again with FILE-1 after such an acquire, as TOK-2 writes them.
   - **Naming.** The server names the workspace from the bot's identity and the attachment, so no bot reaches another's, and a bot made again under the same name, with a new identity, gets a new workspace.
   - **The spec.** It builds the workspace's interface 3 spec from the attachment's WorkspaceClass and the place's configuration: the image for the bot's harness, interface 2's `Port`, and the egress the place gives that provider's workspaces.
   - **What it refuses.** An attachment the server cannot serve is answered 422 `unsupported` with its reason: a provider the place does not run, a harness with no image, a class interface 3 refuses, or a form of attachment this release does not serve.

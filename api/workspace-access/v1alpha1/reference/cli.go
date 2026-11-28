@@ -55,6 +55,7 @@ const usage = `usage: workspace-access-reference --dir DIR <subcommand> [argumen
   restart INSTANCE
   end INSTANCE
   workspace UID ATTACHMENT --stopped|--failed|--pending|--deleting|--running
+  seed UID ATTACHMENT PATH CONTENT
   file UID ATTACHMENT PATH
   link UID ATTACHMENT PATH TARGET
   exists UID ATTACHMENT

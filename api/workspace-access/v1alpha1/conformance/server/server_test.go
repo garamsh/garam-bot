@@ -18,9 +18,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	v1alpha1 "github.com/garamsh/garam-bot/api/workspace-access/v1alpha1"
+	workspace "github.com/garamsh/garam-bot/api/workspace/v1alpha1"
 )
 
-const token = v1alpha1.TokenDir + "agent/token"
+const (
+	token = v1alpha1.TokenDir + "agent/token"
+	// data is a file of the workspace's data volume, which a stop and a recovery keep.
+	data = workspace.DataPath + "/kept"
+)
 
 func TestServer(t *testing.T) {
 	for _, c := range []struct {
@@ -45,6 +50,7 @@ func TestServer(t *testing.T) {
 		{"BOT-1/an instance of the bot's earlier incarnation reaches nothing", botEarlierIncarnation},
 		{"WS-1/acquire is idempotent and answers the workspace's state", acquireIdempotent},
 		{"WS-1/acquire starts a stopped workspace and recovers a failed one with its data", acquireRecovers},
+		{"WS-1/a token file is gone after a stop or a recovery, and is written again", tokensGoneAfterStart},
 		{"WS-1/an attachment the server cannot serve is unsupported", acquireUnsupported},
 		{"WS-1/a workspace still deleting is answered deleting", acquireDeleting},
 		{"WS-1/a workspace whose bot is gone is deleted, and one whose bot lives is not", deletedWithBot},
@@ -324,13 +330,29 @@ func acquireIdempotent(t *testing.T) {
 func acquireRecovers(t *testing.T) {
 	b := newBot(t)
 	b.running(t)
-	require.Equal(t, http.StatusNoContent, b.write(t, v1alpha1.File{Path: token, Content: []byte("kept")}).status)
+	run(t, "seed", b.uid, "main", data, "kept")
 	for _, phase := range []string{"--stopped", "--failed"} {
 		run(t, "workspace", b.uid, "main", phase)
 		read := workspaceOf(t, b.call(t, http.MethodGet, ws("main"), nil))
 		require.NotEqualValues(t, "running", read.Phase, phase) // setup
 		b.running(t)
-		assert.Equal(t, "kept", b.file(t, token).Content, "the data survives %s", phase)
+		assert.Equal(t, "kept", b.file(t, data).Content, "the data survives %s", phase)
+	}
+}
+
+// tokensGoneAfterStart holds what a client is told: a token file lives outside the data volume, so an
+// acquire that started or recovered the workspace leaves none, and the client writes its tokens again.
+func tokensGoneAfterStart(t *testing.T) {
+	b := newBot(t)
+	b.running(t)
+	for _, phase := range []string{"--stopped", "--failed"} {
+		require.Equal(t, http.StatusNoContent, b.write(t, v1alpha1.File{Path: token, Content: []byte("before")}).status)
+		require.True(t, b.file(t, token).Exists, phase) // setup
+		run(t, "workspace", b.uid, "main", phase)
+		b.running(t)
+		assert.False(t, b.file(t, token).Exists, "a token outlives %s", phase)
+		require.Equal(t, http.StatusNoContent, b.write(t, v1alpha1.File{Path: token, Content: []byte("after")}).status)
+		assert.Equal(t, "after", b.file(t, token).Content, "the token is written again after %s", phase)
 	}
 }
 
