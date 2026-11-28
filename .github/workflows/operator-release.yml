@@ -1,8 +1,9 @@
 name: operator release
 
 # Publishes a release: the manager's image to garam-bot/operator-manager, the
-# control service's to garam-bot/operator-control and the connector's to
-# garam-bot/operator-connector (garam-bot ADR 0041), each tagged with the version
+# control service's to garam-bot/operator-control, the connector's to
+# garam-bot/operator-connector and the model gateway's to
+# garam-bot/operator-model-gateway (garam-bot ADR 0041), each tagged with the version
 # its git tag names without the operator/v, from an operator/v0.1.0-dev.N,
 # operator/v0.1.0-rc.N or operator/v0.1.0 tag on main (operator ADR 0051, ADR 0081,
 # operator/docs/architecture/delivery.md). Modelled on sherlock's release
@@ -23,7 +24,7 @@ name: operator release
 # `repo:garamsh@307152666/garam-bot@1311139677:ref:refs/tags/operator/v*` and the
 # runtime's `.../ref:refs/tags/v*` and nothing else, so a run on a branch or a pull
 # request gets no credential. What `operator/v*` admits and the scheme does not is refused by the
-# version step, before any AWS call: both repositories are IMMUTABLE and a wrong
+# version step, before any AWS call: every repository is IMMUTABLE and a wrong
 # name is permanent.
 #
 # Nothing here creates a tag. A person tags main's tip after a promotion and pushes
@@ -92,7 +93,7 @@ jobs:
             exit 1
           fi
 
-      # All three images are built before any is pushed, through the one entry point
+      # All four images are built before any is pushed, through the one entry point
       # a person also uses (ci.md §One entry point per task); the Makefile owns the
       # commands and pushes nothing. Each is one linux/amd64 manifest, labelled
       # with the commit the tag names.
@@ -118,11 +119,11 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          for image in manager control connector; do
+          for image in manager control connector model-gateway; do
             make verify-image-ref IMAGE_REF="$REGISTRY/garam-bot/operator-$image:$VERSION"
             docker tag "garam-bot/operator-$image:$GITHUB_SHA" "$REGISTRY/garam-bot/operator-$image:$VERSION"
           done
-          for image in manager control connector; do
+          for image in manager control connector model-gateway; do
             docker push "$REGISTRY/garam-bot/operator-$image:$VERSION"
           done
 
@@ -143,7 +144,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          for image in manager control connector; do
+          for image in manager control connector model-gateway; do
             ref="$REGISTRY/garam-bot/operator-$image:$VERSION"
             fields=$(aws ecr batch-get-image \
               --repository-name "garam-bot/operator-$image" \
