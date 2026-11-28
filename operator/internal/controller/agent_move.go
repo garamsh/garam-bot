@@ -21,6 +21,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
+	"github.com/garamsh/garam-bot/operator/internal/workload"
 )
 
 // A move's record is kept on the claims, which outlive the Agent, and never in
@@ -758,12 +759,12 @@ func (r *AgentReconciler) moveJob(agent *agentv1alpha1.Agent, target *corev1.Per
 		script = moveVerifyScript
 	}
 	labels := map[string]string{
-		moveAgentLabel:               agent.Name,
-		"app.kubernetes.io/name":     "agent-memory-move",
-		"app.kubernetes.io/instance": agent.Name,
+		moveAgentLabel: agent.Name,
+		labelName:      "agent-memory-move",
+		labelInstance:  agent.Name,
 	}
 
-	return &batchv1.Job{
+	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: agent.Namespace, Labels: labels},
 		Spec: batchv1.JobSpec{
 			BackoffLimit: ptr.To[int32](0),
@@ -772,19 +773,13 @@ func (r *AgentReconciler) moveJob(agent *agentv1alpha1.Agent, target *corev1.Per
 				Spec: corev1.PodSpec{
 					RestartPolicy:                corev1.RestartPolicyNever,
 					AutomountServiceAccountToken: ptr.To(false),
-					SecurityContext: &corev1.PodSecurityContext{
-						FSGroup:        ptr.To[int64](agentFSGroup),
-						RunAsUser:      ptr.To[int64](agentRunAsUser),
-						RunAsNonRoot:   ptr.To(true),
-						SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
-					},
 					Containers: []corev1.Container{{
 						Name:            moveContainerName,
 						Image:           r.CopyImage,
-						ImagePullPolicy: corev1.PullAlways,
+						ImagePullPolicy: workload.PullPolicy,
 						Command: append(shellCommand(script), "move",
 							path.Dir(descriptor.memoryFile), path.Base(descriptor.memoryFile)),
-						SecurityContext: containerSecurityContext(),
+						SecurityContext: workload.ContainerSecurityContext(),
 						VolumeMounts: []corev1.VolumeMount{
 							{Name: moveSourceVolume, MountPath: moveSourceMountPath, ReadOnly: true},
 							{Name: moveTargetVolume, MountPath: moveTargetMountPath, ReadOnly: step != moveStepCopy},
@@ -798,6 +793,9 @@ func (r *AgentReconciler) moveJob(agent *agentv1alpha1.Agent, target *corev1.Per
 			},
 		},
 	}
+	workload.RestrictPod(&job.Spec.Template.Spec, agentRunAsUser, agentFSGroup)
+
+	return job
 }
 
 // claimVolume is a Pod volume mounting the claim called claim.

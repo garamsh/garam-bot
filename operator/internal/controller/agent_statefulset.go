@@ -23,6 +23,7 @@ import (
 	agentv1alpha1 "github.com/garamsh/garam-bot/operator/api/v1alpha1"
 	"github.com/garamsh/garam-bot/operator/internal/agentname"
 	"github.com/garamsh/garam-bot/operator/internal/garam"
+	"github.com/garamsh/garam-bot/operator/internal/workload"
 )
 
 const (
@@ -178,17 +179,6 @@ const (
 // messageSigningKeysPath is the machine listener's route serving the keys garam
 // signs messages with (garam@5f178278:api/machine.yaml:776-783).
 const messageSigningKeysPath = "/message-signing-keys"
-
-// containerSecurityContext is what every container of the agent's Pod carries.
-// It holds the two fields PodSecurity restricted asks of a container and nothing
-// else: readOnlyRootFilesystem is no part of that standard, and naming a user
-// here would take the Pod's own away from whichever container named it.
-func containerSecurityContext() *corev1.SecurityContext {
-	return &corev1.SecurityContext{
-		AllowPrivilegeEscalation: ptr.To(false),
-		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-	}
-}
 
 // shellCommand runs script in a shell that stops at the first command to fail.
 func shellCommand(script string) []string {
@@ -569,18 +559,7 @@ func (r *AgentReconciler) applyAgent(agent *agentv1alpha1.Agent, statefulSet *ap
 	statefulSet.Spec.Template.Spec.TerminationGracePeriodSeconds =
 		ptr.To(int64(descriptor.terminationGrace / time.Second))
 
-	if statefulSet.Spec.Template.Spec.SecurityContext == nil {
-		statefulSet.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{}
-	}
-	podSecurity := statefulSet.Spec.Template.Spec.SecurityContext
-	podSecurity.FSGroup = ptr.To[int64](agentFSGroup)
-	podSecurity.RunAsUser = ptr.To[int64](agentRunAsUser)
-	// Naming a user PodSecurity restricted would accept is not the same as
-	// asserting one: it reads runAsNonRoot and refuses a Pod that leaves it
-	// unset. Both fields sit here rather than on the containers because both are
-	// one value for the whole Pod.
-	podSecurity.RunAsNonRoot = ptr.To(true)
-	podSecurity.SeccompProfile = &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}
+	workload.RestrictPod(&statefulSet.Spec.Template.Spec, agentRunAsUser, agentFSGroup)
 
 	statefulSet.Spec.Template.Spec.Volumes = nil
 	if plan.claim != "" {
@@ -601,13 +580,11 @@ func (r *AgentReconciler) applyAgent(agent *agentv1alpha1.Agent, statefulSet *ap
 	container := containerNamed(&statefulSet.Spec.Template.Spec.Containers, agentContainerName)
 	container.Image = agent.Spec.Image
 	// Always, for every type: the sherlock descriptor's agent requires a consumer
-	// of its images to pull always, because an image a reference names can be
-	// deleted from the repository holding it and the default IfNotPresent turns a
-	// reference that stopped resolving into a per-node stale cache
+	// of its images to pull always
 	// (sherlock@8218189:docs/architecture/deployment.md:252).
-	container.ImagePullPolicy = corev1.PullAlways
+	container.ImagePullPolicy = workload.PullPolicy
 	container.Resources = agent.Spec.Resources
-	container.SecurityContext = containerSecurityContext()
+	container.SecurityContext = workload.ContainerSecurityContext()
 	container.VolumeMounts = []corev1.VolumeMount{
 		{Name: stateVolumeName, MountPath: descriptor.stateMountPath},
 	}
@@ -774,7 +751,7 @@ func (r *AgentReconciler) applyConfig(agent *agentv1alpha1.Agent, statefulSet *a
 	config.Image = r.CopyImage
 	// Always, on the ground the credential's init container already carries: the
 	// image is the deployer's and nothing here requires its tag to name one build.
-	config.ImagePullPolicy = corev1.PullAlways
+	config.ImagePullPolicy = workload.PullPolicy
 	config.Command = writeConfigCommand(descriptor.configMountPath, descriptor, ego, instructions, controlRoot != nil)
 	config.Env = []corev1.EnvVar{{Name: configContentVariable, Value: file}}
 	if ego {
@@ -783,7 +760,7 @@ func (r *AgentReconciler) applyConfig(agent *agentv1alpha1.Agent, statefulSet *a
 	if instructions {
 		config.Env = append(config.Env, corev1.EnvVar{Name: instructionsContentVariable, Value: instructionsText})
 	}
-	config.SecurityContext = containerSecurityContext()
+	config.SecurityContext = workload.ContainerSecurityContext()
 	config.VolumeMounts = []corev1.VolumeMount{{Name: configVolumeName, MountPath: descriptor.configMountPath}}
 
 	// The control root is public, and the manager already reads it, so it takes
@@ -828,8 +805,8 @@ func (r *AgentReconciler) applyWorkspace(statefulSet *appsv1.StatefulSet, descri
 	workspace := containerNamed(containers, workspaceContainerName)
 	workspace.Image = r.WorkspaceImage
 	// Pulled at every start on the ground the agent's image is.
-	workspace.ImagePullPolicy = corev1.PullAlways
-	workspace.SecurityContext = containerSecurityContext()
+	workspace.ImagePullPolicy = workload.PullPolicy
+	workspace.SecurityContext = workload.ContainerSecurityContext()
 	// The image's own entrypoint already serves the workspace, so every setting
 	// reaches it through the environment and this operator writes no command.
 	workspace.Env = []corev1.EnvVar{
@@ -882,13 +859,13 @@ func (r *AgentReconciler) applyAdapter(agent *agentv1alpha1.Agent, statefulSet *
 	adapter := containerNamed(initContainers, adapterContainerName)
 	adapter.Image = r.AdapterImage
 	// Pulled at every start on the ground the agent's image is.
-	adapter.ImagePullPolicy = corev1.PullAlways
+	adapter.ImagePullPolicy = workload.PullPolicy
 	adapter.RestartPolicy = ptr.To(corev1.ContainerRestartPolicyAlways)
 	// garam's image runs garam (garam@fdfb76d:deploy/local/Dockerfile:58), and
 	// the adapter is its subcommand. No probe: the adapter listens on nothing
 	// (garam@fdfb76d:docs/architecture/deployment-contract.md:473-477).
 	adapter.Args = []string{"adapter"}
-	adapter.SecurityContext = containerSecurityContext()
+	adapter.SecurityContext = workload.ContainerSecurityContext()
 	// The token mode: the token file in place of a certificate and key, which
 	// garam refuses beside it (garam@afde8b8:docs/architecture/adapter.md
 	// §Token mode).
@@ -973,9 +950,9 @@ func (r *AgentReconciler) applyOutbox(agent *agentv1alpha1.Agent, statefulSet *a
 	outbox := containerNamed(initContainers, outboxContainerName)
 	outbox.Image = r.CopyImage
 	// Always, on the ground the credential's init container carries.
-	outbox.ImagePullPolicy = corev1.PullAlways
+	outbox.ImagePullPolicy = workload.PullPolicy
 	outbox.Command = makeOutboxCommand(outboxStateMountPath + "/" + descriptor.outboxDir())
-	outbox.SecurityContext = containerSecurityContext()
+	outbox.SecurityContext = workload.ContainerSecurityContext()
 	outbox.VolumeMounts = []corev1.VolumeMount{{Name: stateVolumeName, MountPath: outboxStateMountPath}}
 }
 
@@ -1051,7 +1028,7 @@ func claim(name string, size resource.Quantity, agent *agentv1alpha1.Agent) core
 // StatefulSet's selector, which cannot change once it exists.
 func workloadLabels(agent *agentv1alpha1.Agent) map[string]string {
 	return map[string]string{
-		"app.kubernetes.io/name":     agentContainerName,
-		"app.kubernetes.io/instance": agent.Name,
+		labelName:     agentContainerName,
+		labelInstance: agent.Name,
 	}
 }

@@ -2,7 +2,7 @@
 
 How a user's own cluster is connected to garam: the chart a user installs, the connector program in it, its registration and identity, the declarations it syncs both ways, the rights it holds in the cluster, and what garam owes on its side.
 
-Registration and identity are built, in `cmd/connector` and `internal/clusteridentity` (#440), except registering again after a key is lost (#450). Applying declarations and reporting are built, in `internal/declaration` (#441, #442). Bots' tokens are built, in `internal/bottoken` (garam-bot#1255). The rest is not built yet. This document states what is decided. Goal #436 lists the implementation issues, and each section names the decision it holds.
+Registration and identity are built, in `cmd/connector` and `internal/clusteridentity` (#440), except registering again after a key is lost (#450). Applying declarations and reporting are built, in `internal/declaration` (#441, #442). Bots' tokens are built, in `internal/bottoken` (garam-bot#1255). The manager's Bot reconciler is built, in `internal/controller` (garam-bot#1254). The rest is not built yet. This document states what is decided. Goal #436 lists the implementation issues, and each section names the decision it holds.
 
 ## Current decisions
 
@@ -13,7 +13,15 @@ Registration and identity are built, in `cmd/connector` and `internal/clusteride
   - **The manager** reconciles garam-bot's interface-1 objects into workloads. It needs no garam connection, so the chart with the connector off is the cluster mode that works without garam.
   - **The connector**, `cmd/connector`, holds the cluster's identity and is the only program that talks to garam.
   - **They meet only through the Kubernetes API.**
-- **The Bot reconciler is built from the Agent workload code.** What the two share moves out of `internal/controller` into a package below both. One Bot is one StatefulSet of one, whose runtime reads that Bot from a mounted file.
+- **The Bot reconciler is built from the Agent workload code** ([ADR 0098](adr/0098-build-the-bot-reconciler-on-the-restricted-pod-and-pull-policy-alone-and-keep-the-fence-and-claims-with-the-agent.md)). What the two share today, the restricted Pod and the pull policy, is `internal/workload`. The writer fence and the claims stay with the Agent until a Bot holds state. One Bot is one StatefulSet of one, whose runtime reads that Bot from a mounted file.
+- **What the manager builds for a Bot**, in a namespace whose claim names its release, every object controlled by the Bot:
+  - a ServiceAccount of the Bot's name, with no rights and no token mounted but the connector's;
+  - the Bot file, the ConfigMap `<bot>-bot`;
+  - the trust copy, the ConfigMap `<bot>-connector-trust`, copied again on every change of `--trust-configmap`;
+  - the StatefulSet of one, running `--bot-image`. It carries the ServiceAccount token projected for `--bot-token-audience`, 600 seconds, and `garam-bot probe` as its probes, and PodSecurity `restricted` admits its Pod.
+  - A cluster-owned Bot gets no trust copy, no projected token and no connector flags, so it runs with no garam identity.
+- **A Bot's `Running` condition** is read off its Pod's runtime container: `True` while it is ready, and otherwise the reason its termination message names, `Starting`, or `WaitingForConnectorTrust`. In a namespace not claimed for its release the manager writes nothing and logs once per Bot why.
+- **Interface 1's kinds are garam-bot's interface.** Their Go types come from garam-bot's `api/declaration/v1alpha1`, and no second API group is scaffolded under `api/`, so `stack-kubebuilder.md` §1's single-group rule holds for this project's own APIs (garam-bot#1254).
 - **The manager starts a reconciler for each kind the cluster serves**, found by discovery at start. The chart installs no `Agent` CRD, so the chart's manager runs no `Agent` reconciler. No mode flag is added. Where `--control-address` is set, a missing `Agent` kind fails the start.
 - **The control-service path is not part of the chart.** `internal/desired`, the `Agent` refresher, the `Agent` kind and the control service stay as `agent.md` and `control.md` describe them, and do not run in a user's cluster.
 
@@ -170,4 +178,3 @@ These are obligations on `garamsh/garam`, for that repository to decide and buil
 - **Several bots in one pod.** The 11-21 decision's one pod per organization, with a process per bot, waits for a garam-bot runtime that runs several bots. This goal runs one Bot per StatefulSet.
 - **Sealed static keys.** The owner's decision of 2026-11-21, item 5, deferred past the first goal on 2026-11-24.
 - **Where users pull the chart and the images from.** Today's repositories are private ECR (`delivery.md`), which a user's cluster cannot pull from.
-- **How garam-bot's interface 1 kinds are served here.** `stack-kubebuilder.md` §1 says this project is single-group, and interface 1's group is an open question in `garamsh/garam-bot#1193`.

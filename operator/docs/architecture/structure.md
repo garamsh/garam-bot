@@ -15,7 +15,7 @@ How this repository is partitioned: what a unit is, what may reference what, and
 The kubebuilder scaffold writes the manager's code into paths it names, and the CLI rewrites them. Those paths stay where it puts them, even where their names are a technical role:
 
 - `api/<version>/` holds the API kinds. It sits **below every domain**: a domain may import it, and it imports no domain.
-- `internal/controller/` holds the reconcilers. It is the domain of the `Agent` workload — the Pod, its volumes and its status — under the name the scaffold gives it.
+- `internal/controller/` holds the reconcilers. It is the domain of the `Agent` and `Bot` workloads — the Pod, its volumes and its status — under the name the scaffold gives it.
 - `test/utils/` is scaffolded test support. It is no domain, and it is not a precedent for a `utils` anywhere else.
 
 ### Surfaces and references
@@ -31,6 +31,7 @@ The kubebuilder scaffold writes the manager's code into paths it names, and the 
 
 - **What two domains both need sits below them, never beside them.** It is extracted to a package named for what it is, which imports no domain, or it is owned by one domain and reached through that domain's surface. It never becomes a sibling folder that no domain owns.
 - **`internal/secretref` states and parses a Secret key reference, `<secret-name>/<key>`, for both binaries** (#248). The control service's `internal/definition` and the manager's `internal/desired/renderer` both parse with it, and neither restates the rule. It imports no domain.
+- **`internal/workload` is what every Pod the manager builds carries, for the `Agent` and the `Bot` reconcilers alike** ([ADR 0098](adr/0098-build-the-bot-reconciler-on-the-restricted-pod-and-pull-policy-alone-and-keep-the-fence-and-claims-with-the-agent.md)): the fields PodSecurity `restricted` reads, and the pull policy. It imports no domain.
 - **`internal/machinetoken` obtains an operator's garam token under its own key and presents it, for both binaries** ([ADR 0072](adr/0072-authenticate-the-manager-and-the-control-service-to-garam-with-their-own-private-keys.md)). The manager's composition site hands it to `internal/garam`'s and `internal/desired`'s clients, and the control service's to `internal/garammachine`'s; `internal/garam` also reads its failure type to count it. What each exchange signs as is an `Identity`: the manager and the control service give it `Files`, an issued key placed as files, and the connector gives it the key it holds in memory (#440). It imports no domain.
 
 ### Interface specifications
