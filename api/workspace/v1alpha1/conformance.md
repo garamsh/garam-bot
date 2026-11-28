@@ -8,6 +8,7 @@ The tests of `README.md`'s requirements: what each one is, and how a new impleme
 - **`TestReference`** runs it against `workspacefake`, twice: offering every capability and offering none, so each case a capability gates runs on one side and skips on the other. `make test` runs it.
 - **The conformance image** is what a real implementation runs the suite with. It carries `true`, `false` and `cat` on its `PATH`, and its entrypoint echoes every byte it reads on TCP port 7 (`conformance.EchoPort`). `workspacefake` behaves as that image and runs none.
 - **A case a capability gates** skips when the implementation reports the other side, with that reason.
+- **The caller suite** is `CallerCases()` in the same package, run with `conformance.RunCaller(t, caller)`: the case of VER-2, the one requirement that binds the caller. A caller plugs in as a `conformance.Caller` (read a workspace's phase and a snapshot's through a `Provider`), and the suite serves it a provider that answers a phase a later release may add. `TestReferenceCaller` runs it against `conformance.ReferenceCaller`, the smallest caller that keeps VER-2. The bot's driver (garam-bot#1281) binds its own code to the same cases.
 - **A pending case** is skipped with its reason. It counts as named, not as passing.
 - **Every workspace and snapshot a case makes** is deleted when the case ends, by a name no other case uses.
 
@@ -35,4 +36,4 @@ The tests of `README.md`'s requirements: what each one is, and how a new impleme
 | SNAP-2 | `SNAP-2/a restore holds the snapshot's data and outlives its source`, `SNAP-2/a restore of another disk size is refused` |
 | SNAP-3 | `SNAP-3/snapshot is refused without the snapshot capability` |
 | VER-1 | `SpecRelease` in this package, read by review: the release is a constant, not behaviour |
-| VER-2 | `VER-2/a caller reads a phase it does not know as unknown`, pending a caller suite, which arrives with the first caller |
+| VER-2 | `VER-2/a caller reads a phase it does not know as unknown`, `VER-2/a caller reads a snapshot phase it does not know as unknown`, in the caller suite |
