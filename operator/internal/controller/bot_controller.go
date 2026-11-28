@@ -41,8 +41,12 @@ type BotReconciler struct {
 	TrustNamespace string
 	TrustConfigMap string
 	TrustKey       string
-	// ConnectorURL is the connector's bot token server, as the runtime reaches it, and Audience the
-	// audience the Bot's projected ServiceAccount token names for it.
+	// WorkspaceAudience is the audience of the second token projected into every Bot's Pod, for
+	// interface 7 (garam-bot-operator ADR 0099 decision 12).
+	WorkspaceAudience string
+	// ConnectorURL is the connector, as the runtime reaches it, and empty where the chart runs none, so
+	// no Bot reaches one. Audience is the audience of interface 6's token, projected for a garam-owned
+	// Bot alone.
 	ConnectorURL string
 	Audience     string
 
@@ -83,10 +87,11 @@ func (r *BotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 	r.unclaimed.Delete(bot.UID)
 
-	// Only a garam-owned Bot has a garam identity, which its runtime obtains from the connector. A
-	// cluster-owned one runs with none, so its Pod reaches no connector (garam-bot runtime.md).
+	// Every Bot reaches the connector for its workspace, so each waits for its trust; only a garam-owned
+	// one also has a garam identity (garam-bot-operator ADR 0099 decision 12). With no connector, a Bot
+	// reaches none.
 	bundle := ""
-	if management, err := botv1.ManagementOf(bot); err == nil && management.Owner() == botv1.OwnerGaram {
+	if r.ConnectorURL != "" {
 		trust := &corev1.ConfigMap{}
 		err = r.Get(ctx, client.ObjectKey{Namespace: r.TrustNamespace, Name: r.TrustConfigMap}, trust)
 		if err != nil && !apierrors.IsNotFound(err) {
@@ -98,7 +103,9 @@ func (r *BotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			return ctrl.Result{}, r.writeBotStatus(ctx, bot)
 		}
 	}
-	set, err := r.reconcileObjects(ctx, bot, bundle)
+	management, err := botv1.ManagementOf(bot)
+	garamOwned := err == nil && management.Owner() == botv1.OwnerGaram
+	set, err := r.reconcileObjects(ctx, bot, bundle, garamOwned)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -133,9 +140,12 @@ func (r *BotReconciler) claimed(ctx context.Context, namespace string) (bool, st
 }
 
 // reconcileObjects creates or brings back each object the Bot runs on, every one controlled by the Bot,
-// and answers the StatefulSet as the API server now holds it. bundle is the connector's trust bundle
-// for a garam-owned Bot, and empty for one that reaches no connector, which gets no trust copy.
-func (r *BotReconciler) reconcileObjects(ctx context.Context, bot *botv1.Bot, bundle string) (*appsv1.StatefulSet, error) {
+// and answers the StatefulSet as the API server now holds it. bundle is the connector's trust bundle,
+// and empty where the manager has no connector, so the Bot gets no trust copy. garamOwned gives the Bot
+// interface 6's credential too.
+func (r *BotReconciler) reconcileObjects(ctx context.Context, bot *botv1.Bot, bundle string, garamOwned bool) (
+	*appsv1.StatefulSet, error,
+) {
 	file, err := botFile(bot)
 	if err != nil {
 		return nil, fmt.Errorf("render the Bot file: %w", err)
@@ -162,7 +172,7 @@ func (r *BotReconciler) reconcileObjects(ctx context.Context, bot *botv1.Bot, bu
 			trustCopy.Data = map[string]string{r.TrustKey: bundle}
 		}})
 	}
-	objects = append(objects, owned{set, func() { r.applyStatefulSet(bot, set, bundle != "") }})
+	objects = append(objects, owned{set, func() { r.applyStatefulSet(bot, set, bundle != "", garamOwned) }})
 	for _, object := range objects {
 		operation, err := controllerutil.CreateOrUpdate(ctx, r.Client, object.object, func() error {
 			object.apply()
