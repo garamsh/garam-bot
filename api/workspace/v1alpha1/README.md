@@ -156,7 +156,7 @@ Each mapping is its implementation issue's to build, and this section is what th
 | `Dial` | the `portforward` subresource | a port published on loopback | the Machine's address on the host's bridge, under an ingress rule |
 | `Egress` | a NetworkPolicy of `ipBlock` rules | the engine cannot enforce rules: `Capabilities.Egress` false, and no network | `networkPolicy.egress` |
 | `Stdin` | true: the `exec` subresource carries stdin | the engine's exec | false: Exec takes no input |
-| `Labels` | true: labels of the Pod, the claim and the NetworkPolicy, and the spec the claim records | the engine's container and volume labels, decided with its issue | decided with its issue |
+| `Labels` | true: labels of the Pod, the claim and the NetworkPolicy, and the spec the claim records. The provider's own key, `garam-bot.garam.sh/workspace`, which its NetworkPolicy selects by, is refused with `ErrInvalid` | the engine's container and volume labels, decided with its issue | decided with its issue |
 | `Snapshot` | a VolumeSnapshot, where the cluster serves the API | false | Snapshot disk |
 
 ## Versioning and compatibility
