@@ -17,7 +17,7 @@ var ErrAgentUIDUnavailable = errors.New("shell: agent_uid unavailable")
 
 // ErrRlimitsUnavailable is returned by ProcessExecutor.Run when an
 // untrusted child's resource caps cannot be applied. The caps are part
-// of the boundary around agent-influenced code (ADR 0005, ADR 0006), so
+// of the boundary around agent-influenced code (ADR 0008, ADR 0010), so
 // the call fails and no command runs — the executor never downgrades to
 // an uncapped child.
 var ErrRlimitsUnavailable = errors.New("shell: resource limits unavailable")
@@ -54,13 +54,13 @@ type Request struct {
 	Env     []string
 	// NoNetwork runs the child in a fresh, empty network namespace
 	// (CLONE_NEWNET before the UID drop, or CLONE_NEWUSER|CLONE_NEWNET
-	// with a self UID mapping in single-account mode, ADR 0006): no
+	// with a self UID mapping in single-account mode, ADR 0010): no
 	// configured interface and no route off it — only the kernel's own
 	// loopback, left down. Tools that need a network-isolated
 	// child set it; tools whose network is the operator-sanctioned
 	// egress channel leave it false.
 	NoNetwork bool
-	// Trusted names the child's trust class (ADR 0006): resource caps
+	// Trusted names the child's trust class (ADR 0010): resource caps
 	// bind untrusted code — agent-supplied commands carry the
 	// executor's rlimits — while operator-sanctioned children run
 	// without them, bounded by their per-call timeout and the

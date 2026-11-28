@@ -11,7 +11,7 @@ A bot runs code it did not write (commands a model chooses, programs it fetches)
 
 Secret values never materialize in the code-execution domain. Exposure is prevented by absence, not by filtering.
 
-- **The execution domain is the workspace and the Exec children it runs.** Those start from a minimal scrubbed environment and inherit nothing of the process that serves them (ADR 0005). The workspace process itself holds no credential either: it reads none, and the image that runs it ships none.
+- **The execution domain is the workspace and the Exec children it runs.** Those start from a minimal scrubbed environment and inherit nothing of the process that serves them (ADR 0008). The workspace process itself holds no credential either: it reads none, and the image that runs it ships none.
 - **A secret reaches a party that needs it through an explicit channel outside the domain**: a file or environment the party's own deployment mounts for it (the bot's garam token reaches the runtime this way, `runtime.md`), never through code the workspace executes.
 - **High-sensitivity operations stay outside the domain**: a trusted party performs the whole operation and returns a summary.
 - **Secrets must not be placed into a model's conversation context** — container design cannot fix a secret a model has already seen.

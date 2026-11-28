@@ -1,4 +1,4 @@
-# ADR 0020: garam brokers external apps through one official app per service, scopes in garam IAM, and short narrowed tokens
+# ADR 0038: garam brokers external apps through one official app per service, scopes in garam IAM, and short narrowed tokens
 
 > Status: accepted
 > Date: 2026-11-24
@@ -13,7 +13,7 @@
   - an organization may bring its own app;
   - the broker is part of this design.
 - **No Connection resource** (sauce, 2026-11-21, comment 19791501): a tool is not a resource of its own.
-- **Interface 2** reaches every tool as an MCP server outside the workspace, with a tool's credential added at the place under one of three modes: garam, secretRef, federated (ADR 0017). No secret enters a workspace.
+- **Interface 2** reaches every tool as an MCP server outside the workspace, with a tool's credential added at the place under one of three modes: garam, secretRef, federated (ADR 0035). No secret enters a workspace.
 - **garam has the pieces for the decision:** GRNs for every resource (garam ADR-0142), its policy service answering AuthZEN evaluations, and a token endpoint. Whether a token carries who a bot acts for is open in garam#1787.
 
 ## Decision
@@ -23,7 +23,7 @@
 3. **garam issues short narrowed tokens.** A bot's tool proxy at the place exchanges the bot's token by RFC 8693, naming the installation and the scope. garam checks the policy, mints the external service's narrowest token (a GitHub installation token with `repositories` and `permissions` set), and answers it with its expiry, at most an hour. garam calls the external service and never the place.
 4. **A person's OAuth only on that person's behalf.** A task that acts for a person carries that person, and garam uses the person's own grant for the service only then and only if the person granted it.
 5. **An organization may bring its own app,** registered in garam with its key placed into Transit, and used by the same grants and the same exchange.
-6. **At the place, this is interface 2's `garam` mode.** The token goes to the tool proxy, not into the workspace. Only a bot garam declared holds a garam token (ADR 0018), so a bot declared at its place reaches tools by `secretRef` or `federated`.
+6. **At the place, this is interface 2's `garam` mode.** The token goes to the tool proxy, not into the workspace. Only a bot garam declared holds a garam token (ADR 0036), so a bot declared at its place reaches tools by `secretRef` or `federated`.
 
 ## Consequences
 

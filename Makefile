@@ -50,7 +50,7 @@ go_packages = packages=$$(go list ./...) || exit $$?; \
 
 # The Go modules the build, test and vet entry points run in, each from its own
 # directory: the shipped system at the root, and the published interfaces under
-# api/ (ADR 0014). `./...` in one module never selects the other's packages, so
+# api/ (ADR 0032). `./...` in one module never selects the other's packages, so
 # each recipe runs once per module and `go_packages` counts each run.
 go_modules = . api
 
@@ -129,7 +129,7 @@ DEPLOYED_CAP_SET = -all,+$(subst $(COMMA),$(COMMA)+,$(DEPLOYED_CAP_ADD))
 
 # The shell and shipped-binary privileged families assert the drop to the
 # exec UID and the fresh network namespace, neither of which a process
-# without privilege can reach (ADR 0005, ADR 0006). It is not one of the
+# without privilege can reach (ADR 0008, ADR 0010). It is not one of the
 # checks `make ci` runs, because `make ci` must run for a contributor who is
 # not root; CI invokes this name in a job that is.
 #
@@ -154,7 +154,7 @@ DEPLOYED_CAP_SET = -all,+$(subst $(COMMA),$(COMMA)+,$(DEPLOYED_CAP_ADD))
 test-privileged:
 	@test "$(words $(DEPLOYED_CAP_ADD)) $(words $(DEPLOYED_CAP_DROP))" = "1 1" || { echo "$(DEPLOYED_COMPOSE): want one cap_add and one cap_drop in the flow-sequence form, read $(words $(DEPLOYED_CAP_ADD)) and $(words $(DEPLOYED_CAP_DROP))"; exit 1; }
 	@test "$(DEPLOYED_CAP_DROP)" = all || { echo "$(DEPLOYED_COMPOSE): cap_drop is [$(DEPLOYED_CAP_DROP)], not [ALL]: the capability set is only a whitelist while everything else is dropped"; exit 1; }
-	@test "$$(id -u)" = 0 || { echo "test-privileged needs root: the drop to the exec UID is what it exercises (ADR 0005)"; exit 1; }
+	@test "$$(id -u)" = 0 || { echo "test-privileged needs root: the drop to the exec UID is what it exercises (ADR 0008)"; exit 1; }
 	go test -c -o $(PRIVILEGED_TEST_BIN) ./internal/workspace/shell/
 	go test -c -o $(PRIVILEGED_BINARY_TEST_BIN) ./tests/
 	CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="-s -w" -o $(PRIVILEGED_GARAM_BOT_BIN) ./cmd/garam-bot/
@@ -233,8 +233,8 @@ build:
 		(cd $$module && $(go_packages); echo "go build ./... under $$PWD"; go build ./...) || exit $$?; \
 	done
 
-# Builds the workspace image (ADR 0006, ADR 0022) and the runtime image that
-# runs one Bot (ADR 0015), with the other images; nothing is pushed and no
+# Builds the workspace image (ADR 0010, ADR 0040) and the runtime image that
+# runs one Bot (ADR 0033), with the other images; nothing is pushed and no
 # registry is named here. Each build context is the repository root because
 # each build stage copies the module; what each context holds is $(dockerignores).
 #
@@ -250,7 +250,7 @@ build:
 # The second guard is the tree the label claims. `REVISION` is the checked-out
 # commit and marks nothing, so a dirty tree is labelled and tagged with a
 # commit whose tree was not what was built, and an immutable repository takes
-# that first push rather than refusing it (ADR 0009, #695).
+# that first push rather than refusing it (ADR 0020, #695).
 #
 # What the tree is measured over is what docker reads: the build contexts — the
 # source the images are built from — together with the Dockerfiles it is handed
@@ -317,7 +317,7 @@ dirty_inputs = $(if $(and $(REVISION),$(revision_is_default),$(context_paths)),$
 # buildx attaches by default. An attestation is carried as a manifest of its own
 # beside the image's and referenced from an index, so attaching one makes the
 # build export an index — and a consumer pinning the digest then pins that index
-# rather than the image (ADR 0009, deployment.md §Images and tags). Whether the
+# rather than the image (ADR 0020, deployment.md §Images and tags). Whether the
 # default applies at all depends on the host: a daemon on the classic image store
 # cannot hold an index and drops them, one on the containerd store keeps them, so
 # the same command produces different objects on two contributors' machines. It

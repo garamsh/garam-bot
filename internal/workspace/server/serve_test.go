@@ -25,7 +25,7 @@ import (
 
 // TestMain routes the resource-limit verb the way the platform binary
 // does: Serve starts a real executor, which execs the binary it runs as
-// — this test binary — to cap each untrusted child (ADR 0005).
+// — this test binary — to cap each untrusted child (ADR 0008).
 func TestMain(m *testing.M) {
 	shell.ShimIfRequested()
 	os.Exit(m.Run())
@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 
 // TestServe_ContractEndToEnd runs the workspace in-process and
 // drives it through the gRPC contract: the workspace exposes
-// Read/Write/List and rejects a path that escapes the workspace (ADR 0006).
+// Read/Write/List and rejects a path that escapes the workspace (ADR 0010).
 func TestServe_ContractEndToEnd(t *testing.T) {
 	listen, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -75,7 +75,7 @@ func TestServe_ContractEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []byte("hi"), resp.Content)
 
-	// Confinement holds: a traversal is rejected (ADR 0006 — convenience
+	// Confinement holds: a traversal is rejected (ADR 0010 — convenience
 	// confinement, not a trust boundary, but enforced everywhere).
 	_, err = client.Read(ctxRPC, &workspace.ReadRequest{Path: "../escape"})
 	require.Error(t, err, "an out-of-workspace path must be rejected")
@@ -87,7 +87,7 @@ func TestServe_ContractEndToEnd(t *testing.T) {
 	assert.True(t, listResp.Entries[0].Dir)
 
 	// Exec crosses the same wire: the command runs in the workspace
-	// directory and sees the files the contract serves (ADR 0006).
+	// directory and sees the files the contract serves (ADR 0010).
 	execResp, err := client.Exec(ctxRPC, &workspace.ExecRequest{Command: "ls"})
 	require.NoError(t, err)
 	assert.Zero(t, execResp.GetExitCode())
@@ -96,7 +96,7 @@ func TestServe_ContractEndToEnd(t *testing.T) {
 }
 
 // TestServe_StatesTheUnprivilegedShape pins the startup line for the
-// unprivileged shape (ADR 0005, #1054): an unprivileged workspace whose
+// unprivileged shape (ADR 0008, #1054): an unprivileged workspace whose
 // exec-uid is its own uid states the shape and its requirements at INFO
 // before serving, and one whose exec-uid is another uid serves without it.
 func TestServe_StatesTheUnprivilegedShape(t *testing.T) {

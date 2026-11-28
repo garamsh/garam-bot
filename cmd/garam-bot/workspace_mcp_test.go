@@ -76,7 +76,7 @@ func structuredJSON(t *testing.T, res *mcp.CallToolResult) string {
 }
 
 // requireWorkspaceRefusal asserts exit 2's answer: a tool result marked
-// as an error, carrying the CLI's failure object (ADR 0012 §5).
+// as an error, carrying the CLI's failure object (ADR 0028 §5).
 func requireWorkspaceRefusal(t *testing.T, res *mcp.CallToolResult, err error, code string) operationError {
 	t.Helper()
 	require.NoError(t, err, "a workspace refusal is a tool result, not a protocol error")
@@ -112,7 +112,7 @@ func requireUnreachableTool(t *testing.T, name string, args map[string]any) {
 }
 
 // TestWorkspaceMCP_OffersExactlyTheFourOperations lists the tools a
-// client sees: one per CLI operation and none beyond them (ADR 0012 §4).
+// client sees: one per CLI operation and none beyond them (ADR 0028 §4).
 func TestWorkspaceMCP_OffersExactlyTheFourOperations(t *testing.T) {
 	session := connectMCP(t, unusedAddr(t))
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

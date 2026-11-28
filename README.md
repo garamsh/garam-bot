@@ -11,7 +11,7 @@ garam-bot is the open-source execution core that runs bots. The execution unit i
 
 ## Architecture
 
-Six interfaces govern every component boundary (ADR 0013, ADR 0024):
+Six interfaces govern every component boundary (ADR 0031, ADR 0042):
 
 | Interface | Responsibility |
 |---|---|
@@ -24,7 +24,7 @@ Six interfaces govern every component boundary (ADR 0013, ADR 0024):
 
 The agent runs inside the workspace; the bot process runs outside. The workspace holds only short-lived gateway tokens, never the agent's real credentials. One pod is one PC: one organization's bots, a process per bot. Organizations are not mixed.
 
-Each interface is versioned, has conformance tests, and accepts more than one implementation from the start (ADR 0013).
+Each interface is versioned, has conformance tests, and accepts more than one implementation from the start (ADR 0031).
 
 ## Deployments
 
@@ -39,14 +39,14 @@ The four deployment shapes share one configuration:
 
 ## Current state
 
-The current codebase is the workspace infrastructure of the previous sherlock architecture, now under the `garam-bot` binary (ADR 0022), and the `garam-bot run` runtime of one Bot (ADR 0015). It does not yet implement the full garam-bot design above (ADR 0013).
+The current codebase is the workspace infrastructure of the previous sherlock architecture, now under the `garam-bot` binary (ADR 0040), and the `garam-bot run` runtime of one Bot (ADR 0033). It does not yet implement the full garam-bot design above (ADR 0031).
 
-What ships today and carries forward as interface candidates (ADR 0013):
+What ships today and carries forward as interface candidates (ADR 0031):
 
 - **Workspace gRPC contract** (Read, Write, List, Exec): the workspace provider interface.
-- **Workspace MCP server** (`garam-bot workspace mcp`): the agent interface shape — Claude Code configured here operates a workspace without an in-house loop (ADR 0012).
-- **Workspace CLI operations** (`garam-bot workspace read|write|list|exec`): the backing of the MCP server, and the shape a bot process uses to reach a workspace (ADR 0011).
-- **The conversation memory store** (`internal/memory/sqlite`): a SQLite store of conversations, summaries and links. No binary reaches it; it stays as the candidate for the bot's memory (ADR 0022).
+- **Workspace MCP server** (`garam-bot workspace mcp`): the agent interface shape — Claude Code configured here operates a workspace without an in-house loop (ADR 0028).
+- **Workspace CLI operations** (`garam-bot workspace read|write|list|exec`): the backing of the MCP server, and the shape a bot process uses to reach a workspace (ADR 0027).
+- **The conversation memory store** (`internal/memory/sqlite`): a SQLite store of conversations, summaries and links. No binary reaches it; it stays as the candidate for the bot's memory (ADR 0040).
 
 ## Running
 
@@ -67,20 +67,20 @@ To try the workspace in Docker instead: `make build-images` builds the images, a
 
 ### The `workspace` subcommand
 
-Serves a workspace (ADR 0006): a gRPC data plane over loopback serving the filesystem (Read, Write, List) and process execution (Exec) in the workspace directory. The workspace owns the workspace directory and the executor; it holds no tools and no plugin loader.
+Serves a workspace (ADR 0010): a gRPC data plane over loopback serving the filesystem (Read, Write, List) and process execution (Exec) in the workspace directory. The workspace owns the workspace directory and the executor; it holds no tools and no plugin loader.
 
 ```sh
 garam-bot workspace
 ```
 
-- The workspace owns the workspace directory (`workspace` key, created on first use); Exec children work in it by default, so they see workspace files natively. Exec children drop to the exec UID (`exec-uid` key, default 1001; single-account mode: the workspace's own UID — any other unprivileged value fails closed with `agent_uid unavailable` — which the executor runs and which is not a supported deployment shape, ADR 0005). When privileged the workspace chowns the directory to the exec UID, so files written through the gRPC contract and by exec'd children share one owner.
-- The listener carries no authentication in this phase, so it serves loopback binds only — a non-loopback `--addr` fails startup (ADR 0005).
+- The workspace owns the workspace directory (`workspace` key, created on first use); Exec children work in it by default, so they see workspace files natively. Exec children drop to the exec UID (`exec-uid` key, default 1001; single-account mode: the workspace's own UID — any other unprivileged value fails closed with `agent_uid unavailable` — which the executor runs and which is not a supported deployment shape, ADR 0008). When privileged the workspace chowns the directory to the exec UID, so files written through the gRPC contract and by exec'd children share one owner.
+- The listener carries no authentication in this phase, so it serves loopback binds only — a non-loopback `--addr` fails startup (ADR 0008).
 - Its config file resolves in order: `--config <path>`, then `./configs/workspace.yaml`, then the XDG config path (`~/.config/garam-bot/workspace.yaml` on Linux). Keys: `addr` (default `127.0.0.1:8081`), `workspace` (default `data/workspace`), `exec-uid` (default `1001`), `exec-timeout` (default `30s`).
 - A positional argument that names no operation below is refused rather than ignored, so `garam-bot workspace raed` fails instead of starting a server.
 
 ### Operating a workspace
 
-The `garam-bot workspace` subcommands `read`, `write`, `list` and `exec` each make one call on a running workspace's gRPC contract and nothing else on the caller's host, so a person, a script or an MCP server operates the workspace with the isolation an untrusted exec gets (ADR 0011).
+The `garam-bot workspace` subcommands `read`, `write`, `list` and `exec` each make one call on a running workspace's gRPC contract and nothing else on the caller's host, so a person, a script or an MCP server operates the workspace with the isolation an untrusted exec gets (ADR 0027).
 
 ```sh
 garam-bot workspace list .                          # {"entries":[{"name":"notes.txt","dir":false}]}
@@ -96,7 +96,7 @@ garam-bot workspace exec --stdin -- wc -c < notes.txt
 
 ### Serving a workspace to an MCP client
 
-`garam-bot workspace mcp` is a stdio MCP server whose tools `read`, `write`, `list` and `exec` each run the matching operation above once, as a child process of the same binary (ADR 0012). An MCP-capable agent with its local tools disabled then has these four as its only tools, so the workspace is what its tool calls act on; what that leaves running on its own host is listed below. The client starts it from a command line, for example in an MCP configuration file:
+`garam-bot workspace mcp` is a stdio MCP server whose tools `read`, `write`, `list` and `exec` each run the matching operation above once, as a child process of the same binary (ADR 0028). An MCP-capable agent with its local tools disabled then has these four as its only tools, so the workspace is what its tool calls act on; what that leaves running on its own host is listed below. The client starts it from a command line, for example in an MCP configuration file:
 
 ```json
 {"mcpServers": {"garam-bot-workspace": {"command": "garam-bot", "args": ["workspace", "mcp", "--workspace-addr", "127.0.0.1:8081"]}}}
@@ -125,7 +125,7 @@ claude -p "List the workspace's top directory, then run pwd in it." \
 #### What this setup does not cover
 
 - **Mechanisms the client runs on its own host that are not tools.** `--tools ""` names the built-in tool set only. Claude Code's `--help` names hooks "defined in settings and by installed plugins" (under `--bare`), and its permissions documentation describes hooks as "custom shell commands" Claude Code runs (§Extend permissions with hooks). Turn those off, or review what they run, before relying on this setup: `claude --help` states that `--bare` skips them, and that it also changes how Claude Code authenticates. For any other client, find and disable its equivalents; this section states nothing about them.
-- **The workspace's isolation is the workspace's own.** An `exec` child gets no network, the resource caps, the scrubbed environment and the workspace directory (ADR 0011 §3, "Exec runs under the isolation an untrusted exec gets"), and the MCP server's only effect on the client's host is running the operation CLI (ADR 0012 §3, "The server's only effect on its own host is running the CLI"). Nothing here adds isolation beyond that.
+- **The workspace's isolation is the workspace's own.** An `exec` child gets no network, the resource caps, the scrubbed environment and the workspace directory (ADR 0027 §3, "Exec runs under the isolation an untrusted exec gets"), and the MCP server's only effect on the client's host is running the operation CLI (ADR 0028 §3, "The server's only effect on its own host is running the CLI"). Nothing here adds isolation beyond that.
 - **A workspace run directly on the host separates less than one in its own container.** `docs/architecture/deployment.md` §Volumes and ownership rests the separation of an `exec` child from other files on the workspace container's mounts and on the `exec-uid`. A workspace started as a host process has no such mount boundary, and the executor gives an `exec` child a new network namespace (and a user namespace when unprivileged) but no mount namespace or changed root (`internal/workspace/shell/process_linux.go`), so its `exec` children read and write whatever files their `exec-uid` can on that host.
 
 ### Configuration
@@ -138,7 +138,7 @@ Workspace keys (`garam-bot workspace`; see `configs/workspace.yaml` for an examp
 |---|---|---|
 | `addr` | `--addr` | `127.0.0.1:8081` (workspace gRPC listen address; loopback-only) |
 | `workspace` | `--workspace` | `data/workspace` (workspace directory, created on first use; Exec children work here by default) |
-| `exec-uid` | `--exec-uid` | `1001` (UID Exec children run as; single-account mode, not a supported deployment shape (ADR 0005): set to the workspace's own UID — any other unprivileged value fails closed with `agent_uid unavailable`; a privileged workspace also chowns the workspace directory to it) |
+| `exec-uid` | `--exec-uid` | `1001` (UID Exec children run as; single-account mode, not a supported deployment shape (ADR 0008): set to the workspace's own UID — any other unprivileged value fails closed with `agent_uid unavailable`; a privileged workspace also chowns the workspace directory to it) |
 | `exec-timeout` | `--exec-timeout` | `30s` (per-call ceiling for Exec commands) |
 
 The example config under `configs/` is `configs/workspace.yaml`.

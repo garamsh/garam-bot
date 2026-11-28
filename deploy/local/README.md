@@ -1,6 +1,6 @@
 # Local deployment (testing only)
 
-Run a garam-bot workspace in Docker: the `workspace` service serves the gRPC data plane (files and exec) as `garam-bot workspace` (ADR 0006, ADR 0022). **Local testing only, on a trusted host.** The listener is unauthenticated and stays on the container's loopback, so the operations are run inside the container.
+Run a garam-bot workspace in Docker: the `workspace` service serves the gRPC data plane (files and exec) as `garam-bot workspace` (ADR 0010, ADR 0040). **Local testing only, on a trusted host.** The listener is unauthenticated and stays on the container's loopback, so the operations are run inside the container.
 
 ## Contents
 - Requirements
@@ -37,7 +37,7 @@ The operations dial the listener at `127.0.0.1:8081`, which is their default add
 
 `./smoke.sh` runs the sequence above — `docker compose up` — and then asserts two things against the running deployment:
 
-- **Both writers share one owner** (ADR 0005, ADR 0006). A write over the gRPC contract and a write by an exec'd child land under the exec account, each able to pick up what the other left.
+- **Both writers share one owner** (ADR 0008, ADR 0010). A write over the gRPC contract and a write by an exec'd child land under the exec account, each able to pick up what the other left.
 - **Exec children carry all five resource caps.**
 
 The `docker` job in `.github/workflows/ci.yml` runs the same script, so a change that stops this deployment from starting, or breaks the shared-owner contract, fails CI.

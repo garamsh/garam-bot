@@ -1,8 +1,8 @@
 // Command garam-bot runs one Bot of interface 1 v1alpha1: "garam-bot run" reads the Bot from a file,
 // obtains the bot's garam token from its place's connector and runs it, and "garam-bot probe" answers
-// the status contract a container's probe asks (ADR 0015, ADR 0024). "garam-bot workspace" serves a
+// the status contract a container's probe asks (ADR 0033, ADR 0042). "garam-bot workspace" serves a
 // workspace's gRPC data plane (files and exec), whose operations its subcommands call, and its MCP
-// server, the in-workspace tools a harness may be given (ADR 0011, ADR 0012, ADR 0022).
+// server, the in-workspace tools a harness may be given (ADR 0027, ADR 0028, ADR 0040).
 package main
 
 import (
@@ -27,7 +27,7 @@ func main() {
 // run is the binary's whole behaviour, returned as its exit status.
 func run() int {
 	// The workspace's executor execs this binary as its resource-limit shim for every untrusted
-	// child (ADR 0005). The verb short-circuits the command tree: the shim caps itself and execs
+	// child (ADR 0008). The verb short-circuits the command tree: the shim caps itself and execs
 	// the child's command, so it never returns to run a subcommand.
 	shell.ShimIfRequested()
 

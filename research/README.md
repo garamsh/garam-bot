@@ -4,7 +4,7 @@ Research records the questions, methods, evidence, conclusions, and limits behin
 
 ## Harness code
 
-The studies' Go harnesses and their tests are deleted (ADR 0022): they imported the removed agent, and a harness that no longer compiles is not evidence. Each study's README and recorded data stay. The harness code last compiled at `acdf0941b866902e99076053c6bb78af93698d95`, the `dev` commit the removal branched from; `git show acdf0941b866902e99076053c6bb78af93698d95:research/<study>` reads one, and the PM tags that tree `research/harnesses-final` after the removal merges.
+The studies' Go harnesses and their tests are deleted (ADR 0040): they imported the removed agent, and a harness that no longer compiles is not evidence. Each study's README and recorded data stay. The harness code last compiled at `acdf0941b866902e99076053c6bb78af93698d95`, the `dev` commit the removal branched from; `git show acdf0941b866902e99076053c6bb78af93698d95:research/<study>` reads one, and the PM tags that tree `research/harnesses-final` after the removal merges.
 
 ## Studies
 

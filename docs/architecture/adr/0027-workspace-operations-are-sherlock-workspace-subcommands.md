@@ -1,9 +1,9 @@
-# ADR 0011: The workspace's operations are `garam-bot workspace` subcommands that reach it only through its listener
+# ADR 0027: The workspace's operations are `garam-bot workspace` subcommands that reach it only through its listener
 
 > Status: accepted
 > Date: 2026-10-18 (revised in place 2026-11-21; 2026-11-28)
 
-The binary these subcommands live in moved from `cmd/garam-bot/` to `cmd/garam-bot/`, with its names and environment, when the the removed agent was removed (ADR 0022). Everything below names the code as it stands; the facts under Context held at the commit named there, before the move.
+The binary these subcommands live in moved from `cmd/garam-bot/` to `cmd/garam-bot/`, with its names and environment, when the the removed agent was removed (ADR 0040). Everything below names the code as it stands; the facts under Context held at the commit named there, before the move.
 
 Drafted for #1111, step 1 of the owner's direction relayed in #1110. Facts about garam-bot hold at `dev` `4709de335d66a14b8884a8a7e6f28445892e12cf`.
 
@@ -13,7 +13,7 @@ The owner's direction (#1110, item 3): the safety property is that an agent oper
 
 Facts this has to fit:
 
-- **The contract is four RPCs.** `Workspace` serves Read, Write, List and Exec over a loopback gRPC listener (`internal/workspace/workspace.proto:12-17`). #1111 changes no RPC and no message. git has no RPC; it runs through Exec, under Exec's isolation (ADR 0003, ADR 0006).
+- **The contract is four RPCs.** `Workspace` serves Read, Write, List and Exec over a loopback gRPC listener (`internal/workspace/workspace.proto:12-17`). #1111 changes no RPC and no message. git has no RPC; it runs through Exec, under Exec's isolation (ADR 0003, ADR 0010).
 - **Every refusal the workspace sends carries one of two codes.** Read, Write and List relabel every filesystem error, a path outside the workspace among them, as `InvalidArgument` (`internal/workspace/server/server.go:35`, `:42`, `:50`). Exec answers a timeout as a normal response with `timed_out` set (`server.go:80`) and any other executor failure, such as `agent_uid unavailable`, as `Internal` (`server.go:85`). `rg -n "codes\.|status\.(Error|Errorf|New)" internal/workspace cmd/garam-bot -g '!*_test.go' -g '!*.pb.go'` finds those four sites and no other; the generated stubs answer `Unimplemented` only for a method the server lacks, and it implements all four.
 - **`garam-bot workspace` is the server, and deployments run it bare.** `build/workspace.Dockerfile` is `CMD ["workspace"]` and `deploy/local/docker-compose.yml` is `command: ["workspace"]`. The command sets no argument validator (`cmd/garam-bot/workspace.go`), and cobra v1.10.2's default accepts any positional argument on a non-root command with no subcommands (`legacyArgs` in its `args.go`), so today `garam-bot workspace raed` starts serving.
 - **The only clients are the four tool executables.** `tools/file_read`, `tools/file_write`, `tools/file_list` and `tools/shell_exec` each speak the manifest stdio protocol and dial `GARAM_BOT_WORKSPACE_ADDR`, the variable the spawn contract names (`internal/tool/spawnenv.go:18`). `shell_exec` always sets `no_network` and never `trusted` (`tools/shell_exec/shell_exec.go:97-100`).
@@ -28,7 +28,7 @@ Four subcommands of the existing `garam-bot workspace` command — `read`, `writ
 
 - **Subcommands of the `garam-bot` binary, under `garam-bot workspace`.** The binary already ships in both images and is what `README.md` tells a user to build; one noun names the workspace whether a caller serves it or operates it.
 - **Plain `garam-bot workspace` keeps starting the server exactly as today**, with the same flags, environment and config file. The subcommands add nothing to its flag set, and its flags stay its own: `garam-bot workspace read --exec-uid 5 x` fails as an unknown flag.
-- **`garam-bot workspace mcp` is under the same noun and is not an operation.** It serves the four operations to an MCP client by running them (ADR 0012). It makes no call on the listener itself, and §3-§5 govern the four operations, not it.
+- **`garam-bot workspace mcp` is under the same noun and is not an operation.** It serves the four operations to an MCP client by running them (ADR 0028). It makes no call on the listener itself, and §3-§5 govern the four operations, not it.
 - **A typo cannot start a server.** The server command takes no positional argument: `garam-bot workspace raed` exits non-zero with cobra's `unknown command "raed" for "garam-bot workspace"` and binds nothing. Today that argument is silently ignored and the server starts (§Context). No deployment in this repository passes one: the two command lines in §Context are what `rg -n 'workspace' build/workspace.Dockerfile deploy/local/ | rg -i 'cmd|entrypoint|command|args'` finds.
 - **No new package.** The client is code in `cmd/garam-bot/` over the generated stubs in `internal/workspace/`, its one caller. A client package would stand between one caller and the stubs and hide nothing.
 
@@ -36,7 +36,7 @@ Four subcommands of the existing `garam-bot workspace` command — `read`, `writ
 
 - **The listener's address is the CLI's one setting**: `--workspace-addr`, then `GARAM_BOT_WORKSPACE_ADDR`, then `127.0.0.1:8081`, resolved in `internal/config/` like every entry point's settings. The flag is the name the agent already uses for the same address, and the variable is the one every tool the agent spawns already holds.
 - **No config file is read.** `agent.yaml` is the agent's and `workspace.yaml` is the server's, where `addr` means the bind; reading either ties a client to a process it is not, and a caller outside both containers has neither. One setting with a flag and a variable needs no file. The root's shared `--config` and `--strict-config` are refused when given to a subcommand, rather than ignored.
-- **The CLI dials what it is given and gates nothing.** Who can reach the listener is the listener's bind gate (ADR 0005), which this decision leaves as it is: loopback only, unauthenticated.
+- **The CLI dials what it is given and gates nothing.** Who can reach the listener is the listener's bind gate (ADR 0008), which this decision leaves as it is: loopback only, unauthenticated.
 - **No credential reaches the CLI or passes through it.** It reads no secret and forwards no environment to the workspace.
 
 ### 3. What each command sends and prints
@@ -94,7 +94,7 @@ Every failure prints one JSON object on stderr, `{"error":"<class>","code":"<gRP
 - A person, a script or an MCP server can operate a workspace through its contract. The listener's exposure, the contract and the tools are unchanged.
 - `garam-bot workspace <anything>` that is not a subcommand now refuses instead of serving.
 - A future workspace that sends `Unavailable` or `DeadlineExceeded` itself would blur classes 2 and 3; such a change revisits §4.
-- **Records updated in place with this one** (`docs/architecture/README.md` §Rules, "ADR records are living"): none remains; the record whose rejected alternative said the binary never calls the workspace gRPC client went with the agent (ADR 0022).
+- **Records updated in place with this one** (`docs/architecture/README.md` §Rules, "ADR records are living"): none remains; the record whose rejected alternative said the binary never calls the workspace gRPC client went with the agent (ADR 0040).
 - **Responsibility documents paired with this record** (`docs/architecture/README.md` §Rules, "Decisions land in pairs"): `environment.md` (the CLI, its surface and its output and exit-status contract), `deployment.md` (who dials the workspace), `packages.md` (`cmd/garam-bot/` as a caller of the wire).
 
 ## Signs the decision was wrong

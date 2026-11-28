@@ -1,4 +1,4 @@
-# ADR 0008: A retrieved memory carries a path to its source
+# ADR 0018: A retrieved memory carries a path to its source
 
 > Status: accepted
 > Date: 2026-08-17 (revised in place 2026-09-24)

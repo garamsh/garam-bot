@@ -80,5 +80,5 @@ Today `cmd/main.go` always starts the `Agent` reconciler, which needs the `Agent
 
 - **The connector as `Runnable`s inside the manager**, as the puller and the refresher are today. It is one fewer image, but the manager would provision its own identity, against ADR 0079's seam. Its Pod would also hold both the cluster's key and the right to build workloads.
 - **A mode flag, or a second manager binary, to leave out the `Agent` reconciler.** A flag is a special case at every reconciler. A second manager binary leaves `cmd/main.go`, the path `stack-kubebuilder.md` §1 fixes for the manager.
-- **Rendering a garam Bot as today's `Agent` kind.** The `sherlock` type it builds is superseded by garam-bot ADR 0013 (`garamsh/garam-bot@542306b0f1ade6e997068e11fcdf92685d40a7e1`), and the owner chose the dependency on garam-bot instead.
+- **Rendering a garam Bot as today's `Agent` kind.** The `sherlock` type it builds is superseded by garam-bot ADR 0031 (`garamsh/garam-bot@542306b0f1ade6e997068e11fcdf92685d40a7e1`), and the owner chose the dependency on garam-bot instead.
 - **Making the hosted control service the source of declarations for a connected cluster.** garam owns the dashboard, the bot's identity and its policy (11-21 decisions), so garam is where a declaration is written. A second store would need its own sync.

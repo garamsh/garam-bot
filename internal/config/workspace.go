@@ -14,7 +14,7 @@ const (
 	defaultWorkspace = "data/workspace"
 
 	// defaultExecUID is the account the workspace's exec children drop
-	// to (ADR 0005). It is the only declaration of that default: the
+	// to (ADR 0008). It is the only declaration of that default: the
 	// workspace reads it from config and applies no default of its own.
 	defaultExecUID = 1001
 
@@ -36,7 +36,7 @@ func AddWorkspaceFlags(fs *pflag.FlagSet) {
 
 // WorkspaceConfig is the workspace's resolved settings, parsed once at
 // the command boundary (docs/convention/runtime-safety.md) and passed
-// down typed. The workspace is the agent's data plane (ADR 0006): it
+// down typed. The workspace is the agent's data plane (ADR 0010): it
 // owns the workspace directory and serves the gRPC contract — Read,
 // Write, List, Exec — and nothing else. No tools, no plugin loader.
 type WorkspaceConfig struct {
@@ -45,7 +45,7 @@ type WorkspaceConfig struct {
 	// Workspace is the workspace directory, created on first use.
 	Workspace string `mapstructure:"workspace"`
 	// ExecUID is the UID the workspace's exec children run as
-	// (ADR 0005): a privileged workspace drops children to it and
+	// (ADR 0008): a privileged workspace drops children to it and
 	// chowns the workspace directory to it, so files written through
 	// the gRPC contract and by exec'd children share one owner; an
 	// unprivileged workspace runs children only when it equals its own

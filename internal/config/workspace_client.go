@@ -13,7 +13,7 @@ import (
 const workspaceAddrKey = "workspace-addr"
 
 // AddWorkspaceClientFlags registers the workspace operation subcommands'
-// one setting as a flag on fs (ADR 0011).
+// one setting as a flag on fs (ADR 0027).
 func AddWorkspaceClientFlags(fs *pflag.FlagSet) {
 	fs.String(workspaceAddrKey, defaultWorkspaceAddr, "gRPC address of the workspace listener to call")
 }
@@ -28,7 +28,7 @@ type WorkspaceClientConfig struct {
 // ResolveWorkspaceClient builds the operation subcommands' settings from
 // fs: the flag, then GARAM_BOT_WORKSPACE_ADDR, then the default. No config
 // file is read, so the shared flags that name one are refused rather
-// than ignored (ADR 0011).
+// than ignored (ADR 0027).
 func ResolveWorkspaceClient(fs *pflag.FlagSet) (WorkspaceClientConfig, error) {
 	for _, name := range []string{"config", strictConfigFlag} {
 		if flag := fs.Lookup(name); flag != nil && flag.Changed {

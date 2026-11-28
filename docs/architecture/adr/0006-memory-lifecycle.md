@@ -1,4 +1,4 @@
-# ADR 0004: Preserve recent context and source-linked older conversation
+# ADR 0006: Preserve recent context and source-linked older conversation
 
 > Status: accepted
 > Date: 2026-07-25 (revised in place 2026-09-26; 2026-10-10; 2026-11-28)
@@ -18,7 +18,7 @@ The addressed-only lifecycle dropped old conversation when the rolling context c
 
 ## Consequences
 
-The agent whose loop used this lifecycle is removed (ADR 0022); the store keeps it, and a caller supplies the loop.
+The agent whose loop used this lifecycle is removed (ADR 0040); the store keeps it, and a caller supplies the loop.
 
 - Compaction in a caller removes old messages from its current prompt but not from the durable source archive.
 - The archive and summaries have one SQLite owner. There is no separate long-term memory writer competing with source capture.

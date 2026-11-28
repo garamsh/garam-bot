@@ -30,7 +30,7 @@ const testExecUID = 10001
 // TestLimitSpecs_NprocOnlyInThePrivilegedDrop pins which caps reach the
 // shim: four in single-account mode, five when the child owns a
 // dedicated UID, because RLIMIT_NPROC counts the real UID's processes
-// (ADR 0006).
+// (ADR 0010).
 func TestLimitSpecs_NprocOnlyInThePrivilegedDrop(t *testing.T) {
 	exec := NewProcessExecutor(testExecUID, 5*time.Second)
 
@@ -303,7 +303,7 @@ func noNetworkWarnings(records []map[string]any) []map[string]any {
 }
 
 // TestNewProcessExecutor_WarnsWhenTheUnprivilegedShapeCannotServeNoNetwork
-// pins the startup statement ADR 0006 requires of the unprivileged shape
+// pins the startup statement ADR 0010 requires of the unprivileged shape
 // (#1053): the executor makes the NoNetwork clone once at construction and,
 // when it fails, warns once with the consequence and where the host
 // requirements are stated. The probe stands in for a host that refuses the

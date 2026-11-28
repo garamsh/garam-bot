@@ -1,11 +1,11 @@
-# ADR 0016: The workspace provider is a Go driver interface that an execution place links, and a naru Machine is its first production implementation
+# ADR 0034: The workspace provider is a Go driver interface that an execution place links, and a naru Machine is its first production implementation
 
 > Status: accepted
 > Date: 2026-11-24
 
 ## Context
 
-- ADR 0013 names interface 3, the workspace provider, and `garamsh/garam-bot#1193` lists its operations: create, attach, exec, files, snapshot and delete. `garamsh/garam-bot#1204` carries it forward under the direction the owner approved on 2026-11-24 (`garamsh/discussions` discussion 6, comment 19856107): one workspace interface, implemented by a naru Machine or a Pod in a cluster, by a container or mvmd on a Linux PC, and by a container on a Mac.
+- ADR 0031 names interface 3, the workspace provider, and `garamsh/garam-bot#1193` lists its operations: create, attach, exec, files, snapshot and delete. `garamsh/garam-bot#1204` carries it forward under the direction the owner approved on 2026-11-24 (`garamsh/discussions` discussion 6, comment 19856107): one workspace interface, implemented by a naru Machine or a Pod in a cluster, by a container or mvmd on a Linux PC, and by a container on a Mac.
 - The caller is the program that runs bots at an execution place: the cluster connector, the PC daemon or the naru-host connector. garam never dials into a place (the same comment), so garam calls no provider. naru's Machine API had named garam's Workspace as its first caller, and `garamsh/naru#409` and `garamsh/naru#378` move that caller to garam-bot's provider at the place.
 - The backends already have interfaces of their own: naru's `machines/v1alpha1` (HTTPS with mutual TLS, `garamsh/naru` `lib/machineapi`), mvmd's runtime API `v1alpha2` (gRPC on a Unix socket), the Kubernetes API, and the container engines' APIs. A provider is an adapter from one of them to what a bot's process needs.
 - `docs/convention/interfaces.md` names "a plugin or driver API" as a boundary its rules bind.

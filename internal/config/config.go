@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-// defaultWorkspaceAddr is the gRPC endpoint of a workspace (ADR 0006): plain host:port, no scheme,
+// defaultWorkspaceAddr is the gRPC endpoint of a workspace (ADR 0010): plain host:port, no scheme,
 // and the workspace listener is unauthenticated in this phase.
 const defaultWorkspaceAddr = "127.0.0.1:8081"
 
@@ -82,7 +82,7 @@ func recordKeys(md *mapstructure.Metadata) viper.DecoderConfigOption {
 //
 // The warning names the key and the file, which is what makes it
 // actionable: `tools.pin` for `tools.pins` turns drift pinning off
-// while the registry reports it as never configured (ADR 0006
+// while the registry reports it as never configured (ADR 0010
 // invariant 2), and only the key's own name separates the two.
 //
 // unused carries every input key Unmarshal left over, which includes

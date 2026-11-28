@@ -38,7 +38,7 @@ operation() {
   docker compose exec -T workspace /garam-bot workspace "$@" || true
 }
 
-# ADR 0005's file side: a write over the gRPC contract and a write by an
+# ADR 0008's file side: a write over the gRPC contract and a write by an
 # exec'd child land under one owner, so either can pick up what the other
 # left. The check writes through `garam-bot workspace write`, reads the
 # owner from the workspace container, and then has an exec'd child modify
@@ -95,7 +95,7 @@ if ! grep -q '"bytes_written"' <<<"$overwritten"; then
 fi
 echo "both writers share the workspace: uid $exec_uid owns what either one writes"
 
-# Exec children carry the executor's five caps (ADR 0005, ADR 0006).
+# Exec children carry the executor's five caps (ADR 0008, ADR 0010).
 # The check runs the deployment's own exec operation against the
 # deployment's own Exec RPC, and reads the caps from the kernel's view
 # of the child rather than from a log line.

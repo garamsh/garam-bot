@@ -1,4 +1,4 @@
-# ADR 0007: Persist sources before atomic summary checkpoints, and keep one bounded note beside them
+# ADR 0011: Persist sources before atomic summary checkpoints, and keep one bounded note beside them
 
 > Status: accepted
 > Date: 2026-08-02 (revised in place 2026-09-26; 2026-10-10; 2026-11-28)
@@ -19,7 +19,7 @@ A failure preserves completed sources and any earlier committed episodes. Subseq
 - A caller shows it under its instructions on every turn.
 - The addressed `memory_ops` field is removed.
 
-The agent that wrote the reserved `memory_write` response is removed (ADR 0022); what this record decides about the store holds for any caller.
+The agent that wrote the reserved `memory_write` response is removed (ADR 0040); what this record decides about the store holds for any caller.
 
 ## Consequences
 

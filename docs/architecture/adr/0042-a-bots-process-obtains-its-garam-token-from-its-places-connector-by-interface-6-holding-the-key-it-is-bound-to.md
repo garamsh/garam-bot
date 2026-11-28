@@ -1,4 +1,4 @@
-# ADR 0024: A bot's process obtains its garam token from its place's connector by interface 6, holding the key it is bound to
+# ADR 0042: A bot's process obtains its garam token from its place's connector by interface 6, holding the key it is bound to
 
 > Status: accepted
 > Date: 2026-11-28
@@ -7,10 +7,10 @@ A record states one current decision and is kept current: update the body when t
 
 ## Context
 
-- Every token garam issues to a bot is bound by DPoP to a key the bot's process makes and holds (garam ADR-0191 at garam `371af83ebcc3a3af033929578e0b12abf54ed872`, `bot-system.md` §Authentication). The exchange is the connector's, because the connector holds the place's garam identity (ADR 0018, ADR 0019). The proof is the process's, because only the process holds the key.
-- ADR 0015 had `garam-bot run` read its token from a file someone else wrote, and garam-bot-operator's ADR 0090 had the connector write it into the bot's Secret. A token in a file is worthless to a process that did not sign its proof, and a connector writing it would need the bot's key. So the proof has to travel from the process to the connector, and the token has to travel back.
+- Every token garam issues to a bot is bound by DPoP to a key the bot's process makes and holds (garam ADR-0191 at garam `371af83ebcc3a3af033929578e0b12abf54ed872`, `bot-system.md` §Authentication). The exchange is the connector's, because the connector holds the place's garam identity (ADR 0036, ADR 0037). The proof is the process's, because only the process holds the key.
+- ADR 0033 had `garam-bot run` read its token from a file someone else wrote, and garam-bot-operator's ADR 0090 had the connector write it into the bot's Secret. A token in a file is worthless to a process that did not sign its proof, and a connector writing it would need the bot's key. So the proof has to travel from the process to the connector, and the token has to travel back.
 - At a cluster the process and the connector are two Pods. They could meet through the Kubernetes API, with the process writing its proof into an object and the connector writing the token back. That needs a Role for each bot, which the manager would have to escalate its own rights to create, and it leaves a token at rest in the object. They can also meet directly, by the process calling the connector.
-- The process and the connector are built and released separately, and the PC daemon will be a second connector (ADR 0021). `docs/convention/interfaces.md` makes such a boundary a versioned interface.
+- The process and the connector are built and released separately, and the PC daemon will be a second connector (ADR 0039). `docs/convention/interfaces.md` makes such a boundary a versioned interface.
 - The PM approved this design on #1255 (garam-bot#1255, 2026-11-28), with no cert-manager prerequisite on a user's cluster.
 
 ## Decision
@@ -33,7 +33,7 @@ A record states one current decision and is kept current: update the body when t
 - A process that restarts in the same Pod may find the credential its predecessor spent. It waits until the place replaces the credential: at a cluster, the kubelet replaces a 10-minute token once 8 minutes have passed.
 - A failed start no longer has a `TokenUnreadable` reason. A connector that cannot be reached, or that refuses, leaves the bot running, with the status file's `token.stale` set.
 - No garam route accepts a bot token yet (`bot-system.md` §Authentication), so the process holds a token nothing presents. The runtime's `TokenSource.Refused` takes garam's 401 to the token held, and is called by no one until the first caller that presents the token, and so does a proof for each request.
-- garam-bot#1207's cluster part is this decision. Its PC and naru-host part, and the daemon's credential, wait for the daemon (ADR 0021).
+- garam-bot#1207's cluster part is this decision. Its PC and naru-host part, and the daemon's credential, wait for the daemon (ADR 0039).
 
 ## Signs the decision was wrong
 

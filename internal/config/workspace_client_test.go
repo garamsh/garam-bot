@@ -20,7 +20,7 @@ func workspaceClientFlags() *pflag.FlagSet {
 }
 
 // TestResolveWorkspaceClient_Precedence resolves the address in the
-// order ADR 0011 states: the flag, then GARAM_BOT_WORKSPACE_ADDR, then
+// order ADR 0027 states: the flag, then GARAM_BOT_WORKSPACE_ADDR, then
 // the default.
 func TestResolveWorkspaceClient_Precedence(t *testing.T) {
 	tests := []struct {
@@ -47,7 +47,7 @@ func TestResolveWorkspaceClient_Precedence(t *testing.T) {
 }
 
 // TestResolveWorkspaceClient_RefusesConfigFileFlags refuses the shared
-// flags that name a config file, since none is read (ADR 0011). The
+// flags that name a config file, since none is read (ADR 0027). The
 // control is the same set with neither flag given, which resolves.
 func TestResolveWorkspaceClient_RefusesConfigFileFlags(t *testing.T) {
 	t.Setenv("GARAM_BOT_WORKSPACE_ADDR", "")

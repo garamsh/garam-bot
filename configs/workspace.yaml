@@ -1,4 +1,4 @@
-# Example workspace config. The workspace is the computer (ADR 0006):
+# Example workspace config. The workspace is the computer (ADR 0010):
 # it serves the filesystem (Read/Write/List) and runs caller-influenced
 # processes (Exec) in the workspace directory. It does not host tools.
 # The workspace listener is unauthenticated in this phase and serves

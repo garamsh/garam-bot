@@ -1,6 +1,6 @@
 # Packages
 
-Governs the package partition: which layout of `stack-go.md` §Directory layout this project is under, what makes a boundary exist, which way imports cross it, and where a new package goes. What each package holds is `docs/architecture/README.md` §Modules, and the rules every unit follows — what it is named for, what it may reference, when a new one is earned — are `structure.md`'s; this file is how the line around each package was drawn. Rationale: ADR 0001, ADR 0010, ADR 0022.
+Governs the package partition: which layout of `stack-go.md` §Directory layout this project is under, what makes a boundary exist, which way imports cross it, and where a new package goes. What each package holds is `docs/architecture/README.md` §Modules, and the rules every unit follows — what it is named for, what it may reference, when a new one is earned — are `structure.md`'s; this file is how the line around each package was drawn. Rationale: ADR 0001, ADR 0023, ADR 0040.
 
 ## The layout this project is under
 
@@ -14,7 +14,7 @@ The tree is the Service layout's. Implementations sit in sub-packages of the pac
 
 Three cuts produce every package under `cmd/`, `internal/` and `pkg/`, applied in that order.
 
-- **The workspace cuts first.** `internal/workspace/` and its sub-packages are what a workspace runs, and the sub-tree imports no other package in this module. Its only importer elsewhere is `cmd/garam-bot/`, whose `garam-bot workspace` operation subcommands are callers of the wire in `internal/workspace/` and of no backend (ADR 0011); `garam-bot workspace mcp` sits there too and is not a caller of the wire: it runs the operation subcommands as child processes and links no workspace package (ADR 0012). `internal/bot/` and `internal/claudeadapter/` import nothing under `internal/workspace/`.
+- **The workspace cuts first.** `internal/workspace/` and its sub-packages are what a workspace runs, and the sub-tree imports no other package in this module. Its only importer elsewhere is `cmd/garam-bot/`, whose `garam-bot workspace` operation subcommands are callers of the wire in `internal/workspace/` and of no backend (ADR 0027); `garam-bot workspace mcp` sits there too and is not a caller of the wire: it runs the operation subcommands as child processes and links no workspace package (ADR 0028). `internal/bot/` and `internal/claudeadapter/` import nothing under `internal/workspace/`.
 - **A domain cuts second.** A top-level `internal/<name>/` is one domain, the unit `structure.md` defines under "A domain is the unit". Size decides none of them: `internal/workspace/` is the wire alone, so a caller links it without linking a backend (#525).
 - **An implementation cuts third, and downward.** A sub-package holds either an implementation of an interface the package above declares — `internal/memory/sqlite/` for `memory.ConversationMemory` — or a backend nothing outside the sub-tree uses, which is `internal/workspace/files/` and `internal/workspace/shell/` behind `internal/workspace/server/`.
 
@@ -26,7 +26,7 @@ The direction is the rule: **no package's shipped code imports its own sub-packa
 
 **A package another module links goes under `pkg/`,** as `stack-go.md` §Project envelope says: "`pkg/` is for code other modules import". The Go toolchain lets no other module import `internal/`. `pkg/naruworkspace/` is the only package there: the operator module's connector links it, and goal ⑤'s `garam-bot daemon` will link it from this module (#1209). Its sub-package `pkg/naruworkspace/secret/` implements the `CredentialStore` it declares, as the third cut places an implementation, so the provider's tests link no Kubernetes client. `go list -deps ./pkg/naruworkspace` lists no `k8s.io` package. Nothing under `pkg/` imports `internal/`.
 
-A capability is not a package. It reaches a bot as an MCP server outside this repository, so adding one changes no import here (ADR 0001, ADR 0022).
+A capability is not a package. It reaches a bot as an MCP server outside this repository, so adding one changes no import here (ADR 0001, ADR 0040).
 
 ## Where a new package goes
 

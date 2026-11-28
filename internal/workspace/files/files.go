@@ -36,7 +36,7 @@ const (
 // FS is a filesystem rooted at a workspace directory. All operations
 // resolve relative paths against the root and reject paths that escape it.
 // Confinement is lexical: symbolic links inside the workspace are followed
-// without further checks (ADR 0006 — convenience confinement, not a trust
+// without further checks (ADR 0010 — convenience confinement, not a trust
 // boundary).
 type FS struct {
 	root string
@@ -63,7 +63,7 @@ func Open(root string) (*FS, error) {
 func (f *FS) Root() string { return f.root }
 
 // HandOver gives the workspace directory to the agent's exec UID (ADR
-// 0008, ADR 0006): a privileged server (euid 0) chowns it to uid and
+// 0008, ADR 0010): a privileged server (euid 0) chowns it to uid and
 // keeps the directory's write bit for its own group, so every file in
 // the workspace ends up owned by the exec account — the ones exec'd
 // children write natively, the ones the gRPC contract writes through the

@@ -24,7 +24,7 @@ The guest supervisor, `cmd/gaon-guest`, is a gaon MicroVM's entrypoint and impor
    - the Makefile targets `operator-image`, `guest-image`, `operator-image-check`, `guest-run`, `pair-run`, `pair-run-gaon`, `chart-check` and `helm`;
    - the requirement on `github.com/garamsh/gaon/lib/api`.
 2. **This settles what ADR 0086 left open, and supersedes ADR 0082 and ADR 0085.** ADR 0086's restoration of the Kubernetes operator stands.
-3. **The guest image's repository, `garam-bot/operator-guest` (garam-bot ADR 0023), is no longer published to.** Dropping it is garamsh/aurora's.
+3. **The guest image's repository, `garam-bot/operator-guest` (garam-bot ADR 0041), is no longer published to.** Dropping it is garamsh/aurora's.
 
 ## Consequences
 

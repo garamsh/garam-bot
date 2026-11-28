@@ -1,4 +1,4 @@
-# ADR 0018: A bot is declared anywhere and managed in garam, and each execution place runs one connector that registers once and only pulls
+# ADR 0036: A bot is declared anywhere and managed in garam, and each execution place runs one connector that registers once and only pulls
 
 > Status: accepted
 > Date: 2026-11-24
@@ -39,7 +39,7 @@
 - The cluster connector, the PC daemon and the naru-host connector share registration, rotation, the declaration feed, reports and the bot-token exchange. The daemon is one binary for a PC and a naru-host place, with different workspace providers.
 - Interface 1 takes a wording release for OWN-1 before a place other than a cluster reads a file.
 - garam's connected-cluster record and its GRN widen to a place, which is garam's to design. The interface's next version carries the place's kind.
-- A place that loses garam keeps running what it runs. A bot declared at the place needs no garam at all (ADR 0013).
+- A place that loses garam keeps running what it runs. A bot declared at the place needs no garam at all (ADR 0031).
 - A bot behind a NAT or a firewall needs only outbound HTTPS.
 
 ## Signs the decision was wrong

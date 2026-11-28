@@ -12,7 +12,7 @@ import (
 //
 // Both listeners gate on it: the gateway refuses a non-loopback bind
 // without the tls: section, and the workspace refuses one outright while
-// its gRPC listener is unauthenticated (ADR 0005).
+// its gRPC listener is unauthenticated (ADR 0008).
 func IsLoopbackAddr(addr string) bool {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {

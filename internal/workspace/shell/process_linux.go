@@ -18,7 +18,7 @@ import (
 )
 
 // rlimits are the resource limits ProcessExecutor applies to the child.
-// They are not configurable from the CLI (ADR 0005) but are kept as
+// They are not configurable from the CLI (ADR 0008) but are kept as
 // struct fields so a flag can override them.
 type rlimits struct {
 	CPU          time.Duration
@@ -42,11 +42,11 @@ func DefaultRlimits() rlimits {
 }
 
 // ProcessExecutor runs commands via fork+exec+setuid, dropping privileges
-// to AgentUID and applying resource limits per ADR 0005 and ADR 0006. It
+// to AgentUID and applying resource limits per ADR 0008 and ADR 0010. It
 // is the production Executor implementation.
 //
 // When AgentUID equals the process's euid the deployment declares a
-// single-account run (ADR 0005): no UID switch is needed and no
+// single-account run (ADR 0008): no UID switch is needed and no
 // privilege is required — children run as the agent's own account.
 //
 // The zero value is not usable; use NewProcessExecutor.
@@ -68,7 +68,7 @@ type ProcessExecutor struct {
 	// directly.
 	canSignal bool
 	// shimPath is this binary, which every untrusted child execs first
-	// to apply its own caps (ADR 0005). Resolved once at construction;
+	// to apply its own caps (ADR 0008). Resolved once at construction;
 	// shimErr carries a resolution failure to Run, which refuses the
 	// call rather than running the child uncapped.
 	shimPath string
@@ -82,7 +82,7 @@ type ProcessExecutor struct {
 // required for NoNetwork, and when it could not signal the account it
 // drops to. The two capability probes run here, once, and each warns when
 // what it found will make calls fail; in the unprivileged shape the
-// NoNetwork probe runs here too, once, and warns the same way (ADR 0006).
+// NoNetwork probe runs here too, once, and warns the same way (ADR 0010).
 func NewProcessExecutor(agentUID int, defaultTimeout time.Duration) *ProcessExecutor {
 	self, err := os.Executable()
 	exec := &ProcessExecutor{
@@ -132,7 +132,7 @@ func (e *ProcessExecutor) dropsAccount() bool {
 // Run executes one command and returns its captured output. If the
 // caller cannot run the child as AgentUID — AgentUID differs from the
 // euid and the process is not root — Run returns ErrAgentUIDUnavailable
-// and a zero Result (no implicit fallback to the current UID, ADR 0006).
+// and a zero Result (no implicit fallback to the current UID, ADR 0010).
 // On timeout the child's process group is SIGKILLed and the returned error
 // is ErrTimedOut with TimedOut set; a privileged executor that holds no
 // CAP_KILL cannot perform that kill, so it refuses the call instead of
@@ -141,7 +141,7 @@ func (e *ProcessExecutor) dropsAccount() bool {
 // An untrusted child execs this binary's shim first, which applies the
 // resource caps to itself before exec'ing the command, so the caps are
 // in force from the command's first instruction. A cap that cannot be
-// applied returns ErrRlimitsUnavailable and no command runs (ADR 0005).
+// applied returns ErrRlimitsUnavailable and no command runs (ADR 0008).
 func (e *ProcessExecutor) Run(ctx context.Context, req Request) (Result, error) {
 	euid := os.Geteuid()
 	if euid != 0 && euid != e.AgentUID {
@@ -171,7 +171,7 @@ func (e *ProcessExecutor) Run(ctx context.Context, req Request) (Result, error) 
 	}
 	var cmd *exec.Cmd
 	if req.Trusted {
-		// Resource caps bind untrusted code only (ADR 0006): a
+		// Resource caps bind untrusted code only (ADR 0010): a
 		// trusted (operator-sanctioned) child is bounded by its
 		// per-call timeout and the deployment's container/pod limits,
 		// so it execs its command directly.
@@ -199,11 +199,11 @@ func (e *ProcessExecutor) Run(ctx context.Context, req Request) (Result, error) 
 	if req.NoNetwork && euid == 0 {
 		// unshare runs in the child before the credential drop, while
 		// CAP_SYS_ADMIN is still held: the child lands in a fresh,
-		// empty network namespace (ADR 0006).
+		// empty network namespace (ADR 0010).
 		attr.Unshareflags = syscall.CLONE_NEWNET
 	}
 	if req.NoNetwork && euid != 0 {
-		// Unprivileged network isolation (ADR 0006): a user namespace
+		// Unprivileged network isolation (ADR 0010): a user namespace
 		// with the current UID/GID mapped to themselves is creatable
 		// without privileges and owns the fresh, empty network
 		// namespace cloned with it.
@@ -261,7 +261,7 @@ func (e *ProcessExecutor) Run(ctx context.Context, req Request) (Result, error) 
 	if err := start(); err != nil {
 		if cause, refused := usernsRefusal(err); req.NoNetwork && euid != 0 && refused {
 			// The host will not give the child its namespaces; fail
-			// closed with the documented unavailability (ADR 0006).
+			// closed with the documented unavailability (ADR 0010).
 			return Result{}, fmt.Errorf("%w: %s: %v", ErrAgentUIDUnavailable, cause, err)
 		}
 		return Result{}, fmt.Errorf("shell: start: %w", err)

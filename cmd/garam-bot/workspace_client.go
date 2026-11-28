@@ -34,7 +34,7 @@ const (
 	execStallTimeout = time.Hour
 )
 
-// failureClass is the party a failed operation stopped at (ADR 0011).
+// failureClass is the party a failed operation stopped at (ADR 0027).
 type failureClass string
 
 const (
@@ -92,7 +92,7 @@ func callError(err error) *operationError {
 
 // newWorkspaceOperationCommands returns the `garam-bot workspace`
 // subcommands that each make one call on the workspace contract and
-// nothing else on this host (ADR 0011).
+// nothing else on this host (ADR 0027).
 func newWorkspaceOperationCommands() []*cobra.Command {
 	read := operationCommand("read <path>", "Print a workspace file's bytes", 1,
 		func(ctx context.Context, cmd *cobra.Command, ws workspace.WorkspaceClient, args []string) error {
@@ -224,7 +224,7 @@ func runOperation(cmd *cobra.Command, args []string, nargs int,
 	if err != nil {
 		return usageError(err)
 	}
-	// The listener is loopback-only and unauthenticated (ADR 0005), so
+	// The listener is loopback-only and unauthenticated (ADR 0008), so
 	// the connection is plaintext, as the tools' is.
 	conn, err := grpc.NewClient(cfg.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -237,7 +237,7 @@ func runOperation(cmd *cobra.Command, args []string, nargs int,
 // reportFailure prints err as the operation's JSON failure on stderr.
 // An error that is not an operation's is the CLI's own and takes the
 // usage class: a failed write of the result to stdout, after the
-// workspace performed the operation, is one (ADR 0011 §4).
+// workspace performed the operation, is one (ADR 0027 §4).
 func reportFailure(cmd *cobra.Command, err error) error {
 	if err == nil {
 		return nil

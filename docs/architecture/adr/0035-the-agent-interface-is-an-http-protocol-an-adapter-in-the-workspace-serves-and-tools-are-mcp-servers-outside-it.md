@@ -1,11 +1,11 @@
-# ADR 0017: The agent interface is an HTTP protocol that an adapter in the workspace serves, and tools are MCP servers outside it
+# ADR 0035: The agent interface is an HTTP protocol that an adapter in the workspace serves, and tools are MCP servers outside it
 
 > Status: accepted
 > Date: 2026-11-24
 
 ## Context
 
-- ADR 0013 names interface 2, the agent: the harness a bot uses, Claude Code or Codex first, which runs inside the workspace while the bot's process runs outside it. `garamsh/garam-bot#1193` lists start, task, events and stop, with the tools and memory hooks.
+- ADR 0031 names interface 2, the agent: the harness a bot uses, Claude Code or Codex first, which runs inside the workspace while the bot's process runs outside it. `garamsh/garam-bot#1193` lists start, task, events and stop, with the tools and memory hooks.
 - The owner decided the model and tools path on 2026-11-21 (`garamsh/discussions` discussion 6, comment 19791501): tools are MCP, with one Tool interface and three auth modes (garam, secretRef, federated); no Connection resource; no secret in a workspace; one brain per session, other agents being MCP tools; model calls go through interface 5 with a short-lived token.
 - The bot's process and the harness sit on two sides of an isolation boundary, a microVM's among them, so the interface crosses it as a protocol, not as a Go call. Interface 3's `Dial` carries a connection across it on every provider.
 - The rule of the bot system is that what crosses a boundary toward garam is pulled, not pushed (the owner's approved structure of 2026-11-24, comment 19856107).

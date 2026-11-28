@@ -16,7 +16,7 @@ The normative specification of garam-bot's interface 6, the bot token, at versio
 
 ## Scope and implementations
 
-- **The client is a bot's process, and the server is its place's connector** (ADR 0024). Every token garam issues to a bot is bound to a key the bot's process makes and holds (garam ADR-0191, `docs/architecture/bot-system.md` §Authentication). The connector holds the place's garam identity and makes the RFC 8693 exchange. The process holds the key and signs the exchange's DPoP proof. This protocol carries the proof from the process to the connector, and the token back.
+- **The client is a bot's process, and the server is its place's connector** (ADR 0042). Every token garam issues to a bot is bound to a key the bot's process makes and holds (garam ADR-0191, `docs/architecture/bot-system.md` §Authentication). The connector holds the place's garam identity and makes the RFC 8693 exchange. The process holds the key and signs the exchange's DPoP proof. This protocol carries the proof from the process to the connector, and the token back.
 - **The server never holds the client's key, and the client never holds the place's.** The proof passes through the server unchanged, and the place's own token never reaches the client.
 - **What the protocol carries:** one call, which answers garam's bot token for the bot the place's credential names, bound to the key that signed the proof.
 
@@ -26,7 +26,7 @@ The package's constants are the schema's names: the path, the headers and the er
 |---|---|---|
 | `reference` | none: it issues its own place credentials, holds its bots in memory and mints its own tokens | the reference implementation, built, passing the server suite |
 | `operator/cmd/connector` | a user's cluster (`operator/docs/architecture/connector.md`) | first production implementation, built; passing the server suite is checked by `garam-bot#1252` |
-| the daemon | a PC or a naru host (ADR 0021) | second production implementation; to build |
+| the daemon | a PC or a naru host (ADR 0039) | second production implementation; to build |
 
 ## Transport
 
@@ -99,4 +99,4 @@ The package's constants are the schema's names: the path, the headers and the er
 ## Open questions
 
 - **A client suite.** The server suite holds the server's rules. The client's (KEY-1, REN-1 to REN-3) are held by the runtime's own tests, until a suite that runs a client against the reference server is built.
-- **A credential at a PC or a naru host.** Where the daemon is the bot process's parent, what it issues as the place's credential is decided with the daemon (ADR 0021).
+- **A credential at a PC or a naru host.** Where the daemon is the bot process's parent, what it issues as the place's credential is decided with the daemon (ADR 0039).

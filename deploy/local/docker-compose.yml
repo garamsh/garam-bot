@@ -1,13 +1,13 @@
 # Local testing only: a trusted host.
 # Requires GARAM_BOT_DATA_DIR; see README.md in this directory.
-# One service: the workspace (ADR 0006, ADR 0022), whose gRPC listener
+# One service: the workspace (ADR 0010, ADR 0040), whose gRPC listener
 # stays on its own loopback and is reached from inside the container.
 services:
   workspace:
     build:
       context: ../..
       dockerfile: build/workspace.Dockerfile
-    # The executor's privilege drop, made real (ADR 0005, ADR 0006):
+    # The executor's privilege drop, made real (ADR 0008, ADR 0010):
     # SETUID/SETGID for the child credential drop, CHOWN for the
     # workspace-directory handover, SYS_ADMIN for the netns unshare, and
     # KILL for the deadline.
@@ -31,7 +31,7 @@ services:
       GARAM_BOT_WORKSPACE: "${GARAM_BOT_DATA_DIR:?export GARAM_BOT_DATA_DIR per README.md}/workspace"
       # The exec UID must be an account nothing else on the host runs
       # as: containers share the host's UID space, and RLIMIT_NPROC
-      # counts every process of the real UID (ADR 0006), so a shared
+      # counts every process of the real UID (ADR 0010), so a shared
       # account starves the child of its process budget. 1001 is the
       # login user on many hosts; this one is not.
       GARAM_BOT_EXEC_UID: "10001"

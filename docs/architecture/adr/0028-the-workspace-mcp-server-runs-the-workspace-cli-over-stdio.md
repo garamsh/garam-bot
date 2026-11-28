@@ -1,9 +1,9 @@
-# ADR 0012: `garam-bot workspace mcp` is a stdio MCP server whose tools each run one workspace CLI operation as a child process
+# ADR 0028: `garam-bot workspace mcp` is a stdio MCP server whose tools each run one workspace CLI operation as a child process
 
 > Status: accepted
 > Date: 2026-10-18 (revised in place 2026-11-21; 2026-11-28)
 
-The binary these subcommands live in moved from `cmd/garam-bot/` to `cmd/garam-bot/`, with its names and environment, when the the removed agent was removed (ADR 0022). Everything below names the code as it stands; the facts under Context held at the commit named there, before the move.
+The binary these subcommands live in moved from `cmd/garam-bot/` to `cmd/garam-bot/`, with its names and environment, when the the removed agent was removed (ADR 0040). Everything below names the code as it stands; the facts under Context held at the commit named there, before the move.
 
 Drafted for #1112, step 2 of the owner's direction relayed in #1110. Facts about garam-bot hold at `dev` `499108d2bdb884bb648bfebf266381415a486383`.
 
@@ -13,10 +13,10 @@ The owner's direction (#1110, item 3): "build an MCP server that drives that CLI
 
 Facts this has to fit:
 
-- **The CLI exists and its contract is fixed.** `garam-bot workspace read|write|list|exec` each make one call on the workspace listener (ADR 0011 §3). The result goes to stdout and a failure to stderr as one JSON object. The exit status is the class: 0 performed, 1 the CLI's own failure, 2 the workspace refused, 3 unreachable or no answer (ADR 0011 §4; `cmd/garam-bot/workspace_client.go`). #1112 changes neither that contract nor the workspace contract.
-- **ADR 0011 §5 already chose the CLI's shape for this server**: one process per call with no session, a process contract any language can drive, and exit 2 and exit 3 as the two answers the server gives (`docs/architecture/adr/0011-the-workspaces-operations-are-garam-bot-workspace-subcommands-that-reach-it-only-through-its-listener.md` §5).
+- **The CLI exists and its contract is fixed.** `garam-bot workspace read|write|list|exec` each make one call on the workspace listener (ADR 0027 §3). The result goes to stdout and a failure to stderr as one JSON object. The exit status is the class: 0 performed, 1 the CLI's own failure, 2 the workspace refused, 3 unreachable or no answer (ADR 0027 §4; `cmd/garam-bot/workspace_client.go`). #1112 changes neither that contract nor the workspace contract.
+- **ADR 0027 §5 already chose the CLI's shape for this server**: one process per call with no session, a process contract any language can drive, and exit 2 and exit 3 as the two answers the server gives (`docs/architecture/adr/0027-the-workspaces-operations-are-garam-bot-workspace-subcommands-that-reach-it-only-through-its-listener.md` §5).
 - **`garam-bot workspace` serves, and refuses a positional argument** (`cmd/garam-bot/workspace.go`). Its operation subcommands are added at `cmd/garam-bot/workspace.go`.
-- **The listener is loopback-only and unauthenticated** (ADR 0005). Nothing here may widen who can reach it.
+- **The listener is loopback-only and unauthenticated** (ADR 0008). Nothing here may widen who can reach it.
 - **No Go MCP implementation is in the module.** `go.mod` at the revision above requires none.
 
 ## Decision
@@ -26,22 +26,22 @@ Facts this has to fit:
 ### 1. Transport: stdio only
 
 - **The client starts the server and talks to it over stdin and stdout**, one JSON-RPC message per line, as the MCP stdio transport defines. That is how an MCP client such as Claude Code runs a local server, from a command line in its configuration.
-- **No listener is opened.** A stdio server is reachable only by the process that started it, so it adds no network surface and needs no authentication. Who can reach the workspace stays decided by the listener's bind gate (ADR 0005).
+- **No listener is opened.** A stdio server is reachable only by the process that started it, so it adds no network surface and needs no authentication. Who can reach the workspace stays decided by the listener's bind gate (ADR 0008).
 - **stdout carries the protocol and nothing else.** A child's stdout and stderr are read by the server and never pass through to it, and the server logs only to stderr.
 
 ### 2. Where it lives
 
-- **A subcommand of the `garam-bot` binary, `garam-bot workspace mcp`**, beside the four operations. It keeps ADR 0011 §1's reason: one noun for the workspace, whether a caller serves it, operates it, or serves it to an MCP client.
-- **`mcp` is not an operation.** It makes no call on the listener itself, and ADR 0011 §3-§5 do not apply to it. ADR 0011 is updated in place to say so.
+- **A subcommand of the `garam-bot` binary, `garam-bot workspace mcp`**, beside the four operations. It keeps ADR 0027 §1's reason: one noun for the workspace, whether a caller serves it, operates it, or serves it to an MCP client.
+- **`mcp` is not an operation.** It makes no call on the listener itself, and ADR 0027 §3-§5 do not apply to it. ADR 0027 is updated in place to say so.
 - **It takes no positional argument**, and plain `garam-bot workspace` still serves the gRPC listener exactly as before.
 - **No new package.** The server is code in `cmd/garam-bot/`. Its one caller is the subcommand, and a package between them would hide nothing (`simplicity.md`).
 
 ### 3. It runs the CLI; it does not share the CLI's code in-process
 
 - **Each tool call execs `os.Executable()`** with `workspace <operation> --workspace-addr <addr>` and the call's arguments, and waits for it. The binary that serves MCP is the one that runs the operation, so no `PATH` lookup can substitute another build or another program.
-- **This is "drives that CLI" (#1110) as ADR 0011 §5 shaped it.** The CLI's exit class is the one classification of a call, made in one place. The server reads it and does not repeat it.
+- **This is "drives that CLI" (#1110) as ADR 0027 §5 shaped it.** The CLI's exit class is the one classification of a call, made in one place. The server reads it and does not repeat it.
 - **The server's only effect on its own host is running the CLI.** It links no workspace stubs and opens no gRPC connection, so what it can do is what the four operations can do.
-- **The server's one setting is the address it passes on**: `--workspace-addr`, then `GARAM_BOT_WORKSPACE_ADDR`, then `127.0.0.1:8081`, resolved as the operations resolve it, with no config file. The child gets it as `--workspace-addr`, so the child resolves nothing differently. The child inherits the server's environment, and the CLI forwards none of it to the workspace (ADR 0011 §2).
+- **The server's one setting is the address it passes on**: `--workspace-addr`, then `GARAM_BOT_WORKSPACE_ADDR`, then `127.0.0.1:8081`, resolved as the operations resolve it, with no config file. The child gets it as `--workspace-addr`, so the child resolves nothing differently. The child inherits the server's environment, and the CLI forwards none of it to the workspace (ADR 0027 §2).
 - **A process per call costs a fork and exec**, a few milliseconds against a gRPC round trip and the command itself. No connection outlives a call.
 
 ### 4. The tools
@@ -54,7 +54,7 @@ Facts this has to fit:
 | `exec` | `command`; optional `args` (strings), `stdin` (string), `timeout` (a Go duration such as `30s`) | `workspace exec [--timeout <timeout>] [--stdin] -- <command> [<args>…]`, `--stdin` only when `stdin` is given | `{"stdout","stderr","exit_code","timed_out"}` as text and as structured content |
 
 - **One tool per operation, and none beyond them** (#1112 criterion 2). No tool reads or writes the server's host, and none passes a flag the operation lacks.
-- **`exec`'s mapping is the CLI's**: no `args` runs `command` through `sh -c`, and `args` runs `command` as the executable with them. The child's isolation is the CLI's, fixed: no network, the resource caps, the scrubbed environment, the workspace directory (ADR 0011 §3).
+- **`exec`'s mapping is the CLI's**: no `args` runs `command` through `sh -c`, and `args` runs `command` as the executable with them. The child's isolation is the CLI's, fixed: no network, the resource caps, the scrubbed environment, the workspace directory (ADR 0027 §3).
 - **`write` takes text.** MCP tool arguments are JSON, so `content` is a string; the CLI's stdin carries its UTF-8 bytes.
 
 ### 5. Exit classes in the MCP result
@@ -68,7 +68,7 @@ Facts this has to fit:
 
 - **Exit 2 goes to the model.** A refusal — a path outside the workspace, an executable the workspace cannot start — is something the model can correct, and MCP's tool-error result is how a model sees one.
 - **Exit 3 goes to the client as the server's error.** No change to the arguments fixes a workspace that is down. A distinct code lets a client tell it from every other failure without parsing the message.
-- **Exit 1 is a fault of the server or the CLI, not the model.** The server builds every argv from validated input, so a usage failure means the two disagree. A failed write of the result after the workspace performed the operation (ADR 0011 §4) ends here too. The `data` carries the class, so a client can tell which.
+- **Exit 1 is a fault of the server or the CLI, not the model.** The server builds every argv from validated input, so a usage failure means the two disagree. A failed write of the result after the workspace performed the operation (ADR 0027 §4) ends here too. The `data` carries the class, so a client can tell which.
 
 ### 6. The dependency
 
@@ -90,19 +90,19 @@ Facts this has to fit:
 ## Rejected alternatives
 
 - **The streamable HTTP transport, or HTTP first.** It opens a listener, which is a second unauthenticated route onto the workspace beside the gRPC one. It would need its own bind gate and authentication before it could leave loopback. No client named in #1110 needs it: Claude Code runs stdio servers.
-- **Calling the CLI's code in-process.** It would save a fork per call, and that is all. The server would then hold the gRPC client and classify failures itself, a second copy of what ADR 0011 §4 does in the CLI. That is the reading of "drives that CLI" which #1110's wording and ADR 0011 §5 exclude.
-- **A separate executable** (`cmd/garam-bot-mcp/`). It costs a build target and a place in the images, as in ADR 0011's rejection. It would also have to find the `garam-bot` binary at run time, which `os.Executable()` makes unnecessary.
+- **Calling the CLI's code in-process.** It would save a fork per call, and that is all. The server would then hold the gRPC client and classify failures itself, a second copy of what ADR 0027 §4 does in the CLI. That is the reading of "drives that CLI" which #1110's wording and ADR 0027 §5 exclude.
+- **A separate executable** (`cmd/garam-bot-mcp/`). It costs a build target and a place in the images, as in ADR 0027's rejection. It would also have to find the `garam-bot` binary at run time, which `os.Executable()` makes unnecessary.
 - **A top-level `garam-bot mcp`.** It names the protocol and not what is served, and splits the workspace across two nouns.
 - **A hand-written MCP subset** (initialize, tools/list, tools/call over newline-delimited JSON-RPC). It adds no module, but protocol upkeep becomes this project's. Tests would check the server against the project's own reading of the spec, with no independent client.
-- **Every failure as a tool result with `isError`.** The model would be told a workspace outage as if it were a mistake in its arguments. ADR 0011 §5 separates the two for that reason.
-- **Tools beyond the four**, such as a git tool. git runs through `exec` under its isolation (ADR 0003, ADR 0006), and a new operation belongs in the workspace contract first (#840).
+- **Every failure as a tool result with `isError`.** The model would be told a workspace outage as if it were a mistake in its arguments. ADR 0027 §5 separates the two for that reason.
+- **Tools beyond the four**, such as a git tool. git runs through `exec` under its isolation (ADR 0003, ADR 0010), and a new operation belongs in the workspace contract first (#840).
 
 ## Consequences
 
 - An MCP-capable agent with no local tools can operate a garam-bot workspace by configuring one command, `garam-bot workspace mcp --workspace-addr <addr>`. Everything it does happens in the workspace, through the CLI and the contract.
-- The listener, the contract and ADR 0011's CLI contract are unchanged. A future CLI operation needs a matching tool here, and a future CLI exit class needs a row in §5.
+- The listener, the contract and ADR 0027's CLI contract are unchanged. A future CLI operation needs a matching tool here, and a future CLI exit class needs a row in §5.
 - The module gains one direct dependency and the modules in §6. A new SDK release arrives as a Dependabot pull request from the weekly `gomod` entry, like every Go module here, and is reviewed as its own change.
-- **Records updated in place with this one** (`docs/architecture/README.md` §Rules, "ADR records are living"): ADR 0011 §1, which now says `mcp` is a subcommand under the same noun and not one of the operations its §3-§5 govern.
+- **Records updated in place with this one** (`docs/architecture/README.md` §Rules, "ADR records are living"): ADR 0027 §1, which now says `mcp` is a subcommand under the same noun and not one of the operations its §3-§5 govern.
 - **Responsibility documents paired with this record** (`docs/architecture/README.md` §Rules, "Decisions land in pairs"): `environment.md` (the MCP server, its transport and tools, the exit-class mapping, and the rewritten open question on a remote tool form), `packages.md` (`cmd/garam-bot/` as the home of the server, which drives the CLI and links no workspace stubs).
 
 ## Signs the decision was wrong

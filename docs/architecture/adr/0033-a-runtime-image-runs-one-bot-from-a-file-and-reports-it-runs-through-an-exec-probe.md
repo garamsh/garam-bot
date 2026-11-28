@@ -1,4 +1,4 @@
-# ADR 0015: A runtime image runs one Bot from a file, and reports that it runs through an exec probe
+# ADR 0033: A runtime image runs one Bot from a file, and reports that it runs through an exec probe
 
 > Status: accepted
 > Date: 2026-11-24
@@ -9,14 +9,14 @@
   - **One StatefulSet of one.** One Bot is one StatefulSet of one, whose runtime reads its Bot from a mounted file with the bot's tokens beside it (its ADR 0090 decision 3).
   - **Images by digest.** Every image of its chart is pulled by digest, and a PodSecurity `restricted` namespace admits it (ADR 0091 decision 7).
   - **No inbound path.** A NetworkPolicy admits no ingress to any Pod, and the manager holds read rights on Pods and write rights on interface-1 status, nothing that reaches into a container (ADR 0091 decisions 2 and 4).
-- Interface 1 v1alpha1 (ADR 0014) gives the file form, `manifest.Parse`, and the Bot condition `Running` (STA-1).
-- ADR 0013 supersedes the in-house loop of the former `sherlock` binary, which ADR 0022 removed. The agent harness, workspace provider and control connection (interfaces 2 to 4) are not built, so a Bot has no work source yet.
-- A garam-owned bot's token is bound to a key its own process holds, and the process obtains it from its place's connector (ADR 0024). A cluster-owned bot has no garam identity yet.
+- Interface 1 v1alpha1 (ADR 0032) gives the file form, `manifest.Parse`, and the Bot condition `Running` (STA-1).
+- ADR 0031 supersedes the in-house loop of the former `sherlock` binary, which ADR 0040 removed. The agent harness, workspace provider and control connection (interfaces 2 to 4) are not built, so a Bot has no work source yet.
+- A garam-owned bot's token is bound to a key its own process holds, and the process obtains it from its place's connector (ADR 0042). A cluster-owned bot has no garam identity yet.
 
 ## Decision
 
-1. **A new binary, `garam-bot`, separate from `sherlock`.** (`sherlock` was removed and its workspace commands moved into this binary by ADR 0022.)
-   - **`garam-bot run`** reads one Bot from `--bot-file` with `manifest.Parse`, and refuses anything but a Bot. With `--connector-url`, it obtains the bot's garam token from its place's connector and obtains it again before it expires, as ADR 0024 decides. An attempt that fails keeps the token held and marks it stale. Without the flag, the bot runs with no garam identity. The process holds the Bot until SIGTERM and then exits 0.
+1. **A new binary, `garam-bot`, separate from `sherlock`.** (`sherlock` was removed and its workspace commands moved into this binary by ADR 0040.)
+   - **`garam-bot run`** reads one Bot from `--bot-file` with `manifest.Parse`, and refuses anything but a Bot. With `--connector-url`, it obtains the bot's garam token from its place's connector and obtains it again before it expires, as ADR 0042 decides. An attempt that fails keeps the token held and marks it stale. Without the flag, the bot runs with no garam identity. The process holds the Bot until SIGTERM and then exits 0.
    - **The domain is `internal/bot/`.**
 2. **The status contract is a status file and an exec probe.**
    - **The status file.** `run` rewrites a JSON status file, `--status-file`, every 5 seconds. The file holds the state (`Running` or `Stopped`), a heartbeat, the Bot's namespace, name and generation, and, with a connector, when the token held was obtained, when it expires and whether the latest attempt failed.

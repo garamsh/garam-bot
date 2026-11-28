@@ -19,12 +19,12 @@ import (
 )
 
 // codeWorkspaceUnreachable is the JSON-RPC error code for a call the
-// CLI answered with exit 3, in the server-defined range (ADR 0012 §5).
+// CLI answered with exit 3, in the server-defined range (ADR 0028 §5).
 const codeWorkspaceUnreachable = -32001
 
 // newWorkspaceMCPCommand returns `garam-bot workspace mcp`: a stdio MCP
 // server whose tools each run one operation subcommand of this binary
-// as a child process (ADR 0012). It is not an operation itself.
+// as a child process (ADR 0028). It is not an operation itself.
 func newWorkspaceMCPCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mcp",
@@ -76,14 +76,14 @@ func (r cliRunner) run(ctx context.Context, operation string, flags, positionals
 	var exitErr *exec.ExitError
 	if err != nil && !errors.As(err, &exitErr) {
 		// A child that could not start is the server's own failure, not a
-		// tool error for the model (ADR 0012 §5).
+		// tool error for the model (ADR 0028 §5).
 		return cliRun{}, &jsonrpc.Error{Code: jsonrpc.CodeInternalError,
 			Message: fmt.Sprintf("run workspace %s: %v", operation, err)}
 	}
 	return cliRun{stdout: stdout.Bytes(), stderr: stderr.Bytes(), status: child.ProcessState.ExitCode()}, nil
 }
 
-// answer maps a finished operation onto the MCP answer ADR 0012 §5
+// answer maps a finished operation onto the MCP answer ADR 0028 §5
 // fixes: exit 0 to the tool result success builds, exit 2 to a tool
 // error the model sees, exit 3 to the unreachable JSON-RPC error, and
 // any other exit to an internal error.
@@ -150,7 +150,7 @@ type execInput struct {
 }
 
 // newWorkspaceMCPServer builds the MCP server and its four tools, one
-// per workspace operation and none beyond them (ADR 0012 §4).
+// per workspace operation and none beyond them (ADR 0028 §4).
 func newWorkspaceMCPServer(cli cliRunner) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "garam-bot-workspace", Version: "1"}, nil)
 

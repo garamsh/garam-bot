@@ -26,7 +26,7 @@ import (
 
 const (
 	// publishingRepository is the prefix of the operator's image repositories, each holding its release and
-	// development images alike (ADR 0078, garam-bot ADR 0023). garam-bot's other images under garam-bot/
+	// development images alike (ADR 0078, garam-bot ADR 0041). garam-bot's other images under garam-bot/
 	// follow the root's release rule, not this one.
 	publishingRepository = "garam-bot/operator-"
 	// releaseWorkflow is GITHUB_WORKFLOW_REF's value in a release run, up to the tag's version.

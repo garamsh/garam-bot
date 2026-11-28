@@ -1,13 +1,13 @@
-# ADR 0009: Each image is published to one immutable repository, and a consumer references an image by digest
+# ADR 0020: Each image is published to one immutable repository, and a consumer references an image by digest
 
-> Status: accepted; the repository names amended by ADR 0023
+> Status: accepted; the repository names amended by ADR 0041
 > Date: 2026-08-24 (revised in place 2026-08-24; 2026-08-24; 2026-09-05; 2026-09-06; 2026-09-25; 2026-10-09; 2026-10-09; 2026-10-09; 2026-10-09; 2026-10-28; 2026-11-28)
 
 ## Context
 
 This repository publishes images, built from `build/*.Dockerfile`, into ECR repositories in an AWS account this repository does not own. Two things are settled outside this repository and bind it:
 
-- **The name.** A repository is named `<publishing repository>/<image>`, and the image name never repeats the prefix (garamsh/aurora ADR 0015, "A repository in `image_publishers` is named `<publishing repository>/<image>`", at `90d9ba9921f27eccb2f517f487cbb74ad412e0bd`; garamsh/aurora#710). The image names are this project's to choose, and it chose `agent` and `workspace` (#1170); the `agent` image went with the in-house agent (ADR 0022), and `workspace` is published as `garam-bot-workspace` under the repository names ADR 0023 sets.
+- **The name.** A repository is named `<publishing repository>/<image>`, and the image name never repeats the prefix (garamsh/aurora ADR 0033, "A repository in `image_publishers` is named `<publishing repository>/<image>`", at `90d9ba9921f27eccb2f517f487cbb74ad412e0bd`; garamsh/aurora#710). The image names are this project's to choose, and it chose `agent` and `workspace` (#1170); the `agent` image went with the in-house agent (ADR 0040), and `workspace` is published as `garam-bot-workspace` under the repository names ADR 0041 sets.
 - **One repository per image.** The owner decided on 2026-10-28 that there is no separate development path: an image has one repository, release and development builds alike, and the `garam-dev/` namespace goes away (garamsh/aurora#711, relayed by garam's PM and confirmed by the owner in this project's PM session the same day, as #1170 records).
 
 The decision below binds every repository this project publishes an image to, and it is scoped by that property rather than by a list of what the account holds. Which repositories those are is named in this repository, where a reviewer can check it: `.github/workflows/release.yml` pushes to them, and `deployment.md` §Images and tags names them for a hand push. A repository nothing here publishes to is not this record's, whoever owns it. What the account holds is the account owner's to set (garamsh/aurora). What garam-bot requires of the repositories it publishes to is this project's to state, as requirements and not as a description of settings — a description of another project's account goes stale with nothing here able to notice. `deployment.md` once described three settings — immutability, scan-on-push and a lifecycle policy — and one of the three was false when it was read: the account declared no lifecycle policy on any repository (reported by the garam PM, 2026-08-23).
@@ -18,7 +18,7 @@ What makes immutability a requirement rather than a preference is in this reposi
 
 ## Decision
 
-**Each image this repository builds is published to one repository, `<publishing repository>/<image>` (the names are ADR 0023's), which holds its releases and its development builds alike, told apart by tag pattern; every repository this project publishes to is created `IMMUTABLE`, with no tag-mutability exclusion, and is never made mutable; a tag names a single commit and never moves; this project requires neither a lifecycle policy nor image scanning; and a consumer references an image by digest with `imagePullPolicy: Always`.**
+**Each image this repository builds is published to one repository, `<publishing repository>/<image>` (the names are ADR 0041's), which holds its releases and its development builds alike, told apart by tag pattern; every repository this project publishes to is created `IMMUTABLE`, with no tag-mutability exclusion, and is never made mutable; a tag names a single commit and never moves; this project requires neither a lifecycle policy nor image scanning; and a consumer references an image by digest with `imagePullPolicy: Always`.**
 
 ### One repository per image, two tag patterns
 
@@ -28,7 +28,7 @@ A release tag is a semver, `X.Y.Z` (`0.1.0`, ...). A development tag is the comm
 
 Both kinds sit in one repository, so the rules below hold for both — and the argument is strongest for development builds, which are pushed by hand.
 
-Push a dirty-tree build under a tag some clean build already holds, and a mutable repository takes it: the overwrite is silent, and the tag now names a commit whose tree was not what was built. An immutable repository refuses it: ECR's `PutImage` answers `ImageTagAlreadyExistsException`. Immutability converts a silent mislabel into a refused push, which is the shape ADR 0006 requires of the executor — it never silently upgrades, because a capability reported unavailable is better than a change nobody sees.
+Push a dirty-tree build under a tag some clean build already holds, and a mutable repository takes it: the overwrite is silent, and the tag now names a commit whose tree was not what was built. An immutable repository refuses it: ECR's `PutImage` answers `ImageTagAlreadyExistsException`. Immutability converts a silent mislabel into a refused push, which is the shape ADR 0010 requires of the executor — it never silently upgrades, because a capability reported unavailable is better than a change nobody sees.
 
 The second reason is that the setting is retroactive. Tag immutability is a property of the repository and not of a tag, and ECR records nothing about the policy a tag was pushed under, so a repository that is ever mutable leaves every tag it holds a readable label rather than an identifier — the ones pushed while it was immutable included (from the gitops PM, 2026-08-23). A tag identifies a build here only because these repositories have never been mutable, which makes this a requirement on their creation and not only on their present setting.
 

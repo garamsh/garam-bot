@@ -25,7 +25,7 @@ const runAsBinaryEnv = "GARAM_BOT_TEST_RUN_AS_BINARY"
 
 // TestMain routes the resource-limit verb as main does: the workspace
 // these tests start runs a real executor, which execs whichever binary
-// it runs as — this test binary — to cap each child (ADR 0005). Under
+// it runs as — this test binary — to cap each child (ADR 0008). Under
 // runAsBinaryEnv it runs as the binary instead of running tests.
 func TestMain(m *testing.M) {
 	if os.Getenv(runAsBinaryEnv) != "" {
@@ -150,7 +150,7 @@ func requireRefused(t *testing.T, run operationRun, code string) operationError 
 // TestWorkspaceRead_PrintsBytesAndSeparatesRefusalFromUnreachable reads
 // a file that is not UTF-8 back unchanged, refuses a path outside the
 // workspace with exit 2, and reports a workspace that is not listening
-// with exit 3 (ADR 0011). The successful read is the refusal's control.
+// with exit 3 (ADR 0027). The successful read is the refusal's control.
 func TestWorkspaceRead_PrintsBytesAndSeparatesRefusalFromUnreachable(t *testing.T) {
 	addr, dir := startWorkspace(t)
 	content := "hello\x00\xff\xfe"
@@ -170,7 +170,7 @@ func TestWorkspaceRead_PrintsBytesAndSeparatesRefusalFromUnreachable(t *testing.
 // TestWorkspaceWrite_WritesStdinAndSeparatesRefusalFromUnreachable
 // writes standard input into the workspace, refuses a path outside it
 // without writing there, and reports an unreachable workspace with
-// exit 3 (ADR 0011).
+// exit 3 (ADR 0027).
 func TestWorkspaceWrite_WritesStdinAndSeparatesRefusalFromUnreachable(t *testing.T) {
 	addr, dir := startWorkspace(t)
 
@@ -189,7 +189,7 @@ func TestWorkspaceWrite_WritesStdinAndSeparatesRefusalFromUnreachable(t *testing
 
 // TestWorkspaceList_PrintsEntriesAndSeparatesRefusalFromUnreachable
 // lists a directory as JSON entries, refuses a path outside the
-// workspace, and reports an unreachable workspace with exit 3 (ADR 0011).
+// workspace, and reports an unreachable workspace with exit 3 (ADR 0027).
 func TestWorkspaceList_PrintsEntriesAndSeparatesRefusalFromUnreachable(t *testing.T) {
 	addr, dir := startWorkspace(t)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644))
@@ -236,7 +236,7 @@ func runExec(t *testing.T, stdin string, args ...string) execResult {
 // forwards stdin only when asked, reports the command's own exit code as
 // a result with exit 0, refuses an executable the workspace cannot
 // start with exit 2, and reports an unreachable workspace with exit 3
-// (ADR 0011).
+// (ADR 0027).
 func TestWorkspaceExec_ReturnsTheCommandsResultAndSeparatesRefusalFromUnreachable(t *testing.T) {
 	addr, dir := startWorkspace(t)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "seed.txt"), []byte("seeded"), 0o644))
@@ -308,7 +308,7 @@ func TestWorkspaceOperations_UsageFailsBeforeAnyCall(t *testing.T) {
 
 // TestWorkspaceCommand_RefusesAPositionalArgument keeps a mistyped
 // operation from starting a server: `garam-bot workspace raed` fails
-// before binding (ADR 0011). The control is `read`, which is routed to
+// before binding (ADR 0027). The control is `read`, which is routed to
 // the operation and fails there instead.
 func TestWorkspaceCommand_RefusesAPositionalArgument(t *testing.T) {
 	addr := unusedAddr(t)

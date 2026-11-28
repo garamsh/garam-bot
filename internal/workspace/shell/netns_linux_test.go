@@ -83,7 +83,7 @@ func runProbe(t *testing.T, executor shell.Executor, req shell.Request) shell.Re
 			t.Fatalf("GARAM_BOT_PRIVILEGED_TESTS is set but this host cannot provide what an isolated call needs, so the run cannot report on it: %v", err)
 		}
 		if usernsRequired() && os.Geteuid() != 0 {
-			t.Fatalf("GARAM_BOT_REQUIRE_USERNS is set but this host refuses the unprivileged NoNetwork clone, so the run cannot report on ADR 0006's unprivileged path: %v", err)
+			t.Fatalf("GARAM_BOT_REQUIRE_USERNS is set but this host refuses the unprivileged NoNetwork clone, so the run cannot report on ADR 0010's unprivileged path: %v", err)
 		}
 		t.Skipf("this host cannot provide what an isolated call needs: %v", err)
 	}
@@ -114,7 +114,7 @@ func requireProbeRan(t *testing.T, res shell.Result) {
 // TestProcessExecutor_NoNetworkBlocksLoopback runs the same probe child
 // with and without NoNetwork: in a fresh, empty network namespace the
 // dial to the host loopback listener fails; without the namespace it
-// succeeds (ADR 0006 — shell_exec children have no network at all).
+// succeeds (ADR 0010 — shell_exec children have no network at all).
 // Needs a root process that can unshare a network namespace; it skips
 // when the host refuses one.
 func TestProcessExecutor_NoNetworkBlocksLoopback(t *testing.T) {
@@ -243,7 +243,7 @@ func requirePython3(t *testing.T) {
 }
 
 // usernsRequired reports whether this run promised to reach the
-// unprivileged NoNetwork path (ADR 0006). The CI job that runs `make ci`
+// unprivileged NoNetwork path (ADR 0010). The CI job that runs `make ci`
 // sets the variable, so a runner image that refuses the
 // CLONE_NEWUSER|CLONE_NEWNET clone fails the job naming the refusal
 // instead of leaving it green with the path untested (#1077). Unset, as
@@ -253,7 +253,7 @@ func usernsRequired() bool {
 }
 
 // TestProcessExecutor_SingleAccountNoNetworkBlocksLoopback pins the
-// unprivileged isolation path (ADR 0006): in single-account mode the
+// unprivileged isolation path (ADR 0010): in single-account mode the
 // shell child is network-isolated through a user+network namespace —
 // no privileges required — while a child without NoNetwork keeps the
 // host network (the script-tool contract). Needs a host that permits

@@ -22,7 +22,7 @@ import (
 // TestEndToEnd_WorkspaceServesContract drives "garam-bot workspace" as a
 // subprocess — real binary, real gRPC, nothing mocked: the agent's
 // tools (or a test driver) dial the workspace gRPC and call
-// Read/Write/List (ADR 0006).
+// Read/Write/List (ADR 0010).
 func TestEndToEnd_WorkspaceServesContract(t *testing.T) {
 	binary := buildGaramBotBinary(t)
 	workspaceDir := filepath.Join(t.TempDir(), "workspace")
@@ -69,7 +69,7 @@ func TestEndToEnd_WorkspaceServesContract(t *testing.T) {
 // TestEndToEnd_WorkspaceNonLoopbackFailsStartup runs the workspace with
 // a non-loopback --addr: startup must fail with an error stating the
 // loopback-only requirement — an unauthenticated gRPC listener is a
-// remote shell into the workspace (ADR 0005, issue #209).
+// remote shell into the workspace (ADR 0008, issue #209).
 func TestEndToEnd_WorkspaceNonLoopbackFailsStartup(t *testing.T) {
 	binary := buildGaramBotBinary(t)
 	configPath := emptyConfig(t, "workspace.yaml")
@@ -88,7 +88,7 @@ func TestEndToEnd_WorkspaceNonLoopbackFailsStartup(t *testing.T) {
 // startWorkspaceBinary starts "garam-bot workspace" as a subprocess on a
 // free loopback port with workspace as the workspace directory and
 // exec-uid set to the test process's own UID (single-account mode,
-// ADR 0005), waits until it serves gRPC, and returns the process
+// ADR 0008), waits until it serves gRPC, and returns the process
 // handle, the gRPC address, and a channel receiving the process's exit
 // result. Test cleanup kills the process if it is still running.
 func startWorkspaceBinary(t *testing.T, binary, workspaceDir, configPath string) (*exec.Cmd, string, <-chan error) {

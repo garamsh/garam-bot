@@ -15,7 +15,7 @@ import (
 // TestWorkspaceCommand_NonLoopbackAddrFailsStartup pins the fail-closed
 // posture: the gRPC listener is unauthenticated in this phase, so a
 // non-loopback bind is a remote shell into the workspace and fails
-// startup (ADR 0005).
+// startup (ADR 0008).
 func TestWorkspaceCommand_NonLoopbackAddrFailsStartup(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "workspace.yaml")
 	require.NoError(t, os.WriteFile(configPath, nil, 0o600))

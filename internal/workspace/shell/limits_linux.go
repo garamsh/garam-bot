@@ -33,7 +33,7 @@ var shimResources = map[string]int{
 // command. Lowering one's own limits needs no capability, while
 // prlimit(2) against a child that has already dropped to the exec UID
 // needs CAP_SYS_RESOURCE — which is why the caps are applied here and
-// not by the parent (ADR 0005). A cap that cannot be applied fails
+// not by the parent (ADR 0008). A cap that cannot be applied fails
 // before exec, so the command never runs uncapped.
 func RunShim(args []string) error {
 	err := runShim(args)

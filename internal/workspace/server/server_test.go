@@ -213,7 +213,7 @@ func TestServer_Exec(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		resp, err := client.Exec(ctx, &workspace.ExecRequest{Command: "sleep 60"})
-		require.NoError(t, err, "a timed-out command is a normal outcome (ADR 0005)")
+		require.NoError(t, err, "a timed-out command is a normal outcome (ADR 0008)")
 		assert.Equal(t, "partial", resp.GetStdout())
 		assert.True(t, resp.GetTimedOut())
 	})

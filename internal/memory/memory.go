@@ -1,5 +1,5 @@
 // Package memory holds the types of the conversation memory store, the candidate for the bot's
-// memory (ADR 0022): the visible messages it keeps, the episodes it writes from them and
+// memory (ADR 0040): the visible messages it keeps, the episodes it writes from them and
 // the interfaces its callers supply. No binary reaches it until the bot-memory interface is decided.
 package memory
 

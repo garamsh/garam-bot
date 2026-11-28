@@ -1,4 +1,4 @@
-# ADR 0019: Every party authenticates by an OAuth or OIDC standard, signing keys are split by purpose, and no key is made by hand
+# ADR 0037: Every party authenticates by an OAuth or OIDC standard, signing keys are split by purpose, and no key is made by hand
 
 > Status: accepted
 > Date: 2026-11-24
@@ -23,7 +23,7 @@
   - an OIDC issuer (garam ADR-0141);
   - a cluster's `private_key_jwt` exchange (garam ADR-0184);
   - Transit for message signing keys (garam ADR-0104).
-- **What aurora has built** (aurora ADR 0019, at aurora `2de277ad451ea8c543801b440096124c09603c9f`): Transit keys for garam's KEK, issuer, policy feed and message signing and for codehub's and cowork's assertions, a PKI root with two intermediates, cert-manager issuers on them and a trust bundle, all read by nothing until garam's switch release.
+- **What aurora has built** (aurora ADR 0037, at aurora `2de277ad451ea8c543801b440096124c09603c9f`): Transit keys for garam's KEK, issuer, policy feed and message signing and for codehub's and cowork's assertions, a PKI root with two intermediates, cert-manager issuers on them and a trust bundle, all read by nothing until garam's switch release.
 - **The issuer's key is not its own.** garam's OIDC issuer signs with the policy feed's key (`docs/architecture/deployment-contract.md` §The identity issuer is off until it is named), and `deploy/charts/cluster/key-material.sh` makes every internal key and certificate with `openssl`.
 
 ## Decision

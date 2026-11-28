@@ -71,7 +71,7 @@ func requireRoot(t *testing.T) {
 // account, so a child dropped to another UID cannot enter it and fails on
 // the permission rather than on what the case is about. A privileged
 // workspace has the same problem and solves it by handing the workspace
-// directory to the exec account (ADR 0005); these tests hold no workspace,
+// directory to the exec account (ADR 0008); these tests hold no workspace,
 // so they open the path instead.
 func execAccountDir(t *testing.T) string {
 	t.Helper()
@@ -144,7 +144,7 @@ func requireUnprivileged(t *testing.T) {
 	}
 }
 
-// TestProcessExecutor_UntrustedChildCarriesDefaultCaps pins the ADR 0006
+// TestProcessExecutor_UntrustedChildCarriesDefaultCaps pins the ADR 0010
 // trust-class rule on the untrusted path: an agent-supplied command
 // runs under the executor's resource caps, and carries them from its
 // first instruction — the shim applies them before exec, so a plain
@@ -162,7 +162,7 @@ func TestProcessExecutor_UntrustedChildCarriesDefaultCaps(t *testing.T) {
 // TestProcessExecutor_UntrustedChildCarriesEveryCap reads the caps from
 // the kernel's own view of the child. Single-account mode carries four:
 // RLIMIT_NPROC counts the shared account's processes, so it applies
-// only to the privileged drop (ADR 0006).
+// only to the privileged drop (ADR 0010).
 func TestProcessExecutor_UntrustedChildCarriesEveryCap(t *testing.T) {
 	requireUnprivileged(t)
 	exec := shell.NewProcessExecutor(os.Geteuid(), 5*time.Second)
@@ -264,7 +264,7 @@ func TestProcessExecutor_TrustedGoBinaryRuns(t *testing.T) {
 		"the Go helper runs to completion as a trusted child")
 }
 
-// TestProcessExecutor_PrivilegedDropRunsAsExecUID pins the ADR 0005 drop
+// TestProcessExecutor_PrivilegedDropRunsAsExecUID pins the ADR 0008 drop
 // itself: a privileged executor's child runs as the configured exec
 // account and not as the account the executor runs as. Nothing else in
 // this package can pin it. The single-account case below asserts the
@@ -289,7 +289,7 @@ func TestProcessExecutor_PrivilegedDropRunsAsExecUID(t *testing.T) {
 }
 
 // TestProcessExecutor_SingleAccountRunsAsOwnUID pins the single-account
-// mode (ADR 0005): with AgentUID equal to the process euid, an
+// mode (ADR 0008): with AgentUID equal to the process euid, an
 // unprivileged executor runs children as its own account — no privilege
 // required, no agent_uid unavailable.
 func TestProcessExecutor_SingleAccountRunsAsOwnUID(t *testing.T) {
