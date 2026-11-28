@@ -25,6 +25,7 @@ import (
 	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -43,7 +44,7 @@ import (
 	"github.com/garamsh/garam-bot/operator/internal/bottoken/kube"
 )
 
-// The ServiceAccount tokens, the issuer's keys and the trust ConfigMap are the API server's, so the
+// The ServiceAccount tokens, the issuer's keys, the Pods and the trust ConfigMap are the API server's, so the
 // adapters are tested against envtest's API server serving interface 1's definitions.
 var (
 	cfg       *rest.Config
@@ -89,24 +90,28 @@ func run(m *testing.M) int {
 	return m.Run()
 }
 
-func TestService_AnswersAProjectedServiceAccountTokenOfAGaramOwnedBot(t *testing.T) {
+func TestService_AnswersAProjectedServiceAccountTokenOfTheBotsPod(t *testing.T) {
 	namespace := newNamespace(t)
-	createBot(t, namespace, "mira", map[string]string{botv1.LabelManagedBy: "garam"}, map[string]string{
-		botv1.AnnotationCluster: record, botv1.AnnotationDeclaration: "decl-mira", botv1.AnnotationDeclarationGeneration: "1",
+	botUID := createWorkload(t, namespace, "mira", true)
+	createWorkload(t, namespace, "local", true)
+	createPod(t, namespace, "stray", "mira", nil)
+	s := startService(t, namespace, applied{
+		{Namespace: namespace, Name: "mira"}: {DeclarationID: "decl-mira", UID: botUID},
 	})
-	createBot(t, namespace, "local", nil, nil)
-	s := startService(t, namespace)
 
-	refused := s.call(t, serviceAccountToken(t, namespace, "local", bottoken.DefaultAudience), "")
-	assert.Equal(t, http.StatusForbidden, refused.status, "a cluster-owned Bot's token is refused")
+	refused := s.call(t, podToken(t, namespace, "local", "local-0", bottoken.DefaultAudience), "")
+	assert.Equal(t, http.StatusForbidden, refused.status, "a Bot the connector did not apply is refused")
 	assert.Equal(t, "unknown_bot", refused.body["error"])
-
-	other := s.call(t, serviceAccountToken(t, namespace, "mira", "https://kubernetes.default.svc"), "")
+	other := s.call(t, podToken(t, namespace, "mira", "mira-0", "https://kubernetes.default.svc"), "")
 	assert.Equal(t, http.StatusUnauthorized, other.status, "a token for another audience is refused")
+	unbound := s.call(t, serviceAccountToken(t, namespace, "mira", bottoken.DefaultAudience, nil), "")
+	assert.Equal(t, http.StatusUnauthorized, unbound.status, "a token bound to no Pod is refused")
+	stray := s.call(t, podToken(t, namespace, "mira", "stray", bottoken.DefaultAudience), "")
+	assert.Equal(t, http.StatusUnauthorized, stray.status, "a Pod of the Bot's ServiceAccount the Bot does not run is refused")
 
-	// Control: the garam-owned Bot's token, for the server's audience, verifies against the API
-	// server's keys and obtains garam's token.
-	credential := serviceAccountToken(t, namespace, "mira", bottoken.DefaultAudience)
+	// Control: the token of the Pod the Bot's StatefulSet runs, for the server's audience, verifies
+	// against the API server's keys and obtains garam's token.
+	credential := podToken(t, namespace, "mira", "mira-0", bottoken.DefaultAudience)
 	asked := s.call(t, credential, "")
 	require.Equal(t, "use_dpop_nonce", asked.body["error"], asked.body)
 	answered := s.call(t, credential, s.proof(t, asked.body["htu"]))
@@ -114,19 +119,36 @@ func TestService_AnswersAProjectedServiceAccountTokenOfAGaramOwnedBot(t *testing
 	assert.Equal(t, "grn:acme/iam/bot/decl-mira", s.subject.Load(), "the exchange names the Bot's declaration")
 }
 
-func TestTrustStore_PublishesIntoTheConfigMapTheChartCreated(t *testing.T) {
+func TestPods_AnswersTheBotWhoseStatefulSetControlsThePod(t *testing.T) {
 	namespace := newNamespace(t)
-	store := kube.TrustStore{Kube: clientset, Namespace: namespace, Name: "garam-connector-trust", Key: "ca.crt"}
+	botUID := createWorkload(t, namespace, "mira", true)
+	createWorkload(t, namespace, "nova", false)
+	// A Pod naming mira's StatefulSet as its controller by another UID: a StatefulSet since replaced.
+	createPod(t, namespace, "mira-old", "mira", &metav1.OwnerReference{
+		APIVersion: "apps/v1", Kind: "StatefulSet", Name: "mira", UID: "uid-of-a-set-gone", Controller: ptr.To(true),
+	})
+	pods := kube.Pods{Kube: clientset}
 
-	assert.Error(t, store.Publish(t.Context(), []byte("bundle")), "no ConfigMap is created")
-
-	require.NoError(t, k8sClient.Create(t.Context(), &corev1.ConfigMap{
-		Namespace: namespace, Name: "garam-connector-trust",
-	}))
-	require.NoError(t, store.Publish(t.Context(), []byte("bundle")))
-	held, err := clientset.CoreV1().ConfigMaps(namespace).Get(t.Context(), "garam-connector-trust", metav1.GetOptions{})
+	pod, found, err := pods.Pod(t.Context(), namespace, "mira-0")
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"ca.crt": "bundle"}, held.Data)
+	require.True(t, found)
+	assert.Equal(t, botUID, pod.BotUID)
+	assert.Equal(t, "mira", pod.ServiceAccount)
+	assert.NotEmpty(t, pod.UID)
+
+	pod, found, err = pods.Pod(t.Context(), namespace, "nova-0")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Empty(t, pod.BotUID, "a StatefulSet the Bot owns but does not control is not the Bot's workload")
+
+	pod, found, err = pods.Pod(t.Context(), namespace, "mira-old")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Empty(t, pod.BotUID, "a Pod of a StatefulSet since replaced is not the Bot's workload")
+
+	_, found, err = pods.Pod(t.Context(), namespace, "absent-0")
+	require.NoError(t, err)
+	assert.False(t, found)
 }
 
 // service is a bot token Service over envtest, with a stand-in mint, serving on a port of its own.
@@ -137,7 +159,15 @@ type service struct {
 	subject atomic.Value
 }
 
-func startService(t *testing.T, namespace string) *service {
+// applied stands in for the declarations the connector holds.
+type applied map[bottoken.Bot]bottoken.Applied
+
+func (a applied) Applied(bot bottoken.Bot) (bottoken.Applied, bool) {
+	held, ok := a[bot]
+	return held, ok
+}
+
+func startService(t *testing.T, namespace string, bots applied) *service {
 	t.Helper()
 	s := &service{}
 	var err error
@@ -152,16 +182,15 @@ func startService(t *testing.T, namespace string) *service {
 	}))
 	t.Cleanup(mint.Close)
 	trust := &bundle{}
-	reader, err := client.New(cfg, client.Options{Scheme: botScheme(t)})
-	require.NoError(t, err)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	tokens := bottoken.NewService(bottoken.Config{
 		Record: record, Namespaces: []string{namespace},
-		Keys: kube.Keys{Kube: clientset}, Bots: kube.Bots{Reader: reader}, Trust: trust,
-		HTTP: mint.Client(), TokenURL: mint.URL + "/oauth/token",
-		Actor:    func(context.Context) (string, error) { return "garam_ct_actor", nil },
-		DNSNames: []string{"garam-connector.garam.svc"},
+		Keys: kube.Keys{Kube: clientset}, Bots: bots, Pods: kube.Pods{Kube: clientset}, Trust: trust,
+		HTTP: mint.Client(), TokenURL: func() string { return mint.URL + "/oauth/token" },
+		Actor:      func(context.Context) (string, error) { return "garam_ct_actor", nil },
+		Invalidate: func(string) {},
+		DNSNames:   []string{"garam-connector.garam.svc"},
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -230,25 +259,45 @@ func (b *bundle) load() []byte {
 	return held
 }
 
-// serviceAccountToken is a token the API server issues the ServiceAccount namespace/name for
-// audience, as the kubelet projects one into a Bot's Pod.
-func serviceAccountToken(t *testing.T, namespace, name, audience string) string {
+// podToken is the token the kubelet projects into the Pod podName of ServiceAccount namespace/name, for
+// audience: bound to that Pod.
+func podToken(t *testing.T, namespace, name, podName, audience string) string {
 	t.Helper()
-	_, err := clientset.CoreV1().ServiceAccounts(namespace).Get(t.Context(), name, metav1.GetOptions{})
-	if err != nil {
-		_, err = clientset.CoreV1().ServiceAccounts(namespace).Create(t.Context(),
-			&corev1.ServiceAccount{Name: name}, metav1.CreateOptions{})
-		require.NoError(t, err)
-	}
+	pod, err := clientset.CoreV1().Pods(namespace).Get(t.Context(), podName, metav1.GetOptions{})
+	require.NoError(t, err)
+	return serviceAccountToken(t, namespace, name, audience, &authenticationv1.BoundObjectReference{
+		Kind: "Pod", APIVersion: "v1", Name: pod.Name, UID: pod.UID,
+	})
+}
+
+// serviceAccountToken is a token the API server issues the ServiceAccount namespace/name for audience,
+// bound to bound where it is set.
+func serviceAccountToken(t *testing.T, namespace, name, audience string, bound *authenticationv1.BoundObjectReference) string {
+	t.Helper()
+	createServiceAccount(t, namespace, name)
 	issued, err := clientset.CoreV1().ServiceAccounts(namespace).CreateToken(t.Context(), name,
 		&authenticationv1.TokenRequest{Spec: authenticationv1.TokenRequestSpec{
-			Audiences: []string{audience}, ExpirationSeconds: ptr.To[int64](600),
+			Audiences: []string{audience}, ExpirationSeconds: ptr.To[int64](600), BoundObjectRef: bound,
 		}}, metav1.CreateOptions{})
 	require.NoError(t, err)
 	return issued.Status.Token
 }
 
-func createBot(t *testing.T, namespace, name string, labels, annotations map[string]string) {
+func createServiceAccount(t *testing.T, namespace, name string) {
+	t.Helper()
+	_, err := clientset.CoreV1().ServiceAccounts(namespace).Get(t.Context(), name, metav1.GetOptions{})
+	if err == nil {
+		return
+	}
+	_, err = clientset.CoreV1().ServiceAccounts(namespace).Create(t.Context(),
+		&corev1.ServiceAccount{Name: name}, metav1.CreateOptions{})
+	require.NoError(t, err)
+}
+
+// createWorkload makes the Bot name, its StatefulSet, controlled by the Bot where controlled is set and
+// only owned by it otherwise, and the StatefulSet's Pod <name>-0 under the ServiceAccount name, as the
+// manager makes them. It answers the Bot's UID.
+func createWorkload(t *testing.T, namespace, name string, controlled bool) string {
 	t.Helper()
 	bot := &unstructured.Unstructured{Object: map[string]any{
 		"spec": map[string]any{"persona": map[string]any{"role": "Game Lead"}, "agent": map[string]any{"harness": "claude-code"}},
@@ -256,9 +305,40 @@ func createBot(t *testing.T, namespace, name string, labels, annotations map[str
 	bot.SetGroupVersionKind(botv1.GroupVersion.WithKind("Bot"))
 	bot.SetNamespace(namespace)
 	bot.SetName(name)
-	bot.SetLabels(labels)
-	bot.SetAnnotations(annotations)
 	require.NoError(t, k8sClient.Create(t.Context(), bot))
+	labels := map[string]string{"app.kubernetes.io/instance": name}
+	set, err := clientset.AppsV1().StatefulSets(namespace).Create(t.Context(), &appsv1.StatefulSet{
+		Name: name, OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: botv1.GroupVersion.String(), Kind: "Bot", Name: name, UID: bot.GetUID(),
+			Controller: ptr.To(controlled),
+		}},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas: ptr.To[int32](1), Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}, Spec: podSpec(name)},
+		},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	createPod(t, namespace, name+"-0", name, &metav1.OwnerReference{
+		APIVersion: "apps/v1", Kind: "StatefulSet", Name: set.Name, UID: set.UID, Controller: ptr.To(true),
+	})
+	return string(bot.GetUID())
+}
+
+// createPod makes the Pod name under serviceAccount, controlled by owner where it is set. envtest runs
+// no controller and no kubelet, so the Pod is made here and never runs.
+func createPod(t *testing.T, namespace, name, serviceAccount string, owner *metav1.OwnerReference) {
+	t.Helper()
+	createServiceAccount(t, namespace, serviceAccount)
+	pod := &corev1.Pod{Name: name, Spec: podSpec(serviceAccount)}
+	if owner != nil {
+		pod.OwnerReferences = []metav1.OwnerReference{*owner}
+	}
+	_, err := clientset.CoreV1().Pods(namespace).Create(t.Context(), pod, metav1.CreateOptions{})
+	require.NoError(t, err)
+}
+
+func podSpec(serviceAccount string) corev1.PodSpec {
+	return corev1.PodSpec{ServiceAccountName: serviceAccount, Containers: []corev1.Container{{Name: "runtime", Image: "garam-bot"}}}
 }
 
 var spaces atomic.Int32
@@ -268,13 +348,6 @@ func newNamespace(t *testing.T) string {
 	name := fmt.Sprintf("bots-%d", spaces.Add(1))
 	require.NoError(t, k8sClient.Create(t.Context(), &corev1.Namespace{Name: name}))
 	return name
-}
-
-func botScheme(t *testing.T) *runtime.Scheme {
-	t.Helper()
-	scheme := runtime.NewScheme()
-	require.NoError(t, botv1.AddToScheme(scheme))
-	return scheme
 }
 
 // readDefinitions are interface 1's CustomResourceDefinitions, as the chart installs them.

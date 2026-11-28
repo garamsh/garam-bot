@@ -13,12 +13,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	"golang.org/x/time/rate"
 
 	v1alpha1 "github.com/garamsh/garam-bot/api/bot-token/v1alpha1"
 )
@@ -35,6 +37,9 @@ const (
 	BotsFile = "bots.json"
 	// BindingsDir holds, for each token answered, the thumbprint of the key it is bound to.
 	BindingsDir = "bindings"
+	// StartedFile holds when the server started, in Unix seconds, for the fixture to issue a
+	// credential before it.
+	StartedFile = "started"
 )
 
 const (
@@ -49,6 +54,11 @@ const (
 	lifetime = time.Hour
 	// proofWindow is how far a proof's iat may be from the server's clock.
 	proofWindow = time.Minute
+	// maxCredentialLife bounds a credential's exp - iat (CRED-2).
+	maxCredentialLife = time.Hour
+	// limitBurst and limitEvery are each bot's exchanges: at once, and one more after each (LIMIT-1).
+	limitBurst = 5
+	limitEvery = 30 * time.Second
 )
 
 // Owner is who changes a bot at the place: garam, which declared it, or the place itself.
@@ -70,17 +80,21 @@ type server struct {
 	baseURL string
 	keys    jose.JSONWebKeySet
 	nonce   string
+	// started is when the server started: a credential issued before it is refused, as the spent set
+	// does not outlive the process (CRED-3).
+	started time.Time
 
 	mu     sync.Mutex
 	spent  map[string]bool
 	proofs map[string]time.Time
+	limits map[string]*rate.Limiter
 }
 
-func newServer(dir, baseURL string, credentialKey *ecdsa.PublicKey) *server {
+func newServer(dir, baseURL string, credentialKey *ecdsa.PublicKey, started time.Time) *server {
 	return &server{
-		dir: dir, baseURL: baseURL, nonce: rand.Text(),
+		dir: dir, baseURL: baseURL, nonce: rand.Text(), started: started,
 		keys:  jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: credentialKey, KeyID: "reference", Algorithm: string(jose.ES256)}}},
-		spent: map[string]bool{}, proofs: map[string]time.Time{},
+		spent: map[string]bool{}, proofs: map[string]time.Time{}, limits: map[string]*rate.Limiter{},
 	}
 }
 
@@ -92,7 +106,10 @@ func (s *server) handler() http.Handler {
 
 // token is the one call (CRED-2, CRED-3, BOT-1, NONCE-1, EXCH-1, TOK-1).
 func (s *server) token(w http.ResponseWriter, r *http.Request) {
-	credential, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	credential, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !bearer {
+		credential = ""
+	}
 	bot, err := s.verify(credential)
 	if err != nil {
 		refuse(w, http.StatusUnauthorized, v1alpha1.ErrorBody{Error: v1alpha1.CodeInvalidCredential})
@@ -131,6 +148,17 @@ func (s *server) token(w http.ResponseWriter, r *http.Request) {
 		refuse(w, http.StatusUnauthorized, v1alpha1.ErrorBody{Error: v1alpha1.CodeInvalidCredential})
 		return
 	}
+	limit, ok := s.limits[bot]
+	if !ok {
+		limit = rate.NewLimiter(rate.Every(limitEvery), limitBurst)
+		s.limits[bot] = limit
+	}
+	if !limit.Allow() {
+		s.mu.Unlock()
+		w.Header().Set("Retry-After", strconv.Itoa(int(limitEvery/time.Second)))
+		refuse(w, http.StatusTooManyRequests, v1alpha1.ErrorBody{Error: v1alpha1.CodeTemporarilyUnavailable})
+		return
+	}
 	s.spent[spentKey] = true
 	s.mu.Unlock()
 	token := "reference_bt_" + rand.Text()
@@ -148,7 +176,7 @@ func (s *server) askNonce(w http.ResponseWriter) {
 }
 
 // verify answers the bot a credential names, "<namespace>/<name>", where it is one the server signed
-// for its audience and it has not expired.
+// for its audience since it started, lives an hour at most, and has not expired.
 func (s *server) verify(credential string) (string, error) {
 	token, err := jwt.ParseSigned(credential, []jose.SignatureAlgorithm{jose.ES256})
 	if err != nil {
@@ -161,8 +189,13 @@ func (s *server) verify(credential string) (string, error) {
 	if err := claims.Validate(jwt.Expected{Issuer: issuer, AnyAudience: jwt.Audience{Audience}, Time: time.Now()}); err != nil {
 		return "", err
 	}
-	if claims.Expiry == nil || !strings.Contains(claims.Subject, "/") {
-		return "", errors.New("the credential names no bot")
+	switch {
+	case claims.Expiry == nil || claims.IssuedAt == nil || !strings.Contains(claims.Subject, "/"):
+		return "", errors.New("the credential names no bot, or no exp or iat")
+	case claims.Expiry.Time().Sub(claims.IssuedAt.Time()) > maxCredentialLife:
+		return "", errors.New("the credential lives longer than an hour")
+	case claims.IssuedAt.Time().Before(s.started):
+		return "", errors.New("the credential was issued before the server started")
 	}
 	return claims.Subject, nil
 }

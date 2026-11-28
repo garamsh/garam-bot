@@ -49,6 +49,9 @@ const (
 	codeInvalidProof = "invalid_dpop_proof"
 )
 
+// codeUnavailable is interface 6's answer to a request to try again (T-3).
+const codeUnavailable = "temporarily_unavailable"
+
 // proofError is garam's refusal of the proof, use_dpop_nonce or invalid_dpop_proof, relayed as it came.
 type proofError struct {
 	code string

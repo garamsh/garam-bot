@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -22,6 +23,9 @@ const (
 	keysRetry = 10 * time.Second
 	// maxCredential bounds the credential read, as a projected ServiceAccount token is a few KiB.
 	maxCredential = 16 << 10
+	// maxLifetime bounds a credential's life, exp - iat. The manager projects one of 10 minutes; the
+	// bound refuses one a person issued for longer by TokenRequest (CRED-2).
+	maxLifetime = time.Hour
 )
 
 // serviceAccountPrefix begins the sub of every ServiceAccount token, system:serviceaccount:<ns>:<name>.
@@ -33,6 +37,12 @@ type credentials struct {
 	keys     Keys
 	audience string
 	now      func() time.Time
+	// startedAt is when this process started. A credential issued before it is refused, as one spent
+	// before a restart is not in spent (CRED-3).
+	startedAt time.Time
+
+	// reads makes the credentials that find the keys old or unknown at once wait on one read.
+	reads singleflight.Group
 
 	mu      sync.Mutex
 	issuer  Issuer
@@ -44,16 +54,36 @@ type credentials struct {
 
 func newCredentials(keys Keys, audience string, now func() time.Time) *credentials {
 	return &credentials{
-		keys: keys, audience: audience, now: now,
+		// A credential's iat is in whole seconds.
+		keys: keys, audience: audience, now: now, startedAt: now().Truncate(time.Second),
 		pending: map[[sha256.Size]byte]bool{}, spent: map[[sha256.Size]byte]time.Time{},
 	}
 }
 
 // claim is a credential verified and held for one request: no other request takes it until release.
 type claim struct {
-	bot    Bot
+	bot Bot
+	// pod is the Pod the credential was issued to, which must run the Bot (CRED-2).
+	pod    boundPod
 	digest [sha256.Size]byte
 	expiry time.Time
+}
+
+// boundPod is the Pod a projected ServiceAccount token names in its kubernetes.io claim.
+type boundPod struct {
+	Name string `json:"name"`
+	UID  string `json:"uid"`
+}
+
+// kubernetesClaims is the kubernetes.io claim of a projected ServiceAccount token.
+type kubernetesClaims struct {
+	Kubernetes *struct {
+		Namespace      string    `json:"namespace"`
+		Pod            *boundPod `json:"pod"`
+		ServiceAccount struct {
+			Name string `json:"name"`
+		} `json:"serviceaccount"`
+	} `json:"kubernetes.io"`
 }
 
 // take verifies raw and holds it for one request. It answers errCredential for one that does not
@@ -62,7 +92,7 @@ func (c *credentials) take(ctx context.Context, raw string) (claim, error) {
 	if raw == "" || len(raw) > maxCredential {
 		return claim{}, errCredential
 	}
-	bot, expiry, err := c.verify(ctx, raw)
+	verified, err := c.verify(ctx, raw)
 	if err != nil {
 		return claim{}, fmt.Errorf("%w: %w", errCredential, err)
 	}
@@ -79,7 +109,8 @@ func (c *credentials) take(ctx context.Context, raw string) (claim, error) {
 		return claim{}, fmt.Errorf("%w: it was spent", errCredential)
 	}
 	c.pending[digest] = true
-	return claim{bot: bot, digest: digest, expiry: expiry}, nil
+	verified.digest = digest
+	return verified, nil
 }
 
 // release ends the request holding cl, spending the credential where the request obtained a token.
@@ -92,36 +123,47 @@ func (c *credentials) release(cl claim, obtained bool) {
 	}
 }
 
-// verify answers the ServiceAccount raw names, the Bot of the same namespace and name, and when raw
-// expires.
-func (c *credentials) verify(ctx context.Context, raw string) (Bot, time.Time, error) {
+// verify answers the ServiceAccount raw names, the Bot of the same namespace and name, the Pod it was
+// issued to, and when it expires.
+func (c *credentials) verify(ctx context.Context, raw string) (claim, error) {
 	token, err := jwt.ParseSigned(raw, []jose.SignatureAlgorithm{jose.RS256, jose.ES256})
 	if err != nil {
-		return Bot{}, time.Time{}, errors.New("not a signed JWT")
+		return claim{}, errors.New("not a signed JWT")
 	}
 	if len(token.Headers) != 1 {
-		return Bot{}, time.Time{}, errors.New("not one signature")
+		return claim{}, errors.New("not one signature")
 	}
 	issuer, err := c.issuerFor(ctx, token.Headers[0].KeyID)
 	if err != nil {
-		return Bot{}, time.Time{}, err
+		return claim{}, err
 	}
 	var claims jwt.Claims
-	if err := token.Claims(issuer.Keys, &claims); err != nil {
-		return Bot{}, time.Time{}, errors.New("its signature does not verify")
+	var private kubernetesClaims
+	if err := token.Claims(issuer.Keys, &claims, &private); err != nil {
+		return claim{}, errors.New("its signature does not verify")
 	}
 	expected := jwt.Expected{Issuer: issuer.URL, AnyAudience: jwt.Audience{c.audience}, Time: c.now()}
 	if err := claims.ValidateWithLeeway(expected, leeway); err != nil {
-		return Bot{}, time.Time{}, err
+		return claim{}, err
 	}
-	if claims.Expiry == nil {
-		return Bot{}, time.Time{}, errors.New("it carries no exp")
+	switch {
+	case claims.Expiry == nil || claims.IssuedAt == nil:
+		return claim{}, errors.New("it carries no exp or no iat")
+	case claims.Expiry.Time().Sub(claims.IssuedAt.Time()) > maxLifetime:
+		return claim{}, fmt.Errorf("it lives longer than %v", maxLifetime)
+	case claims.IssuedAt.Time().Before(c.startedAt):
+		return claim{}, errors.New("it was issued before this process started")
 	}
 	bot, err := botOf(claims.Subject)
 	if err != nil {
-		return Bot{}, time.Time{}, err
+		return claim{}, err
 	}
-	return bot, claims.Expiry.Time(), nil
+	bound := private.Kubernetes
+	if bound == nil || bound.Namespace != bot.Namespace || bound.ServiceAccount.Name != bot.Name ||
+		bound.Pod == nil || bound.Pod.Name == "" || bound.Pod.UID == "" {
+		return claim{}, errors.New("it is bound to no Pod of its ServiceAccount")
+	}
+	return claim{bot: bot, pod: *bound.Pod, expiry: claims.Expiry.Time()}, nil
 }
 
 // issuerFor answers the issuer, read again where kid names no key held and the last read is old enough.
@@ -135,17 +177,23 @@ func (c *credentials) issuerFor(ctx context.Context, kid string) (Issuer, error)
 	if issuer.URL != "" && !stale && !unknown {
 		return issuer, nil
 	}
-	read, err := c.keys.Keys(ctx)
+	read, err, _ := c.reads.Do("keys", func() (any, error) {
+		read, err := c.keys.Keys(ctx)
+		if err != nil {
+			return Issuer{}, err
+		}
+		c.mu.Lock()
+		c.issuer, c.readAt = read, c.now()
+		c.mu.Unlock()
+		return read, nil
+	})
 	if err != nil {
 		if issuer.URL != "" {
 			return issuer, nil
 		}
 		return Issuer{}, fmt.Errorf("read the API server's keys: %w", err)
 	}
-	c.mu.Lock()
-	c.issuer, c.readAt = read, now
-	c.mu.Unlock()
-	return read, nil
+	return read.(Issuer), nil
 }
 
 // botOf is the Bot a ServiceAccount's sub names: the ServiceAccount of a Bot has the Bot's name.

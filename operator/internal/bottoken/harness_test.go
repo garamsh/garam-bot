@@ -12,21 +12,20 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	botv1 "github.com/garamsh/garam-bot/api/declaration/v1alpha1"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/stretchr/testify/require"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/garamsh/garam-bot/operator/internal/bottoken"
 )
@@ -68,10 +67,32 @@ type credential struct {
 	issuer   string
 	subject  string
 	audience string
+	// issuedAt defaults to now, and expiry to 10 minutes after issuedAt.
+	issuedAt time.Time
 	expiry   time.Time
+	// bound is the kubernetes.io claim, and unbound leaves it out.
+	bound   *kubernetesIO
+	unbound bool
 }
 
-// credentialFor is the projected ServiceAccount token of the ServiceAccount namespace/name.
+// kubernetesIO is a projected ServiceAccount token's kubernetes.io claim.
+type kubernetesIO struct {
+	Namespace      string `json:"namespace"`
+	Pod            *named `json:"pod,omitempty"`
+	ServiceAccount named  `json:"serviceaccount"`
+}
+
+type named struct {
+	Name string `json:"name"`
+	UID  string `json:"uid"`
+}
+
+// workloadPod is the name of the one Pod of Bot name's StatefulSet, and podUID its UID.
+func workloadPod(name string) string { return name + "-0" }
+func podUID(name string) string      { return "pod-uid-" + name }
+
+// credentialFor is the projected ServiceAccount token of the ServiceAccount namespace/name, bound to
+// the Pod of the Bot of that name.
 func (a *apiServer) credentialFor(t *testing.T, namespace, name string) string {
 	t.Helper()
 	return a.sign(t, credential{subject: "system:serviceaccount:" + namespace + ":" + name})
@@ -88,64 +109,122 @@ func (a *apiServer) sign(t *testing.T, c credential) string {
 	if c.audience == "" {
 		c.audience = bottoken.DefaultAudience
 	}
+	if c.issuedAt.IsZero() {
+		c.issuedAt = time.Now()
+	}
 	if c.expiry.IsZero() {
-		c.expiry = time.Now().Add(10 * time.Minute)
+		c.expiry = c.issuedAt.Add(10 * time.Minute)
+	}
+	if c.bound == nil && !c.unbound {
+		parts := strings.Split(c.subject, ":")
+		namespace, name := parts[len(parts)-2], parts[len(parts)-1]
+		c.bound = &kubernetesIO{Namespace: namespace, Pod: &named{Name: workloadPod(name), UID: podUID(name)},
+			ServiceAccount: named{Name: name, UID: "sa-uid-" + name}}
 	}
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: c.key},
 		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", "sa-key"))
 	require.NoError(t, err)
-	now := time.Now()
+	private := map[string]any{}
+	if c.bound != nil {
+		private["kubernetes.io"] = c.bound
+	}
 	raw, err := jwt.Signed(signer).Claims(jwt.Claims{
 		Issuer: c.issuer, Subject: c.subject, Audience: jwt.Audience{c.audience},
-		IssuedAt: jwt.NewNumericDate(now), NotBefore: jwt.NewNumericDate(now), Expiry: jwt.NewNumericDate(c.expiry),
-		ID: strconv.FormatInt(now.UnixNano(), 10),
-	}).Serialize()
+		IssuedAt: jwt.NewNumericDate(c.issuedAt), NotBefore: jwt.NewNumericDate(c.issuedAt),
+		Expiry: jwt.NewNumericDate(c.expiry), ID: rand.Text(),
+	}).Claims(private).Serialize()
 	require.NoError(t, err)
 	return raw
 }
 
-// bots stands in for the cache of the watched namespaces.
-type bots map[bottoken.Bot]botv1.Management
-
-func (b bots) Management(_ context.Context, bot bottoken.Bot) (botv1.Management, bool, error) {
-	management, ok := b[bot]
-	return management, ok, nil
+// bots stands in for the declarations the connector holds and the Bots it applied from them.
+type bots struct {
+	mu      sync.Mutex
+	applied map[bottoken.Bot]bottoken.Applied
 }
 
-// garamOwned is the marker of an object record applied from the declaration id.
-func garamOwned(t *testing.T, record, id string) botv1.Management {
-	t.Helper()
-	management, err := botv1.ManagementOf(&metav1.ObjectMeta{
-		Labels: map[string]string{botv1.LabelManagedBy: string(botv1.OwnerGaram)},
-		Annotations: map[string]string{
-			botv1.AnnotationCluster: record, botv1.AnnotationDeclaration: id, botv1.AnnotationDeclarationGeneration: "1",
-		},
-	})
-	require.NoError(t, err)
-	_, owned := management.Garam()
-	require.True(t, owned)
-	return management
+func (b *bots) Applied(bot bottoken.Bot) (bottoken.Applied, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	applied, ok := b.applied[bot]
+	return applied, ok
 }
 
-func clusterOwned(t *testing.T) botv1.Management {
-	t.Helper()
-	management, err := botv1.ManagementOf(&metav1.ObjectMeta{})
-	require.NoError(t, err)
-	require.Equal(t, botv1.OwnerCluster, management.Owner())
-	return management
+func (b *bots) set(bot bottoken.Bot, applied bottoken.Applied, ok bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if ok {
+		b.applied[bot] = applied
+	} else {
+		delete(b.applied, bot)
+	}
+}
+
+// pods stands in for the API server's Pods.
+type pods struct {
+	mu   sync.Mutex
+	held map[[2]string]bottoken.Pod
+}
+
+func (p *pods) Pod(_ context.Context, namespace, name string) (bottoken.Pod, bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	pod, ok := p.held[[2]string{namespace, name}]
+	return pod, ok, nil
+}
+
+func (p *pods) set(namespace, name string, pod bottoken.Pod, ok bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if ok {
+		p.held[[2]string{namespace, name}] = pod
+	} else {
+		delete(p.held, [2]string{namespace, name})
+	}
+}
+
+// botUID is the UID of the object the connector made for Bot name.
+func botUID(name string) string { return "bot-uid-" + name }
+
+// place makes namespace/name a Bot the connector applied from declaration id, run by its Pod.
+func (s *server) place(namespace, name, id string) {
+	s.bots.set(bottoken.Bot{Namespace: namespace, Name: name},
+		bottoken.Applied{DeclarationID: id, UID: botUID(name)}, true)
+	s.pods.set(namespace, workloadPod(name),
+		bottoken.Pod{UID: podUID(name), ServiceAccount: name, BotUID: botUID(name)}, true)
 }
 
 // trust stands in for the trust ConfigMap: every bundle published, in order.
 type trust struct {
 	mu      sync.Mutex
 	bundles [][]byte
+	// failing is how many publishes from now fail, and failed how many have.
+	failing int
+	failed  int
 }
 
 func (s *trust) Publish(_ context.Context, bundle []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.failing > 0 {
+		s.failing--
+		s.failed++
+		return errors.New("the ConfigMap is not writable")
+	}
 	s.bundles = append(s.bundles, bytes.Clone(bundle))
 	return nil
+}
+
+func (s *trust) fail(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failing = n
+}
+
+func (s *trust) failures() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.failed
 }
 
 func (s *trust) published() [][]byte {
@@ -303,13 +382,16 @@ func (p process) proof(t *testing.T, htu, nonce string) string {
 
 // server is a Service serving on a port of its own, and what it was built over.
 type server struct {
-	url    string
-	trust  *trust
-	mint   *mint
-	api    *apiServer
-	bots   bots
-	logs   *lockedWriter
-	client *http.Client
+	url   string
+	trust *trust
+	mint  *mint
+	api   *apiServer
+	bots  *bots
+	pods  *pods
+	logs  *lockedWriter
+	// invalidated is every cluster token the server dropped.
+	invalidated *recorded
+	client      *http.Client
 }
 
 // options change the Config a test's server is built from.
@@ -317,19 +399,21 @@ type options func(*bottoken.Config)
 
 func start(t *testing.T, change ...options) *server {
 	t.Helper()
-	s := &server{trust: &trust{}, mint: newMint(t), api: newAPIServer(t), logs: &lockedWriter{}}
-	s.bots = bots{
-		{Namespace: watched, Name: mira}: garamOwned(t, record, "decl-mira"),
-	}
+	s := &server{trust: &trust{}, mint: newMint(t), api: newAPIServer(t), logs: &lockedWriter{},
+		bots: &bots{applied: map[bottoken.Bot]bottoken.Applied{}}, pods: &pods{held: map[[2]string]bottoken.Pod{}},
+		invalidated: &recorded{}}
+	s.place(watched, mira, "decl-mira")
 	cfg := bottoken.Config{
 		Record:     record,
 		Namespaces: []string{watched, otherTeam},
 		Keys:       s.api,
 		Bots:       s.bots,
+		Pods:       s.pods,
 		Trust:      s.trust,
 		HTTP:       s.mint.server.Client(),
-		TokenURL:   s.mint.server.URL + "/oauth/token",
+		TokenURL:   func() string { return s.mint.server.URL + "/oauth/token" },
 		Actor:      func(context.Context) (string, error) { return actor, nil },
+		Invalidate: s.invalidated.add,
 		DNSNames:   []string{"garam-connector.garam.svc"},
 		Log:        slog.New(slog.NewJSONHandler(s.logs, nil)),
 	}
@@ -428,4 +512,22 @@ func (l *lockedWriter) String() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.buf.String()
+}
+
+// recorded is what a test reads while the server appends to it.
+type recorded struct {
+	mu   sync.Mutex
+	seen []string
+}
+
+func (r *recorded) add(v string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.seen = append(r.seen, v)
+}
+
+func (r *recorded) all() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.seen...)
 }

@@ -283,6 +283,8 @@ type memObjects struct {
 	changed chan struct{}
 	// refuse, where set, answers an error for a write, which then changes nothing.
 	refuse func(op string, object *unstructured.Unstructured) error
+	// unlistable fails every List, so no pass finishes.
+	unlistable bool
 }
 
 func newMemObjects() *memObjects {
@@ -327,6 +329,9 @@ func (m *memObjects) Claim(_ context.Context, namespace string) (string, bool, e
 func (m *memObjects) List(_ context.Context, namespace string) ([]declaration.Held, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.unlistable {
+		return nil, errors.New("the cache is not readable")
+	}
 	var out []declaration.Held
 	for ref, object := range m.objects {
 		if ref.Namespace != namespace {
@@ -344,6 +349,13 @@ func (m *memObjects) List(_ context.Context, namespace string) ([]declaration.He
 		out = append(out, held)
 	}
 	return out, nil
+}
+
+// failLists makes every List fail from now on.
+func (m *memObjects) failLists() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.unlistable = true
 }
 
 // put stores object as another writer does: a person, GitOps, or another record's connector.
@@ -384,6 +396,7 @@ func (m *memObjects) Create(_ context.Context, object *unstructured.Unstructured
 	m.calls = append(m.calls, "create "+refOf(object).String())
 	m.writes = append(m.writes, "create "+refOf(object).String())
 	m.store(object.DeepCopy())
+	object.SetUID(m.objects[refOf(object)].GetUID())
 	return nil
 }
 
@@ -416,10 +429,22 @@ func (m *memObjects) Delete(_ context.Context, held declaration.Held) error {
 	if !ok || string(live.GetUID()) != held.UID || live.GetResourceVersion() != held.ResourceVersion {
 		return declaration.ErrChanged
 	}
+	if err := m.refused("delete", live); err != nil {
+		return err
+	}
 	m.writes = append(m.writes, "delete "+held.Ref.String())
 	delete(m.objects, held.Ref)
 	m.signal()
 	return nil
+}
+
+// recreate deletes the object at object's place and makes object there, as another writer does, at
+// once: the new object has a UID of its own.
+func (m *memObjects) recreate(object *unstructured.Unstructured) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.objects, refOf(object))
+	m.store(object.DeepCopy())
 }
 
 func (m *memObjects) refused(op string, object *unstructured.Unstructured) error {

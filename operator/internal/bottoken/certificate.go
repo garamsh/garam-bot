@@ -45,8 +45,8 @@ func (s *service) Serve(ctx context.Context, listener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	if err := s.cfg.Trust.Publish(ctx, bundleOf(current)); err != nil {
-		return fmt.Errorf("publish the serving certificate: %w", err)
+	if err := s.publish(ctx, bundleOf(current)); err != nil {
+		return nil
 	}
 	certificate := &serving{cert: current}
 	server := &http.Server{
@@ -75,7 +75,8 @@ func (s *service) Serve(ctx context.Context, listener net.Listener) error {
 
 // renew replaces the serving certificate once two thirds of its validity have passed. The successor is
 // published beside it first, and served only after Propagation, so a bot's process trusts it before it
-// is answered (T-1).
+// is answered (T-1). Until the successor is published, the current certificate is served: a failure
+// never stops the server.
 func (s *service) renew(ctx context.Context, certificate *serving, current *tls.Certificate) error {
 	for {
 		due := current.Leaf.NotAfter.Add(-s.cfg.Validity / 3).Sub(s.cfg.Now())
@@ -84,10 +85,12 @@ func (s *service) renew(ctx context.Context, certificate *serving, current *tls.
 		}
 		next, err := s.issue()
 		if err != nil {
+			// The system's randomness failing is not cured by waiting; the current certificate is kept.
+			s.cfg.Log.Error("no next serving certificate", "error", err)
 			return err
 		}
-		if err := s.cfg.Trust.Publish(ctx, bundleOf(next, current)); err != nil {
-			return fmt.Errorf("publish the next serving certificate: %w", err)
+		if err := s.publish(ctx, bundleOf(next, current)); err != nil {
+			return nil
 		}
 		if err := sleep(ctx, s.cfg.Propagation); err != nil {
 			return nil
@@ -95,6 +98,30 @@ func (s *service) renew(ctx context.Context, certificate *serving, current *tls.
 		certificate.set(next)
 		s.cfg.Log.Info("serving certificate replaced", "notAfter", next.Leaf.NotAfter)
 		current = next
+	}
+}
+
+// The back-off between failed publishes, doubling from the first to the last.
+const (
+	firstPublishBackoff = time.Second
+	lastPublishBackoff  = time.Minute
+)
+
+// publish writes bundle to the trust store, again after a back-off until it is written or ctx ends,
+// when it answers ctx's error.
+func (s *service) publish(ctx context.Context, bundle []byte) error {
+	wait := firstPublishBackoff
+	for {
+		err := s.cfg.Trust.Publish(ctx, bundle)
+		if err == nil {
+			return nil
+		}
+		s.cfg.Log.Warn("the serving certificates were not published; publishing them again", "error", err,
+			"wait", wait)
+		if err := sleep(ctx, wait); err != nil {
+			return err
+		}
+		wait = min(2*wait, lastPublishBackoff)
 	}
 }
 

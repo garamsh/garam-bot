@@ -1,4 +1,4 @@
-// Package kube is the bot token domain's Keys, Bots and TrustStore over a Kubernetes API server.
+// Package kube is the bot token domain's Keys, Pods and TrustStore over a Kubernetes API server.
 package kube
 
 import (
@@ -11,9 +11,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/kubernetes"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/garamsh/garam-bot/operator/internal/bottoken"
 )
@@ -55,25 +53,42 @@ func (k Keys) Keys(ctx context.Context) (bottoken.Issuer, error) {
 	return bottoken.Issuer{URL: discovery.Issuer, Keys: keys}, nil
 }
 
-// Bots reads Bots through reader, the connector's cache of the watched namespaces.
-type Bots struct {
-	Reader client.Reader
+// Pods reads Pods, and the StatefulSets that control them, from the API server: a credential's Pod is
+// read as it is now, not as a cache last saw it.
+type Pods struct {
+	Kube kubernetes.Interface
 }
 
-var _ bottoken.Bots = Bots{}
+var _ bottoken.Pods = Pods{}
 
-func (b Bots) Management(ctx context.Context, bot bottoken.Bot) (botv1.Management, bool, error) {
-	object := &unstructured.Unstructured{}
-	object.SetGroupVersionKind(botv1.GroupVersion.WithKind("Bot"))
-	err := b.Reader.Get(ctx, client.ObjectKey{Namespace: bot.Namespace, Name: bot.Name}, object)
+func (p Pods) Pod(ctx context.Context, namespace, name string) (bottoken.Pod, bool, error) {
+	pod, err := p.Kube.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	switch {
 	case apierrors.IsNotFound(err):
-		return botv1.Management{}, false, nil
+		return bottoken.Pod{}, false, nil
 	case err != nil:
-		return botv1.Management{}, false, fmt.Errorf("read the Bot %s: %w", bot, err)
+		return bottoken.Pod{}, false, fmt.Errorf("read the Pod %s/%s: %w", namespace, name, err)
 	}
-	management, err := botv1.ManagementOf(object)
-	return management, true, err
+	read := bottoken.Pod{UID: string(pod.UID), ServiceAccount: pod.Spec.ServiceAccountName}
+	owner := metav1.GetControllerOf(pod)
+	if owner == nil || owner.APIVersion != "apps/v1" || owner.Kind != "StatefulSet" {
+		return read, true, nil
+	}
+	set, err := p.Kube.AppsV1().StatefulSets(namespace).Get(ctx, owner.Name, metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		return read, true, nil
+	case err != nil:
+		return bottoken.Pod{}, false, fmt.Errorf("read the StatefulSet %s/%s: %w", namespace, owner.Name, err)
+	}
+	if set.UID != owner.UID {
+		return read, true, nil
+	}
+	if bot := metav1.GetControllerOf(set); bot != nil && bot.APIVersion == botv1.GroupVersion.String() &&
+		bot.Kind == "Bot" {
+		read.BotUID = string(bot.UID)
+	}
+	return read, true, nil
 }
 
 // TrustStore is the ConfigMap Name in Namespace, under Key. The chart creates it empty, and the

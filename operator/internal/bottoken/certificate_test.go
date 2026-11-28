@@ -49,6 +49,36 @@ func TestServe_PublishesTheNextCertificateBeforeItServesIt(t *testing.T) {
 		"the next certificate is served once it propagated")
 }
 
+func TestServe_KeepsServingAndPublishesAgainAfterAFailedPublish(t *testing.T) {
+	// Renewal is due at 4 s; the one failed publish is made again 1 s later, before the current
+	// certificate expires at 6 s.
+	const validity, propagation = 6 * time.Second, 500 * time.Millisecond
+	s := start(t, func(c *bottoken.Config) { c.Validity, c.Propagation = validity, propagation })
+	current := certificatesOf(t, s.trust.published()[0])[0]
+	s.trust.fail(1)
+
+	require.Eventually(t, func() bool { return s.trust.failures() == 1 }, validity, 20*time.Millisecond)
+	assert.Equal(t, current, s.served(t), "the current certificate is served while the next is not published")
+	assert.Equal(t, useNonce, s.call(t, s.api.credentialFor(t, watched, mira), "").code(), "the server still answers")
+
+	require.Eventually(t, func() bool { return len(s.trust.published()) == 2 }, 2*time.Second, 20*time.Millisecond,
+		"the next certificate is published again after a back-off")
+	next := certificatesOf(t, s.trust.published()[1])[0]
+	assert.Eventually(t, func() bool { return bytes.Equal(s.served(t), next) }, 2*time.Second, 20*time.Millisecond)
+}
+
+func TestServe_PublishesTheFirstCertificateAgainBeforeServing(t *testing.T) {
+	s := start(t, func(c *bottoken.Config) {
+		held, ok := c.Trust.(*trust)
+		require.True(t, ok)
+		held.fail(1)
+	})
+	require.Equal(t, 1, s.trust.failures())
+
+	assert.Equal(t, useNonce, s.call(t, s.api.credentialFor(t, watched, mira), "").code(),
+		"the server serves once its certificate is published, after a failed publish")
+}
+
 // served is the DER of the certificate the server answers a handshake with.
 func (s *server) served(t *testing.T) []byte {
 	t.Helper()

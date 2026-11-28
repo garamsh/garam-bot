@@ -158,11 +158,13 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		Namespaces: namespaces,
 		Audience:   o.botTokenAudience,
 		Keys:       botkube.Keys{Kube: kube},
-		Bots:       botkube.Bots{Reader: objects.Reader()},
+		Bots:       appliedBots{declarations},
+		Pods:       botkube.Pods{Kube: kube},
 		Trust:      botkube.TrustStore{Kube: kube, Namespace: o.releaseNamespace, Name: o.trustConfigMap, Key: trustKey},
 		HTTP:       garam,
-		TokenURL:   connection.TokenURL(),
+		TokenURL:   connection.TokenURL,
 		Actor:      connection.Token,
+		Invalidate: connection.Invalidate,
 		DNSNames:   serviceNames(o.botTokenService, o.releaseNamespace),
 		Log:        log,
 	})
@@ -187,6 +189,16 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		return tokens.Serve(ctx, listener)
 	})
 	return group.Wait()
+}
+
+// appliedBots answers the bot token domain from the Bots the declarations domain applied (ADR 0097).
+type appliedBots struct {
+	declarations declaration.Service
+}
+
+func (a appliedBots) Applied(bot bottoken.Bot) (bottoken.Applied, bool) {
+	applied, ok := a.declarations.Bot(bot.Namespace, bot.Name)
+	return bottoken.Applied{DeclarationID: applied.DeclarationID, UID: applied.UID}, ok
 }
 
 // serviceNames are the DNS names a Service is reached by from another namespace.

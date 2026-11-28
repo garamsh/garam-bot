@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
@@ -29,7 +31,7 @@ import (
 const usage = `usage: bot-token-reference --dir DIR <subcommand> [arguments]
 
   serve [--listen ADDR]
-  credential NAMESPACE NAME [--audience AUDIENCE] [--expired]
+  credential NAMESPACE NAME [--audience AUDIENCE] [--expired] [--lifetime DURATION] [--before-start]
   bot NAMESPACE NAME --owner garam|cluster
   binding ACCESS_TOKEN
 `
@@ -109,7 +111,10 @@ func serve(ctx context.Context, dir string, args []string, stdout, stderr io.Wri
 	}
 	baseURL := "https://" + listener.Addr().String()
 	trust := filepath.Join(dir, TrustFile)
+	// A credential's iat is in whole seconds.
+	started := time.Now().Truncate(time.Second)
 	for path, content := range map[string][]byte{
+		filepath.Join(dir, StartedFile):       []byte(strconv.FormatInt(started.Unix(), 10) + "\n"),
 		trust:                                 pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate}),
 		filepath.Join(dir, URLFile):           []byte(baseURL + "\n"),
 		filepath.Join(dir, CredentialKeyFile): pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encodedKey}),
@@ -120,7 +125,7 @@ func serve(ctx context.Context, dir string, args []string, stdout, stderr io.Wri
 		}
 	}
 	server := &http.Server{
-		Handler:           newServer(dir, baseURL, &credentialKey.PublicKey).handler(),
+		Handler:           newServer(dir, baseURL, &credentialKey.PublicKey, started).handler(),
 		TLSConfig:         &tls.Config{Certificates: []tls.Certificate{serving}, MinVersion: tls.VersionTLS13},
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -177,9 +182,11 @@ func credential(dir string, args []string) (any, error) {
 	flags.SetOutput(io.Discard)
 	audience := flags.String("audience", Audience, "")
 	expired := flags.Bool("expired", false, "")
+	lifetime := flags.Duration("lifetime", 10*time.Minute, "")
+	beforeStart := flags.Bool("before-start", false, "")
 	positional, err := parseInterleaved(flags, args)
 	if err != nil || len(positional) != 2 {
-		return nil, usageError("credential takes NAMESPACE NAME, --audience and --expired")
+		return nil, usageError("credential takes NAMESPACE NAME, --audience, --expired, --lifetime and --before-start")
 	}
 	read, err := os.ReadFile(filepath.Join(dir, CredentialKeyFile))
 	if err != nil {
@@ -199,9 +206,17 @@ func credential(dir string, args []string) (any, error) {
 		return nil, err
 	}
 	now := time.Now()
-	expiry := now.Add(10 * time.Minute)
-	if *expired {
+	expiry := now.Add(*lifetime)
+	switch {
+	case *expired:
 		now, expiry = now.Add(-20*time.Minute), now.Add(-10*time.Minute)
+	case *beforeStart:
+		started, err := readStarted(dir)
+		if err != nil {
+			return nil, err
+		}
+		// Issued a second before the server started, and alive for ten minutes from now.
+		now, expiry = started.Add(-time.Second), time.Now().Add(10*time.Minute)
 	}
 	raw, err := jwt.Signed(signer).Claims(jwt.Claims{
 		Issuer: issuer, Subject: positional[0] + "/" + positional[1], Audience: jwt.Audience{*audience},
@@ -212,6 +227,19 @@ func credential(dir string, args []string) (any, error) {
 		return nil, err
 	}
 	return CredentialAnswer{Credential: raw}, nil
+}
+
+// readStarted is when the server in dir started.
+func readStarted(dir string) (time.Time, error) {
+	read, err := os.ReadFile(filepath.Join(dir, StartedFile))
+	if err != nil {
+		return time.Time{}, err
+	}
+	seconds, err := strconv.ParseInt(strings.TrimSpace(string(read)), 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%s: %w", StartedFile, err)
+	}
+	return time.Unix(seconds, 0), nil
 }
 
 // bot places namespace/name at the place, owned as --owner says.

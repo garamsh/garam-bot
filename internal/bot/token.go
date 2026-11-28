@@ -61,6 +61,9 @@ type TokenSource struct {
 	// htu and nonce are what the connector last answered to sign a proof with.
 	htu, nonce string
 
+	// renew wakes Run to obtain a token now, the one held having been refused.
+	renew chan struct{}
+
 	mu         sync.Mutex
 	token      string
 	obtainedAt time.Time
@@ -80,14 +83,34 @@ func NewTokenSource(url, trustFile, credentialFile string, now func() time.Time)
 	}
 	return &TokenSource{
 		url: strings.TrimRight(url, "/"), trustFile: trustFile, credentialFile: credentialFile, now: now, key: key,
+		renew: make(chan struct{}, 1),
 	}, nil
 }
 
-// Token answers the token last obtained, empty before the first.
+// Token answers the token last obtained while it lives, and empty before the first, once it expired, or
+// once garam refused it.
 func (s *TokenSource) Token() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !s.now().Before(s.expiresAt) {
+		return ""
+	}
 	return s.token
+}
+
+// Refused is told that garam answered 401 to token. Where token is the one held, it is dropped and a new
+// one is obtained at once (REN-1); a token held since is kept.
+func (s *TokenSource) Refused(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if token == "" || token != s.token {
+		return
+	}
+	s.token = ""
+	select {
+	case s.renew <- struct{}{}:
+	default:
+	}
 }
 
 // Status answers when the token was obtained and expires, and whether the latest attempt failed.
@@ -97,7 +120,8 @@ func (s *TokenSource) Status() TokenStatus {
 	return TokenStatus{ObtainedAt: s.obtainedAt, ExpiresAt: s.expiresAt, Stale: s.stale}
 }
 
-// Run obtains the token, then obtains it again once two thirds of its life have passed, until ctx ends.
+// Run obtains the token, then obtains it again once two thirds of its life have passed, or at once where
+// garam refused it, until ctx ends.
 // A failed attempt keeps the token held while it lives, marks it stale and is retried (REN-1 to REN-3).
 // report receives each attempt's failure.
 func (s *TokenSource) Run(ctx context.Context, report func(error)) {
@@ -124,6 +148,8 @@ func (s *TokenSource) Run(ctx context.Context, report func(error)) {
 			timer.Stop()
 			return
 		case <-timer.C:
+		case <-s.renew:
+			timer.Stop()
 		}
 	}
 }

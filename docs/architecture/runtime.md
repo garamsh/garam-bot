@@ -10,10 +10,11 @@ Governs the runtime that runs one Bot: what `garam-bot run` reads, the status co
 - **The bot's garam token, from its place's connector, where `--connector-url` is given** (ADR 0042, interface 6 `api/bot-token/v1alpha1/`).
   - **The key.** At start the process makes an ES256 key, kept in memory and never written or sent. The token is bound to it, so a new process obtains a new token.
   - **What it reads.** `--connector-trust-file` holds the certificates the connector is trusted by, and is read again at each attempt so a replaced certificate is trusted. `--credential-file` holds the place's credential naming the bot, and is read again for each request because the place replaces it. A URL given without both files fails the start with `Failed`.
-  - **When.** It obtains the token at start, then again once two thirds of its life have passed. An attempt that fails, whether the connector is unreachable or refuses, keeps the token held, marks it stale and is retried after 1 second, doubling to 60, or after the `Retry-After` the connector answers. The bot goes on running.
+  - **When.** It obtains the token at start, then again once two thirds of its life have passed, and at once when it is told garam refused the token held with 401 (`TokenSource.Refused`), which drops that token. An attempt that fails, whether the connector is unreachable or refuses, keeps the token held, marks it stale and is retried after 1 second, doubling to 60, or after the `Retry-After` the connector answers. The bot goes on running.
+  - **Expiry.** A token is not answered once its `expires_in` has passed, whether or not a new one was obtained.
   - **No token.** Without the flag, the bot runs with no garam identity, as a cluster-owned bot does today.
   - **Confinement.** The token, the proof and the credential reach no log line, error or status. The token is held in memory alone.
-  - **Not yet presented.** No garam route accepts a bot token yet (`bot-system.md` §Authentication), so the process holds a token nothing presents, and REN-1's renewal on garam's 401 waits for the first caller.
+  - **Not yet presented.** No garam route accepts a bot token yet (`bot-system.md` §Authentication), so the process holds a token nothing presents, and nothing calls `TokenSource.Refused` until the first caller.
 - **What the bot does.** It holds its Bot until SIGTERM, which exits 0. It has no work source until interfaces 2 to 4 are built (ADR 0031).
 
 ### The status contract

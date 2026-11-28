@@ -53,6 +53,11 @@ func (c *connection) Token(ctx context.Context) (string, error) {
 	return source.Token(ctx)
 }
 
+func (c *connection) Invalidate(token string) {
+	_, source := c.current()
+	source.Invalidate(token)
+}
+
 func (c *connection) TokenURL() string {
 	state, _ := c.current()
 	return state.Record.TokenURL

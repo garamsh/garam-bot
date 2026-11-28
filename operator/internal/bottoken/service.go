@@ -29,12 +29,15 @@ type Config struct {
 	Audience string
 	Keys     Keys
 	Bots     Bots
+	Pods     Pods
 	Trust    TrustStore
 	// HTTP reaches garam's token endpoint, TokenURL, trusting the configured root alone and presenting
-	// nothing. Actor answers the cluster's own token, the exchange's actor_token.
-	HTTP     *http.Client
-	TokenURL string
-	Actor    func(ctx context.Context) (string, error)
+	// nothing. TokenURL is read for each exchange, as a rotation may change it. Actor answers the
+	// cluster's own token, the exchange's actor_token, and Invalidate drops one garam answered 401 to.
+	HTTP       *http.Client
+	TokenURL   func() string
+	Actor      func(ctx context.Context) (string, error)
+	Invalidate func(token string)
 	// DNSNames are the names the serving certificate is issued for.
 	DNSNames []string
 	Log      *slog.Logger
@@ -56,6 +59,7 @@ type service struct {
 	namespaces  map[string]bool
 	credentials *credentials
 	exchanger   *exchanger
+	limits      *limits
 }
 
 // NewService returns a Service under cfg.
@@ -83,6 +87,8 @@ func NewService(cfg Config) Service {
 		cfg:         cfg,
 		namespaces:  namespaces,
 		credentials: newCredentials(cfg.Keys, cfg.Audience, cfg.Now),
-		exchanger:   &exchanger{http: cfg.HTTP, tokenURL: cfg.TokenURL, actor: cfg.Actor},
+		exchanger: &exchanger{http: cfg.HTTP, tokenURL: cfg.TokenURL, actor: cfg.Actor,
+			invalidate: cfg.Invalidate},
+		limits: newLimits(cfg.Now),
 	}
 }

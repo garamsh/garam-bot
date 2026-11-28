@@ -25,7 +25,7 @@ func (s *service) obtain(ctx context.Context, credential string, proofs []string
 	}
 	obtained := false
 	defer func() { s.credentials.release(held, obtained) }()
-	subject, err := s.subject(ctx, held.bot)
+	subject, err := s.subject(ctx, held)
 	if err != nil {
 		return held.bot, answer{}, err
 	}
@@ -37,6 +37,9 @@ func (s *service) obtain(ctx context.Context, credential string, proofs []string
 	if len(proofs) != 1 {
 		return held.bot, answer{}, proofError{code: codeInvalidProof}
 	}
+	if err := s.limits.take(held.bot); err != nil {
+		return held.bot, answer{}, err
+	}
 	token, err := s.exchanger.exchange(ctx, subject, proofs[0])
 	if err != nil {
 		return held.bot, answer{}, err
@@ -45,26 +48,30 @@ func (s *service) obtain(ctx context.Context, credential string, proofs []string
 	return held.bot, answer{token: token}, nil
 }
 
-// subject is the GRN of bot where it is a garam-owned Bot this record applied in a watched namespace,
-// and errUnknownBot otherwise (BOT-1).
-func (s *service) subject(ctx context.Context, bot Bot) (GRN, error) {
+// subject is the GRN of the credential's Bot where the connector applied that Bot from a declaration it
+// still holds, in a watched namespace, and the credential's Pod is that Bot's workload under the Bot's
+// ServiceAccount (BOT-1, CRED-2). It answers errUnknownBot for a Bot the connector did not apply, and
+// errCredential for a credential whose Pod is gone or is not the Bot's.
+func (s *service) subject(ctx context.Context, held claim) (GRN, error) {
+	bot := held.bot
 	if !s.namespaces[bot.Namespace] {
 		return "", fmt.Errorf("%w: %s is not watched", errUnknownBot, bot.Namespace)
 	}
-	management, found, err := s.cfg.Bots.Management(ctx, bot)
+	applied, ok := s.cfg.Bots.Applied(bot)
+	if !ok {
+		return "", fmt.Errorf("%w: the connector applied no Bot %s", errUnknownBot, bot)
+	}
+	pod, found, err := s.cfg.Pods.Pod(ctx, bot.Namespace, held.pod.Name)
 	switch {
 	case err != nil:
-		// A malformed marker is no garam-owned Bot's.
-		return "", fmt.Errorf("%w: %s: %w", errUnknownBot, bot, err)
-	case !found:
-		return "", fmt.Errorf("%w: %s holds no Bot", errUnknownBot, bot)
+		return "", fmt.Errorf("%w: %w", errUnavailable, err)
+	case !found || pod.UID != held.pod.UID:
+		return "", fmt.Errorf("%w: its Pod %s/%s is gone", errCredential, bot.Namespace, held.pod.Name)
+	case pod.ServiceAccount != bot.Name || pod.BotUID != applied.UID:
+		return "", fmt.Errorf("%w: its Pod %s/%s is not the Bot's workload", errCredential, bot.Namespace,
+			held.pod.Name)
 	}
-	// A cluster-owned Bot's marker names no record, so it is never this record's.
-	declared, _ := management.Garam()
-	if declared.Cluster != s.cfg.Record {
-		return "", fmt.Errorf("%w: %s is not garam-owned under this record", errUnknownBot, bot)
-	}
-	return botGRN(s.cfg.Record, declared.ID)
+	return botGRN(s.cfg.Record, applied.DeclarationID)
 }
 
 // carriesNonce reports whether the proof's claims name a nonce. The proof is not verified here: garam

@@ -124,6 +124,39 @@ func TestTokenSource_KeepsTheTokenAndMarksItStaleWhileTheConnectorRefuses(t *tes
 	}
 }
 
+func TestTokenSource_AnswersNoTokenPastItsExpiry(t *testing.T) {
+	c := newConnector(t)
+	c.set(2, 0)
+	source, _ := running(t, c)
+	require.Eventually(t, func() bool { return source.Token() != "" }, eventually, tick)
+	c.set(2, http.StatusServiceUnavailable)
+	expiresAt := source.Status().ExpiresAt
+
+	require.Eventually(t, func() bool { return source.Token() == "" }, eventually, tick,
+		"the token is not answered once it expired, though no new one was obtained")
+	assert.False(t, time.Now().Before(expiresAt))
+	assert.True(t, source.Status().Stale)
+}
+
+func TestTokenSource_ObtainsANewTokenAtOnceWhenGaramRefusesTheOneHeld(t *testing.T) {
+	c := newConnector(t)
+	source, _ := running(t, c)
+	require.Eventually(t, func() bool { return source.Token() != "" }, eventually, tick)
+	held := source.Token()
+	credentials, _ := c.presented()
+
+	source.Refused("garam_bt_another")
+	require.Equal(t, held, source.Token(), "a token not held refuses nothing")
+	source.Refused(held)
+
+	assert.NotEqual(t, held, source.Token(), "the refused token is not answered")
+	require.Eventually(t, func() bool { return source.Token() != "" }, 2*time.Second, tick,
+		"a new token is obtained at once, not at two thirds of an hour")
+	assert.NotEqual(t, held, source.Token())
+	again, _ := c.presented()
+	assert.Greater(t, len(again), len(credentials))
+}
+
 func TestTokenSource_TrustsTheTrustFileAloneAndReadsItAgain(t *testing.T) {
 	c := newConnector(t)
 	right, err := os.ReadFile(c.trust)

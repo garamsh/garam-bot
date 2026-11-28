@@ -19,9 +19,12 @@ A record states one current decision and is kept current: update the body when t
 2. **The key is the process's alone.** `garam-bot run` makes an ES256 key at start and keeps it in memory. It signs each proof itself, and never writes, sends or hands the private key to anyone. A new process makes a new key and obtains a new token.
 3. **No bot token is at rest.** The connector passes the proof through unchanged and keeps no token past its answer. The process holds its token in memory alone, and no Secret or file holds one.
 4. **A place credential obtains one token.** Once a token is answered for it, the server refuses the credential, whatever key signs the proof. A credential read after its use obtains nothing. One taken before its use obtains one token, bound to the taker's key, and the rightful process's next request is then refused, which shows the theft.
-5. **The process renews.** It obtains a new token before two thirds of the current one's life have passed. It keeps the token it holds until a new one is answered, and backs off from 1 to 60 seconds after a failure.
+   - **Across a restart.** A server holding its spent credentials in memory refuses every credential issued before it started, and a place runs one such server at a time.
+   - **Its bounds.** A credential living longer than an hour is refused. Where the place's credential names the workload instance it was issued to, the instance must exist and run the bot.
+5. **The process renews.** It obtains a new token before two thirds of the current one's life have passed, and at once when garam refuses the one it holds with 401. It keeps the token it holds until a new one is answered, never past the token's expiry, and backs off from 1 to 60 seconds after a failure.
 6. **`garam-bot run` takes `--connector-url`, `--connector-trust-file` and `--credential-file`** in place of `--token-file`. It reads the trust file again as it changes, and the credential file again for each request. Without `--connector-url`, the bot runs with no garam identity.
-7. **At a cluster**, the connector serves interface 6 over TLS with a certificate it makes itself. The place's credential is the Bot's projected ServiceAccount token. garam-bot-operator's ADR 0097 decides both.
+7. **The server resolves the bot from what its place applied**, never from a mark on the bot another writer can set. It limits each bot's exchanges with garam alone, so one bot's failed requests cost no other bot.
+8. **At a cluster**, the connector serves interface 6 over TLS with a certificate it makes itself. The place's credential is the Bot's projected ServiceAccount token. garam-bot-operator's ADR 0097 decides both.
 
 ## Consequences
 
@@ -29,7 +32,7 @@ A record states one current decision and is kept current: update the body when t
 - The process must reach its connector: at a cluster, a Service in the release namespace, which the connector's NetworkPolicy admits from the watched namespaces.
 - A process that restarts in the same Pod may find the credential its predecessor spent. It waits until the place replaces the credential: at a cluster, the kubelet replaces a 10-minute token once 8 minutes have passed.
 - A failed start no longer has a `TokenUnreadable` reason. A connector that cannot be reached, or that refuses, leaves the bot running, with the status file's `token.stale` set.
-- No garam route accepts a bot token yet (`bot-system.md` §Authentication), so the process holds a token nothing presents. REN-1's renewal on garam's 401 waits for the first caller that presents it, and so does a proof for each request.
+- No garam route accepts a bot token yet (`bot-system.md` §Authentication), so the process holds a token nothing presents. The runtime's `TokenSource.Refused` takes garam's 401 to the token held, and is called by no one until the first caller that presents the token, and so does a proof for each request.
 - garam-bot#1207's cluster part is this decision. Its PC and naru-host part, and the daemon's credential, wait for the daemon (ADR 0039).
 
 ## Signs the decision was wrong

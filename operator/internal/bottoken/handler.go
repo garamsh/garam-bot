@@ -19,7 +19,11 @@ type errorBody struct {
 func (s *service) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+Path, func(w http.ResponseWriter, r *http.Request) {
-		credential, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		// A header without the Bearer scheme carries no credential.
+		credential, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !bearer {
+			credential = ""
+		}
 		bot, obtained, err := s.obtain(r.Context(), credential, r.Header.Values(headerProof))
 		if err == nil {
 			s.cfg.Log.Info("bot token answered", "namespace", bot.Namespace, "bot", bot.Name,
@@ -46,7 +50,7 @@ func (s *service) refuse(w http.ResponseWriter, bot Bot, obtained answer, err er
 		}
 		body := errorBody{Error: refusal.code}
 		if refusal.code == codeUseNonce {
-			body.HTU = s.cfg.TokenURL
+			body.HTU = s.cfg.TokenURL()
 		}
 		writeJSON(w, http.StatusBadRequest, body)
 	case errors.Is(err, errCredential):
@@ -63,10 +67,10 @@ func (s *service) refuse(w http.ResponseWriter, bot Bot, obtained answer, err er
 		if limited.retryAfter != "" {
 			w.Header().Set(headerRetryAfter, limited.retryAfter)
 		}
-		writeJSON(w, http.StatusTooManyRequests, errorBody{Error: "temporarily_unavailable"})
+		writeJSON(w, http.StatusTooManyRequests, errorBody{Error: codeUnavailable})
 	default:
 		log.Warn("bot token not exchanged")
-		writeJSON(w, http.StatusServiceUnavailable, errorBody{Error: "temporarily_unavailable"})
+		writeJSON(w, http.StatusServiceUnavailable, errorBody{Error: codeUnavailable})
 	}
 }
 
@@ -77,13 +81,14 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// recoverPanics answers 500 to a request whose handler panicked, rather than closing its connection.
+// recoverPanics answers 503 temporarily_unavailable, one of interface 6's codes (T-3), to a request
+// whose handler panicked, rather than closing its connection.
 func (s *service) recoverPanics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if v := recover(); v != nil {
 				s.cfg.Log.Error("bot token handler panicked", "panic", v)
-				writeJSON(w, http.StatusInternalServerError, errorBody{Error: "server_error"})
+				writeJSON(w, http.StatusServiceUnavailable, errorBody{Error: codeUnavailable})
 			}
 		}()
 		next.ServeHTTP(w, r)

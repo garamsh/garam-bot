@@ -49,6 +49,11 @@ type Service interface {
 	Run(ctx context.Context) error
 	// Status answers what the last pass found, and false before the first full set was applied.
 	Status() (Status, bool)
+	// Bot answers the Bot this record applied at namespace/name for a declaration still held, and
+	// false for any other: one no declaration held names there, one whose declaration moved or was
+	// tombstoned, and one another writer made in the place of the object the connector made. What an
+	// object's own marker says is not read.
+	Bot(namespace, name string) (AppliedBot, bool)
 }
 
 type service struct {
@@ -65,6 +70,10 @@ type service struct {
 	tombstones map[string]bool
 	full       bool
 	status     *Status
+	// uids are, by declaration identifier, the UID of the object the connector created for it, or of
+	// the one it first found or applied in this process where it created none. bots are the Bots the last pass found applied.
+	uids map[string]string
+	bots map[Ref]AppliedBot
 }
 
 // NewService returns a Service under cfg.
@@ -88,7 +97,9 @@ func NewService(cfg Config) Service {
 	}
 	return &service{cfg: cfg, watched: watched, wake: make(chan struct{}, 1), passDone: make(chan struct{}, 1),
 		held:       map[string]declared{},
-		tombstones: map[string]bool{}}
+		tombstones: map[string]bool{},
+		uids:       map[string]string{},
+		bots:       map[Ref]AppliedBot{}}
 }
 
 func (s *service) Run(ctx context.Context) error {
@@ -97,6 +108,21 @@ func (s *service) Run(ctx context.Context) error {
 	group.Go(func() error { return s.passes(ctx) })
 	group.Go(func() error { return s.reports(ctx) })
 	return group.Wait()
+}
+
+func (s *service) Bot(namespace, name string) (AppliedBot, bool) {
+	ref := Ref{Kind: kindBot, Namespace: namespace, Name: name}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	bot, ok := s.bots[ref]
+	if !ok {
+		return AppliedBot{}, false
+	}
+	// A change taken since the pass, a tombstone or a move, ends the Bot's standing at once.
+	if held, live := s.held[bot.DeclarationID]; !live || held.ref != ref {
+		return AppliedBot{}, false
+	}
+	return bot, true
 }
 
 func (s *service) Status() (Status, bool) {
@@ -210,6 +236,7 @@ func (s *service) pass(ctx context.Context) error {
 	for _, id := range decided.buried {
 		delete(s.tombstones, id)
 	}
+	s.bots = s.appliedBots(held, decided.results, seen.objects)
 	results := make([]Result, 0, len(decided.results))
 	for _, id := range sortedKeys(decided.results) {
 		results = append(results, decided.results[id])
@@ -220,6 +247,43 @@ func (s *service) pass(ctx context.Context) error {
 	s.mu.Unlock()
 	s.passed()
 	return errors.Join(failed...)
+}
+
+// appliedBots are the Bots of the declarations held whose outcome is applied, each at the place its
+// declaration names, and only where the object there is the one the connector made for it. Where this
+// process has made or applied none, the object a pass first finds applied is taken as made. Called under
+// s.mu.
+func (s *service) appliedBots(held map[string]declared, results map[string]Result, objects []Held) map[Ref]AppliedBot {
+	for id := range s.uids {
+		if _, ok := held[id]; !ok {
+			delete(s.uids, id)
+		}
+	}
+	at := make(map[Ref]Held, len(objects))
+	for _, object := range objects {
+		at[object.Ref] = object
+	}
+	bots := map[Ref]AppliedBot{}
+	for id, result := range results {
+		d := held[id]
+		if result.Outcome != Applied || d.ref.Kind != kindBot {
+			continue
+		}
+		uid := s.uids[id]
+		if object, read := at[d.ref]; read {
+			if uid == "" {
+				uid = object.UID
+				s.uids[id] = uid
+			}
+			if object.UID != uid {
+				continue
+			}
+		}
+		if uid != "" {
+			bots[d.ref] = AppliedBot{DeclarationID: id, UID: uid}
+		}
+	}
+	return bots
 }
 
 // read is the cluster as a pass decides from: each watched namespace's claim, and every object of a
@@ -251,17 +315,28 @@ func (s *service) read(ctx context.Context) (view, error) {
 // records nothing and is the pass's error, so the pass runs again.
 func (s *service) carry(ctx context.Context, w write, results map[string]Result) error {
 	var err error
+	var uid string
 	switch w.op {
 	case create:
-		err = s.cfg.Objects.Create(ctx, w.declaration.object.DeepCopy())
+		created := w.declaration.object.DeepCopy()
+		err = s.cfg.Objects.Create(ctx, created)
+		uid = string(created.GetUID())
 	case apply:
 		err = s.cfg.Objects.Apply(ctx, w.declaration.object.DeepCopy(), w.held)
+		uid = w.held.UID
 	case remove:
 		err = s.cfg.Objects.Delete(ctx, w.held)
 	}
 	switch {
 	case err == nil && w.op != remove:
 		results[w.declaration.id] = Result{ID: w.declaration.id, Generation: w.declaration.generation, Outcome: Applied}
+		s.mu.Lock()
+		// An apply writes over an object someone made; only a create, or a first sighting, names
+		// the object the Bot is.
+		if w.op == create || s.uids[w.declaration.id] == "" {
+			s.uids[w.declaration.id] = uid
+		}
+		s.mu.Unlock()
 		return nil
 	case err == nil, errors.Is(err, ErrNameTaken), errors.Is(err, ErrChanged):
 		return nil

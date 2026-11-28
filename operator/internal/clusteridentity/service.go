@@ -62,6 +62,9 @@ type Connection interface {
 	// Token answers the record's token, for a request that carries it in its body rather than in its
 	// header: the bot token exchange's actor_token. TokenURL is where that exchange is made.
 	Token(ctx context.Context) (string, error)
+	// Invalidate drops token where it is the one Token answers, so the next Token exchanges again: the
+	// way a 401 to a token carried in a body is answered.
+	Invalidate(token string)
 	TokenURL() string
 	// Rotate replaces the record's key now (ROT-1 to ROT-5). One rotation runs at a time.
 	Rotate(ctx context.Context) error

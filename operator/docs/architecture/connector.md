@@ -90,31 +90,39 @@ How the connector applies them (#441):
 These follow [ADR 0097](adr/0097-give-a-garam-owned-bots-process-its-token-from-the-connector-over-tls-on-its-projected-serviceaccount-token.md) and garam-bot's ADR 0042. The protocol is garam-bot's interface 6, `api/bot-token/v1alpha1/`.
 
 - **A garam-owned Bot's process obtains its token from the connector.** Every bot token is bound to a key the bot's process holds (garam ADR-0191). The process sends its proof, and the connector makes garam's exchange with it and answers the token. The connector never holds the key, signs no proof, writes no Secret, and keeps no token past its answer.
-- **Who is served.** A Bot that is garam-owned, applied by this record and in a watched namespace. Any other Bot, a cluster-owned one among them, is answered `unknown_bot` before garam is asked.
+- **Who is served.** A Bot the connector applied itself, from a declaration it still holds, in a watched namespace. The object at the place the declaration names must be the one the connector made, by UID. The declarations domain answers it from its own writes, `Service.Bot`, and the object's ownership marker is never read for it, because any writer of the namespace can set one. Any other Bot is answered `unknown_bot` before garam is asked: a cluster-owned one, one with a forged marker, the orphan a move left, and an object made in place of the connector's.
 - **The exchange.** garam's token endpoint, the `tokenUrl` the record holds, with `grant_type` token exchange, the cluster's token as `actor_token`, the bot's GRN `grn:<org>/iam/bot/<declaration id>` as `subject_token`, no `scope`, and the process's proof unchanged as `DPoP`.
   - It is sent over the client that verifies garam against `--garam-root-file`, without the cluster's bearer header.
   - The connector keeps the `DPoP-Nonce` garam last answered, and answers it to a process whose proof carries none.
-  - garam's refusal of the bot is `refused`, its 429 is relayed with `Retry-After`, and its 5xx or no answer is `temporarily_unavailable`. A refusal of the proof is relayed as garam gave it.
+  - garam's refusal of the bot, 400 `invalid_request` or `invalid_grant`, is `refused`. Its 429 is relayed with `Retry-After`. A refusal of the proof is relayed as garam gave it.
+  - garam's 401 refuses the cluster's own token. The connector drops that token and exchanges once more under a fresh one, with the same proof. A second 401, any other refusal, a 5xx or no answer is `temporarily_unavailable`, 503, never `refused`.
 - **The place's credential is the Bot's projected ServiceAccount token.**
   - **The ServiceAccount.** Its name is the Bot's, in the Bot's namespace, and it holds no rights. The manager creates it with the Bot's workload (#1254).
-  - **The token.** Its audience is `--bot-token-audience`, `garam-connector`, and it lives 10 minutes.
-  - **The check.** It is verified against the keys and issuer the API server publishes at `/openid/v1/jwks` and `/.well-known/openid-configuration`, read through the default `system:service-account-issuer-discovery` binding. The keys are read again every 5 minutes, or sooner for a key not held.
+  - **The token.** Its audience is `--bot-token-audience`, `garam-connector`, and it lives 10 minutes. A token whose `exp` - `iat` is more than one hour is refused.
+  - **The check.** It is verified against the keys and issuer the API server publishes at `/openid/v1/jwks` and `/.well-known/openid-configuration`, read through the default `system:service-account-issuer-discovery` binding. The keys are read again every 5 minutes, or sooner for a key not held. Credentials that arrive at once wait on one read.
+  - **The Pod.** The token's `kubernetes.io` claim must name a Pod, by name and UID, in the Bot's namespace. That Pod must exist with that UID, run under the Bot's ServiceAccount, and be the Pod of the StatefulSet whose controller is the Bot object the connector made. Both are read from the API server, not a cache. The manager makes the Bot the StatefulSet's controller (#1254).
   - **Single use.** A token that obtained a garam token is refused afterwards, whatever key signs the proof. Requests carrying one token at once obtain at most one garam token.
+  - **Across a restart.** Spent tokens are held in memory alone. A token issued before the connector started is refused, so one spent before a restart is not spent again. The kubelet replaces it within 8 minutes.
+- **One replica.** The chart runs the connector with `replicas: 1` and the `Recreate` strategy, so two connectors never run at once with two spent sets (#1253).
+- **A limit per Bot.** Each Bot has a bucket of 5 exchanges, refilled one every 30 seconds. A call past it is answered 429 `temporarily_unavailable` with `Retry-After`, to that Bot alone. Only a call that would reach garam takes from the bucket, and only from its own Bot's.
 - **TLS the connector makes.**
   - **The certificate.** The connector serves on `--bot-token-address`, `:8443`, behind the Service `--bot-token-service`, with a P-256 key in its process alone and a certificate that key signs itself, valid 90 days.
   - **Publishing.** It publishes the certificate to `ca.crt` of the ConfigMap `--trust-configmap` before serving.
   - **Replacement.** At two thirds of the validity it publishes the next beside it, and serves the next 10 minutes later. A restart makes a new one.
+  - **A failed publish** is made again after a back-off from 1 second to 1 minute, while the current certificate is served. It never stops the connector.
   - **Reaching the bots.** The manager copies the bundle into each watched namespace where it places a garam-owned Bot, and mounts it into the bot's Pod (#1254).
 - **What is logged.** Each answer, with the Bot's namespace and name and the outcome. Never the credential, the proof or the token.
+- **Who can reach a bot's token.** Whoever can change the Bot's StatefulSet, or exec into or read the files of its Pod, can use the bot's garam identity while that Pod runs. So the writers of workloads in a watched namespace are trusted with the bots placed there, and choosing `--watch-namespaces` grants that trust.
 
 ### Rights in the user's cluster
 
 These follow [ADR 0091](adr/0091-hold-only-namespaced-rights-in-a-users-cluster-open-no-inbound-port-and-keep-secrets-in-it.md).
 
 - **Rights:** Roles and RoleBindings in the release namespace and in each watched namespace, and no ClusterRole at runtime. Caches are restricted to those namespaces. RBAC cannot narrow Secret access below a namespace, so each program can read every Secret of a watched namespace, and a watched namespace holds only the bots' objects and the Secrets they reference.
+- **The connector reads Pods and StatefulSets** in each watched namespace, `get` alone, to bind a credential to the Bot's Pod (ADR 0097).
 - **The trust ConfigMap is the chart's to create, empty, and the connector's to write**, as the identity Secret is: `get` and `update` on that one ConfigMap by `resourceNames`, and no `create`, `list` or `watch`. Every write carries the `resourceVersion` read. The connector reads the API server's ServiceAccount issuer and keys through the default `system:service-account-issuer-discovery` binding, and holds no other right for it (ADR 0097).
 - **The identity Secret is the chart's to create, empty, and the connector's to write.** The connector never creates a Secret, because RBAC cannot narrow `create` by name. Its Role grants `get` and `update` on that one Secret by `resourceNames`, and no `create`, `list` or `watch`. The chart never writes the Secret's data after creating it, so an upgrade keeps the key. The chart is #445's.
-- **The connector's Role in each watched namespace** grants `list`, `watch`, `create`, `patch` and `delete` on interface 1's four kinds, and `get`, `list` and `watch` on Leases with `resourceNames: [garam-connector-claim]`.
+- **The connector's Role in each watched namespace** grants `list`, `watch`, `create`, `patch` and `delete` on interface 1's four kinds, `get`, `list` and `watch` on Leases with `resourceNames: [garam-connector-claim]`, and `get` on Pods and StatefulSets.
   - Every read goes through the cache, which lists and watches, so no `get` is needed on the four kinds. Server-side apply and both JSON patches are `patch`.
   - The cache asks for the claim by a field selector on its name, and RBAC applies `resourceNames` to a `list` or `watch` that carries one, so no other Lease is readable.
   - It never writes a Lease (CLAIM-2).
