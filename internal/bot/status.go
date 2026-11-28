@@ -34,6 +34,8 @@ type Status struct {
 	Token     *TokenStatus `json:"token,omitempty"`
 	// Workspace is absent for a bot with no workspace.
 	Workspace *WorkspaceStatus `json:"workspace,omitempty"`
+	// Session is the adapter's session the process drives, absent for a bot with no workspace.
+	Session *SessionStatus `json:"session,omitempty"`
 }
 
 // BotRef names the Bot the process runs, at the generation it read.

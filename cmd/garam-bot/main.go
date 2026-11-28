@@ -106,6 +106,7 @@ func newRunCommand() *cobra.Command {
 	flags.StringVar(&options.ConnectorTrustFile, "connector-trust-file", "", "file holding the certificates the connector is trusted by, read again as it changes")
 	flags.StringVar(&options.CredentialFile, "credential-file", "", "file holding the place's credential naming the bot for its garam token, read again for each request; unset runs the bot with no garam identity")
 	flags.StringVar(&options.WorkspaceCredentialFile, "workspace-credential-file", "", "file holding the place's credential naming the bot for its workspace, read again for each request; unset, or for a Bot with no workspace, runs the bot with no workspace")
+	flags.StringVar(&options.InboxDir, "inbox-dir", "", "directory of message files the bot's workspace is given tasks from, one per file, its name the task's identifier and its content the input, deleted once the task is done; unset gives no task")
 	flags.StringVar(&options.StatusFile, "status-file", defaultStatusFile, "file the status is written to")
 	flags.StringVar(&terminationLog, "termination-log", "/dev/termination-log", "file a failed start writes its reason to")
 

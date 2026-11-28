@@ -80,7 +80,10 @@ type Workspace struct {
 	client    *http.Client
 	tlsConfig *tls.Config
 	adapter   string
-	status    WorkspaceStatus
+	answer    access.Workspace
+	// ready is set once the session's tokens are written after the latest acquire.
+	ready  bool
+	status WorkspaceStatus
 }
 
 // WorkspaceStatus is what the status file says of the workspace: its phase and reason as the connector
@@ -129,6 +132,14 @@ func (w *Workspace) Status() WorkspaceStatus {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.status
+}
+
+// Session answers the model gateway and the tools the workspace reaches, as acquire last answered them,
+// and whether the workspace runs with the session's tokens written, so a session can be opened on it.
+func (w *Workspace) Session() (access.Workspace, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.answer, w.ready
 }
 
 // AdapterToken answers the adapter's token last written into the workspace (interface 2's AUTH-1), and
@@ -184,15 +195,30 @@ func (w *Workspace) pass(ctx context.Context, acquired *bool) (time.Duration, er
 		case <-w.reacquire:
 		default:
 		}
+		w.setReady(false)
 		if err := w.acquire(ctx); err != nil {
 			return 0, err
 		}
-		if err := w.write(ctx, nil); err != nil {
+		adapter, files, _, err := tokenFiles(nil)
+		if err != nil {
+			return 0, err
+		}
+		if err := w.write(ctx, adapter, files); err != nil {
 			return 0, err
 		}
 		*acquired = true
 	}
-	return w.writeTokens(ctx)
+	stand, err := w.writeTokens(ctx)
+	if err == nil {
+		w.setReady(true)
+	}
+	return stand, err
+}
+
+func (w *Workspace) setReady(ready bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.ready = ready
 }
 
 // wait waits until the tokens are due again, and answers true where a call found the workspace not
@@ -252,6 +278,7 @@ func (w *Workspace) acquire(ctx context.Context) error {
 		phase := knownPhase(ws.Phase)
 		w.mu.Lock()
 		w.status.Phase, w.status.Reason = phase, ws.Reason
+		w.answer = ws
 		w.mu.Unlock()
 		var wait time.Duration
 		switch phase {
@@ -303,10 +330,32 @@ func (w *Workspace) writeTokens(ctx context.Context) (time.Duration, error) {
 		return 0, err
 	}
 	var tokens access.SessionTokens
-	if err := json.Unmarshal(answer, &tokens); err != nil || tokens.Model.Token == "" || tokens.Model.ExpiresIn <= 0 {
+	if err := json.Unmarshal(answer, &tokens); err != nil {
 		return 0, errors.New("the connector answered no session tokens")
 	}
-	files := []access.File{{Path: ModelTokenPath, Content: []byte(tokens.Model.Token)}}
+	adapter, files, stand, err := tokenFiles(&tokens)
+	if err != nil {
+		return 0, err
+	}
+	if err := w.write(ctx, adapter, files); err != nil {
+		return 0, err
+	}
+	return stand, nil
+}
+
+// tokenFiles are one write of the workspace's tokens: a fresh adapter token, at least 128 random bits
+// (AUTH-1), first, then the session's tokens where given, and how long they stand before they are
+// written again (TOK-2). A tool whose name gives no token file under TokenDir is refused.
+func tokenFiles(tokens *access.SessionTokens) (string, []access.File, time.Duration, error) {
+	adapter := rand.Text() + rand.Text()
+	files := []access.File{{Path: agent.TokenPath, Content: []byte(adapter)}}
+	if tokens == nil {
+		return adapter, files, 0, nil
+	}
+	if tokens.Model.Token == "" || tokens.Model.ExpiresIn <= 0 {
+		return "", nil, 0, errors.New("the connector answered no model token")
+	}
+	files = append(files, access.File{Path: ModelTokenPath, Content: []byte(tokens.Model.Token)})
 	shortest := tokens.Model.ExpiresIn
 	tools := make([]string, 0, len(tokens.Tools))
 	for name := range tokens.Tools {
@@ -317,15 +366,12 @@ func (w *Workspace) writeTokens(ctx context.Context) (time.Duration, error) {
 		token := tokens.Tools[name]
 		path := ToolTokenPath(name)
 		if strings.Contains(name, "/") || access.CheckTokenPath(path) != nil || token.Token == "" || token.ExpiresIn <= 0 {
-			return 0, fmt.Errorf("the connector answered a token for a tool %q no token file is written for", name)
+			return "", nil, 0, fmt.Errorf("the connector answered a token for a tool %q no token file is written for", name)
 		}
 		files = append(files, access.File{Path: path, Content: []byte(token.Token)})
 		shortest = min(shortest, token.ExpiresIn)
 	}
-	if err := w.write(ctx, files); err != nil {
-		return 0, err
-	}
-	return renewal(shortest), nil
+	return adapter, files, renewal(shortest), nil
 }
 
 // renewal is how long tokens whose shortest lives seconds stand before they are written again: two
@@ -334,13 +380,10 @@ func renewal(seconds int64) time.Duration {
 	return min(renewEvery, time.Duration(seconds)*time.Second*2/3)
 }
 
-// write writes a fresh adapter token and files in one write (FILE-1), and holds the token once it is
-// written.
-func (w *Workspace) write(ctx context.Context, files []access.File) error {
-	adapter := rand.Text() + rand.Text()
-	body, err := json.Marshal(access.Files{
-		Files: append([]access.File{{Path: agent.TokenPath, Content: []byte(adapter)}}, files...),
-	})
+// write writes files, the adapter token first, in one write (FILE-1), and holds the adapter token once
+// it is written. Files beyond the adapter's are the session's tokens.
+func (w *Workspace) write(ctx context.Context, adapter string, files []access.File) error {
+	body, err := json.Marshal(access.Files{Files: files})
 	if err != nil {
 		return err
 	}
@@ -350,7 +393,7 @@ func (w *Workspace) write(ctx context.Context, files []access.File) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.adapter = adapter
-	if files != nil {
+	if len(files) > 1 {
 		w.status.TokensWrittenAt = w.cfg.Now()
 	}
 	return nil
