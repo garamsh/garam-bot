@@ -28,6 +28,8 @@ func Cases() []Case {
 		{Requirement: "RUN-1", Name: "guest calls to a stopped workspace are refused", run: notRunning},
 		{Requirement: "DATA-1", Name: "the data volume survives a stop and a start", run: dataSurvives},
 		{Requirement: "EXEC-1", Name: "exec returns the exit code and the output whole", run: execResult},
+		{Requirement: "EXEC-2", Name: "stdin reaches the command with the stdin capability", run: stdinTaken},
+		{Requirement: "EXEC-2", Name: "stdin is refused without the stdin capability", run: stdinRefused},
 		{Requirement: "FILE-1", Name: "a written file reads back whole", run: fileRoundTrip},
 		{Requirement: "FILE-1", Name: "a path that is not absolute and clean, or is a system directory, is refused", run: fileRefused},
 		{Requirement: "FILE-2", Name: "a read of a missing file is file not found", run: fileMissing},
@@ -194,16 +196,42 @@ func dataSurvives(t *testing.T, e *env) {
 func execResult(t *testing.T, e *env) {
 	name := e.running(t, e.spec())
 	in := []byte("line one\nline two\n")
-	r, err := e.Provider.Exec(t.Context(), name, v1alpha1.ExecRequest{Command: []string{"cat"}, Stdin: in})
+	wantNoErr(t, "WriteFile", e.Provider.WriteFile(t.Context(), name, file, in))
+	r, err := e.Provider.Exec(t.Context(), name, v1alpha1.ExecRequest{Command: []string{"cat", file}})
 	wantNoErr(t, "Exec cat", err)
 	if r.ExitCode != 0 || !bytes.Equal(r.Stdout, in) {
-		t.Fatalf("Exec cat: exit %d, stdout %q, want 0 and %q", r.ExitCode, r.Stdout, in)
+		t.Fatalf("Exec cat %s: exit %d, stdout %q, want 0 and %q", file, r.ExitCode, r.Stdout, in)
 	}
 	r, err = e.Provider.Exec(t.Context(), name, v1alpha1.ExecRequest{Command: []string{"false"}})
 	wantNoErr(t, "Exec false", err)
 	if r.ExitCode != 1 {
 		t.Fatalf("Exec false: exit %d, want 1", r.ExitCode)
 	}
+}
+
+func stdinTaken(t *testing.T, e *env) {
+	if !e.caps.Stdin {
+		t.Skip("the implementation offers no stdin")
+	}
+	name := e.running(t, e.spec())
+	in := []byte("line one\nline two\n")
+	r, err := e.Provider.Exec(t.Context(), name, v1alpha1.ExecRequest{Command: []string{"cat"}, Stdin: in})
+	wantNoErr(t, "Exec cat", err)
+	if r.ExitCode != 0 || !bytes.Equal(r.Stdout, in) {
+		t.Fatalf("Exec cat: exit %d, stdout %q, want 0 and %q", r.ExitCode, r.Stdout, in)
+	}
+}
+
+func stdinRefused(t *testing.T, e *env) {
+	if e.caps.Stdin {
+		t.Skip("the implementation offers stdin")
+	}
+	name := e.running(t, e.spec())
+	_, err := e.Provider.Exec(t.Context(), name, v1alpha1.ExecRequest{Command: []string{"cat"}, Stdin: []byte("input\n")})
+	wantErr(t, "Exec with stdin", err, v1alpha1.ErrUnsupported)
+	// control: the same exec without stdin is taken
+	_, err = e.Provider.Exec(t.Context(), name, v1alpha1.ExecRequest{Command: []string{"true"}})
+	wantNoErr(t, "Exec without stdin", err)
 }
 
 func fileRoundTrip(t *testing.T, e *env) {

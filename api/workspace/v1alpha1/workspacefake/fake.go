@@ -161,9 +161,13 @@ func (p *Provider) Exec(_ context.Context, name v1alpha1.Name, req v1alpha1.Exec
 	if len(req.Command) == 0 {
 		return v1alpha1.ExecResult{}, fmt.Errorf("%w: an empty command", v1alpha1.ErrInvalid)
 	}
+	if len(req.Stdin) > 0 && !p.caps.Stdin {
+		return v1alpha1.ExecResult{}, fmt.Errorf("%w: stdin", v1alpha1.ErrUnsupported)
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if _, err := p.running(name); err != nil {
+	w, err := p.running(name)
+	if err != nil {
 		return v1alpha1.ExecResult{}, err
 	}
 	switch req.Command[0] {
@@ -172,10 +176,30 @@ func (p *Provider) Exec(_ context.Context, name v1alpha1.Name, req v1alpha1.Exec
 	case "false":
 		return v1alpha1.ExecResult{ExitCode: 1, Stdout: []byte{}, Stderr: []byte{}}, nil
 	case "cat":
-		return v1alpha1.ExecResult{Stdout: slices.Clone(req.Stdin), Stderr: []byte{}}, nil
+		return cat(req, w.files), nil
 	}
 
 	return v1alpha1.ExecResult{ExitCode: 127, Stdout: []byte{}, Stderr: []byte(req.Command[0] + ": not found\n")}, nil
+}
+
+// cat answers the files req names after "cat" in order, or its Stdin when it names none, and exit
+// code 1 for a file the workspace does not hold.
+func cat(req v1alpha1.ExecRequest, files map[string][]byte) v1alpha1.ExecResult {
+	if len(req.Command) == 1 {
+		return v1alpha1.ExecResult{Stdout: slices.Clone(req.Stdin), Stderr: []byte{}}
+	}
+	out := v1alpha1.ExecResult{Stdout: []byte{}, Stderr: []byte{}}
+	for _, f := range req.Command[1:] {
+		content, ok := files[f]
+		if !ok {
+			out.ExitCode = 1
+			out.Stderr = append(out.Stderr, "cat: "+f+": No such file or directory\n"...)
+			continue
+		}
+		out.Stdout = append(out.Stdout, content...)
+	}
+
+	return out
 }
 
 // ReadFile returns the file at file.

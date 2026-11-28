@@ -57,7 +57,8 @@ What this interface does not carry:
 ## Guest access
 
 - **RUN-1.** `Exec`, `ReadFile`, `WriteFile` and `Dial` reach a running workspace only. An implementation MUST answer each with `ErrNotRunning` for a workspace that is not running.
-- **EXEC-1.** `Exec` runs `Command[0]` with the rest as arguments, not through a shell, with `Stdin` as its input, and returns its exit code, stdout and stderr whole. A command that exits non-zero is a result, not an error. A `Timeout` above zero bounds the run.
+- **EXEC-1.** `Exec` runs `Command[0]` with the rest as arguments, not through a shell, and returns its exit code, stdout and stderr whole. A command that exits non-zero is a result, not an error. A `Timeout` above zero bounds the run.
+- **EXEC-2.** An implementation that reports `Capabilities.Stdin` gives the command `Stdin` as its input. One that cannot reports `Capabilities.Stdin` false, and MUST refuse an `Exec` with a non-empty `Stdin` with `ErrUnsupported`, never run the command without it. A caller with input for such an implementation writes it with `WriteFile` and names the file in the command.
 - **FILE-1.** `WriteFile` replaces the file at a path with its content, whole, and `ReadFile` returns it whole. An implementation MUST refuse with `ErrInvalid` a path `CheckPath` refuses: one that is not absolute and clean, is `/`, or is under `/proc`, `/sys` or `/dev`.
 - **FILE-2.** A read of a path that holds no file MUST answer `ErrFileNotFound`.
 - **ISO-1.** A workspace MUST NOT see another workspace's files, whichever caller holds the other.
@@ -103,14 +104,15 @@ The naru Machine provider is a client of `machines/v1alpha1` (`garamsh/naru` `li
 | `spec.Egress` | `networkPolicy.egress`, one rule each: `prefix` in canonical form, `protocol` and `ports`. `Capabilities.Egress` is true |
 | `spec.FromSnapshot` | `fromSnapshot.snapshot`. 422 `snapshot-not-found` is `ErrSnapshotNotFound`, and 422 `snapshot-mismatch` is `ErrInvalid` |
 | `Get`, `List` | the provider's record, kept current from `GET .../machines` and `GET .../events?since=` |
-| `Start`, `Stop(grace)` | `POST .../start`, `POST .../stop` with `graceSeconds` |
+| `Start`, `Stop(grace)` | `POST .../start`, `POST .../stop` with `graceSeconds`, `grace` rounded up to whole seconds. Above naru's bound, 240 seconds, the 422 `invalid` is `ErrInvalid` |
 | `Delete` | `DELETE .../machines/{name}`, 202. Its volumes go, its snapshots stay, and the name is held until the volumes are gone |
-| `Exec` | `POST .../machines/{name}/exec`: `command`, `stdin`, `timeoutSeconds` |
+| `Exec` | `POST .../machines/{name}/exec`: `command`, `timeoutSeconds`. The Machine API takes no input (naru ADR 0118), so `Capabilities.Stdin` is false and a non-empty `Stdin` is `ErrUnsupported` (EXEC-2). `Timeout` is rounded up to whole seconds, and 0 is naru's bound, 600 seconds; above it the 422 `invalid` is `ErrInvalid`. A command ended at its timeout or by a signal is a result: its `exitCode` is 128 plus the signal |
 | `ReadFile`, `WriteFile` | `GET`, `PUT .../machines/{name}/files?path=` |
 | `Dial(port)` | TLS to naru-proxy with the SNI `p<port>--<id>.<zone>`, the service's stable name (`address.name` with the service in front, naru ADR 0112), then plain TCP to the Machine. naru-proxy is not built yet (naru#378) |
 | `Snapshot(name, of)` | `PUT .../snapshots/{name}` with `machine`. Phases map one to one, and `DiskBytes` is the snapshot spec's one volume's `sizeBytes` |
 | `GetSnapshot`, `DeleteSnapshot` | `GET`, `DELETE .../snapshots/{name}` |
 | `Capabilities.Snapshot` | true: `capabilities.snapshot` always holds `volumes` |
+| `Capabilities.Stdin` | false |
 
 | Machine phase | Workspace phase |
 |---|---|
@@ -119,6 +121,7 @@ The naru Machine provider is a client of `machines/v1alpha1` (`garamsh/naru` `li
 | `stopping`, `deleting` | `stopping` |
 | `stopped` | `stopped` |
 | `failed` | `failed` |
+| `lost`: its host was abandoned, and it does not come back by itself | `failed`, with naru's reason. The caller deletes it |
 | `unknown`, and any phase the client reads as `unknown` | `unknown` |
 
 | Machine API code | Provider error |
@@ -148,6 +151,7 @@ Each mapping is its implementation issue's to build, and this section is what th
 | `ReadFile`, `WriteFile` | an `exec` of garam-bot's file helper, which an init container copies into the Pod and which reads and writes the path, `WriteFile` through a temporary file and a rename | the engine's archive copy | Read file, Write file |
 | `Dial` | the `portforward` subresource | a port published on loopback | the Machine's address on the host's bridge, under an ingress rule |
 | `Egress` | a NetworkPolicy of `ipBlock` rules | the engine cannot enforce rules: `Capabilities.Egress` false, and no network | `networkPolicy.egress` |
+| `Stdin` | true: the `exec` subresource carries stdin | the engine's exec | false: Exec takes no input |
 | `Snapshot` | a VolumeSnapshot, where the cluster serves the API | false | Snapshot disk |
 
 ## Versioning and compatibility
@@ -165,5 +169,5 @@ Each mapping is its implementation issue's to build, and this section is what th
 - **A caller-only proxy route.** naru-proxy has no caller authentication, so a Machine's port is reached by whoever reaches the proxy and the adapter's token is the only bar. A route naru serves to the Machine's caller alone is naru's to add.
 - **Exec streams.** `Exec` returns its output whole, as the Machine API's does. A streaming exec is an addition, and interface 2 does not need one: the adapter is reached through `Dial`.
 - **A file's mode.** `WriteFile` takes no mode, as the Machine API's file call takes none. Whether the token files of interface 2 need one that no other process in the workspace can read waits for the adapters.
-- **What `Timeout` leaves.** Whether an `Exec` past its timeout is a result or an error is not decided, because the Machine API does not state it.
+- **What `Timeout` leaves.** Whether an `Exec` past its timeout is a result or an error is not decided for every implementation. The Machine API states it a result (naru ADR 0118 item 4), and the naru Machine provider answers it so.
 - **A Mac's container engine.** Docker Desktop, Podman and Apple's container framework each run a Linux VM. Which ones the container implementation supports is its issue's.
