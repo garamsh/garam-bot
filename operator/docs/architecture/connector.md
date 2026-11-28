@@ -149,20 +149,27 @@ These follow [ADR 0099](adr/0099-serve-every-bots-process-its-workspace-from-the
   - **Garam off.** It serves interface 7 also with garam off.
 - **The credential and the key.**
   - **The credential** is reused while it lives, and one issued before the connector started is refused.
-  - **The pin.** The first key whose DPoP proof verifies for a workload instance, the Pod's UID with its runtime container's ID, is pinned. Another key for that instance is answered 401 `invalid_key`. Pins are held in memory alone.
-- **What a process may do:** acquire its own attachment's workspace, write files under `/run/garam-bot/`, dial port 7700, and obtain the session's tokens. No exec, no file read, no delete.
+  - **The instance** is the Pod's UID with its `runtime` container's `containerID` while that container runs. A Pod whose `runtime` container is not running is refused.
+  - **The binding cache.** A credential's binding is kept 10 seconds at most, and read again live before `invalid_key` is answered.
+  - **The pin.** The first key whose DPoP proof verifies for an instance is pinned. Another key for that instance is answered 401 `invalid_key`. Pins are held in memory alone, and a gone Pod's pins are dropped.
+- **What a process may do:** acquire its own attachment's workspace, write up to 16 files at once under `/run/garam-bot/`, dial port 7700, and obtain the session's tokens. No exec, no file read, no delete.
 - **The workspace namespace, `--workspace-namespace`,** holds every workspace. It is never a watched namespace or the release namespace.
-  - **The Pod provider**, moved to garam-bot's `pkg/podworkspace`, runs there with the rights garam-bot `interfaces.md` lists.
-  - **The naru Machine provider** stays as it runs.
+  - **The chart renders it,** labelled for its release and `pod-security.kubernetes.io/enforce: restricted`, so Helm refuses a second release that names it.
+  - **The default ServiceAccount.** The connector sets `automountServiceAccountToken: false` on its `default` ServiceAccount at start.
+  - **The Pod provider**, moved to garam-bot's `pkg/podworkspace`, runs there with the rights garam-bot `interfaces.md` lists. Its `Capabilities.Egress` is `workspaces.pod.enforcesNetworkPolicy`, true by default, which needs a network plugin that enforces NetworkPolicy egress.
+  - **The naru Machine provider** stays as it runs. A Machine's port is guarded by the adapter's token alone, since naru-proxy serves it to whoever reaches it.
   - **Choosing a provider.** A WorkspaceClass's `spec.provider`, `pod` or `naru`, picks one.
-- **Each workspace is named per Bot and isolated.**
-  - **Naming.** Its name is a hash of the Bot's namespace, name and UID and the attachment.
+- **Each workspace is named per Bot and per release, and isolated.**
+  - **Naming.** Its name is `w<release>-<bot>`, hashes of the release and of the Bot's namespace, name, UID and attachment. It carries labels naming the release and the Bot.
   - **Ingress.** Its NetworkPolicy admits no ingress, since `Dial` is `portforward`.
-  - **Egress** goes to `--model-gateway-url` and `--tool-proxy-url` alone.
-  - **Deletion.** A workspace no live Bot names is deleted once the Bots' cache has synced.
+  - **Egress** is per provider: `--pod-workspace-egress` and `--naru-workspace-egress`, as `<cidr>/<protocol>/<port>` rules that must include DNS. The gateway and tool proxy URLs are `--pod-model-gateway-url`, `--pod-tool-proxy-url`, `--naru-model-gateway-url` and `--naru-tool-proxy-url`.
+  - **Deletion.** The sweep takes only this release's workspaces, by prefix and labels, and leaves those of a namespace no longer watched. It deletes one only after a live `GET` of its Bot answers NotFound or another UID, and 10 minutes have passed since it first found it so.
 - **Images.** The workspace image is `--agent-image <harness>=<ref>` by digest, and the Pod provider's file helper is `--workspace-helper-image`.
-- **Session tokens.** Before G3 and G6 there is no production issuer, so the call answers 503 `waiting_for_gateway`. The end-to-end suite wires a stub (garam-bot#1252).
-- **A limit per Bot.** Each Bot has a bucket of 20 calls that reach a provider or an issuer, refilled one every 3 seconds, answered 429 past it to that Bot alone.
+- **Session tokens.** Before G3 and G6 there is no production issuer, so the call answers 503 `waiting_for_gateway`. The stub issuer is compiled only under the build tag `e2e`, into the end-to-end suite's own connector image (garam-bot#1252).
+- **Limits.**
+  - **Per Bot.** Each Bot has a bucket of 20 calls that reach a provider or an issuer, refilled one every 3 seconds, answered 429 past it to that Bot alone. A read of the workspace takes nothing, and a renewal is two calls.
+  - **Per instance.** Each instance has a bucket of 30 requests, refilled one a second, taken right after the credential verifies, before any Pod is read.
+  - **Dials.** At most 4 are open per instance, at most `--max-dials` (256) in all, and one idle for 120 seconds is closed. An instance's dials close when its Pod or container ends, its Bot goes, or its workspace stops.
 - **A restart mid-`Dial`** breaks the connection. The process dials again once its credential is replaced, within 8 minutes, and the adapter keeps its session and events.
 - **What is logged.** Each call, with the Bot, the call and the outcome. Never a credential, a proof, a token, a file's content or the bytes of a dial.
 
@@ -184,8 +191,8 @@ These follow [ADR 0091](adr/0091-hold-only-namespaced-rights-in-a-users-cluster-
   - The cache asks for the claim by a field selector on its name, and RBAC applies `resourceNames` to a `list` or `watch` that carries one, so no other Lease is readable.
   - It never writes a Lease (CLAIM-2).
   - `internal/declaration/kube`'s tests run every read and write as a ServiceAccount bound to exactly this Role, and `test/chart` fails a chart that renders any other.
-- **CRDs:** installed by Helm with the installer's rights, and the only cluster-scoped objects the chart renders.
-- **No inbound path from outside the cluster:** no LoadBalancer or NodePort Service, no external IPs, no Ingress, no webhook. A NetworkPolicy admits no ingress to the manager, and reaches the API server alone. The connector's admits ingress to its bot token port alone, from the bots' Pods of the watched namespaces alone (ADR 0097). Its egress goes to the configured proxy, or else to garam on 443, plus DNS, plus the API server's range given as a value, plus `connector.naru.egress` where the naru Machine provider is on. `test/chart` fails a chart that renders otherwise.
+- **CRDs:** installed by Helm with the installer's rights, and the only cluster-scoped objects the chart renders. Decided, to build (ADR 0099): the workspace Namespace as well.
+- **No inbound path from outside the cluster:** no LoadBalancer or NodePort Service, no external IPs, no Ingress, no webhook. A NetworkPolicy admits no ingress to the manager, and reaches the API server alone. The connector's admits ingress to its bot token port alone, from the bots' Pods of the watched namespaces alone (ADR 0097). Its egress goes to the configured proxy, or else to garam on 443, plus DNS, plus the API server's range given as a value, plus `connector.naru.egress` where the naru Machine provider is on. Decided, to build (ADR 0099): plus `connector.issuers.egress` for the session tokens' issuers, and nothing to garam when garam is off. `test/chart` fails a chart that renders otherwise.
 - **PodSecurity `restricted`** admits both programs' Pods. `test/chart` creates each from its installed Deployment in a namespace enforcing it.
 - **Metrics:** off by default. Turned on, the manager serves plain HTTP inside the cluster, admitted from the peers the installer names alone. The connector serves none.
 - **Secrets:** no Secret or ConfigMap is ever reported, and no credential reaches a log, metric, event, status or report. A report does carry two free-text fields of a cluster-owned object as written, `spec.persona.instructions` and a status condition's `message` (REP-2, REP-9), so it holds no credential only while nobody types one into them.

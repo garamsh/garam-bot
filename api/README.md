@@ -11,6 +11,6 @@ This directory is a Go module of its own, so a consumer imports an interface wit
 | 3. Workspace provider: the driver a program at an execution place makes and reaches workspaces through | `workspace/` | `v1alpha1` |
 | 4. Control connection protocol: between garam's connection service and the connector a user's cluster runs | `cluster-connection/` | `v1alpha1` |
 | 6. Bot token: how a bot's process obtains its garam token from its place's connector | `bot-token/` | `v1alpha1` |
-| 7. Workspace access: how a bot's process acquires its workspace, writes its token files and dials its adapter through its place's connector | `workspace-access/` | `v1alpha1`, its specification alone until the reference server and the suite are built |
+| 7. Workspace access: how a bot's process acquires its workspace, writes its token files and dials its adapter through its place's connector | `workspace-access/` | `v1alpha1`, its specification and names alone until the reference server and the suite are built |
 
 Interface 5 (model gateway) is not written yet.
