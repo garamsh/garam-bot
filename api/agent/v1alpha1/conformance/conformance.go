@@ -33,10 +33,12 @@ type Subject struct {
 	// Timeout bounds each wait for an event. Zero is 3 minutes.
 	Timeout time.Duration
 	// Gateway, where set, is the model gateway Session's model.baseUrl reaches: interface 5's
-	// gatewayfake, which records each model call. ModelBot is the bot whose token Session's
-	// model.tokenFile holds. MODEL-1 runs only with them.
-	Gateway  *gatewayfake.Gateway
-	ModelBot gateway.TokenRequest
+	// gatewayfake, which records each model call. ModelBot is a bot it issues tokens for, and
+	// WriteModelToken writes a token to Session's model.tokenFile as the bot's process writes it.
+	// MODEL-1 runs only with all three.
+	Gateway         *gatewayfake.Gateway
+	ModelBot        gateway.TokenRequest
+	WriteModelToken func(token string) error
 }
 
 // Case is one test of the suite.

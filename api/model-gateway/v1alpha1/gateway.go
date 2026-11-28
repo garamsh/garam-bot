@@ -15,6 +15,9 @@ const (
 	MaxIdentity = 253
 	// UpstreamHeaderTimeout bounds how long the upstream may take to begin its answer (MOD-5).
 	UpstreamHeaderTimeout = 10 * time.Minute
+	// CredentialLeeway bounds the clock skew an issuer's credential's iat and nbf are read with. Its
+	// exp is read with none (ISS-1).
+	CredentialLeeway = 60 * time.Second
 )
 
 // The model surface's paths of the Anthropic Messages API (MOD-2, MOD-3).
@@ -23,11 +26,16 @@ const (
 	CountTokensPath = "/v1/messages/count_tokens"
 )
 
-// ModelPaths are the model surface's paths, each forwarded; any other is refused (MOD-3).
+// ModelPaths are the model surface's paths, each taken with POST alone; any other method or path is
+// refused (MOD-3).
 var ModelPaths = []string{MessagesPath, CountTokensPath}
 
 // ForwardedHeaders are the only headers of a model call the gateway forwards (MOD-2).
 var ForwardedHeaders = []string{"Content-Type", "Accept", "Anthropic-Version", "Anthropic-Beta"}
+
+// TransportHeaders are the headers an HTTP transport sets on a forwarded call, which the upstream may
+// receive beside ForwardedHeaders and the provider's key (MOD-2).
+var TransportHeaders = []string{"Host", "Content-Length", "Transfer-Encoding", "Accept-Encoding", "User-Agent"}
 
 // HeaderProviderKey carries the provider's key to Anthropic's API (MOD-2).
 const HeaderProviderKey = "X-Api-Key"

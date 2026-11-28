@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/garamsh/garam-bot/api/agent/v1alpha1"
@@ -21,28 +22,44 @@ const modelTokenFile = "/run/garam-bot/model/token"
 // gatewayfake as its model gateway.
 func TestReference(t *testing.T) {
 	model, bot := startGateway(t)
+	gatewayServer := httptest.NewServer(model)
+	t.Cleanup(gatewayServer.Close)
+	// The workspace's model token file, as the bot's process writes it and the harness reads it.
+	var (
+		mu         sync.Mutex
+		modelToken string
+	)
+	files := func(path string) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if path != modelTokenFile || modelToken == "" {
+			return nil, os.ErrNotExist
+		}
+		return []byte(modelToken + "\n"), nil
+	}
+	write := func(token string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		modelToken = token
+		return nil
+	}
 	issued, err := model.Issue(bot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	gatewayServer := httptest.NewServer(model)
-	t.Cleanup(gatewayServer.Close)
-	// The workspace's files, as the harness reads them.
-	files := func(path string) ([]byte, error) {
-		if path != modelTokenFile {
-			return nil, os.ErrNotExist
-		}
-		return []byte(issued.Token + "\n"), nil
+	if err := write(issued.Token); err != nil {
+		t.Fatal(err)
 	}
 	adapter := agentfake.New(func() ([]byte, error) { return []byte(token + "\n"), nil }).WithModel(files, gatewayServer.Client())
 	server := httptest.NewServer(adapter)
 	t.Cleanup(server.Close)
 	conformance.Run(t, conformance.Subject{
-		BaseURL:  server.URL,
-		Client:   server.Client(),
-		Token:    token,
-		Gateway:  model,
-		ModelBot: bot,
+		BaseURL:         server.URL,
+		Client:          server.Client(),
+		Token:           token,
+		Gateway:         model,
+		ModelBot:        bot,
+		WriteModelToken: write,
 		Session: v1alpha1.SessionSpec{
 			Instructions: "You are the conformance suite's bot.",
 			Model:        v1alpha1.Model{BaseURL: gatewayServer.URL, TokenFile: modelTokenFile},

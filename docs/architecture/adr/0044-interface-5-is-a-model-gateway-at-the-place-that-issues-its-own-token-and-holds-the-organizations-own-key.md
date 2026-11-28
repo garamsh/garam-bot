@@ -24,12 +24,13 @@ A record states one current decision and is kept current: update the body when t
 
 1. **Interface 5 is `api/model-gateway/v1alpha1/`, with two surfaces.**
    - **The model surface** is the provider's own API, passed through at `model.baseUrl`, with a model token as a bearer. `v1alpha1` names Anthropic Messages alone.
-   - **The issue surface**, `POST .../model-tokens`, is called by the place's issuer with a credential of the place naming it, and answers a model token for a bot.
+   - **The issue surface**, `POST <base>/model-gateway/v1alpha1/model-tokens`, is called by the place's issuer with a credential of the place naming it, and answers a model token for a bot.
+   - **Two profiles** (PRO-1, PRO-2). Every gateway serves the model surface. A gateway whose tokens its place's issuer obtains from it serves the issue surface too. `ai.garam.sh`, whose tokens are garam's exchange, serves the model surface alone.
 2. **The model token is stated abstractly** (TOKEN-1): it lives at most an hour, is of the gateway's own audience, is checked by that gateway alone, and is opaque to every other party.
    - **At the place**, the gateway issues it, through the issue surface.
    - **At `ai.garam.sh`**, it is garam ADR-0190's exchange of the bot's token, which TOKEN-1 admits.
    - garam records the place's form in garam ADR-0195, which supersedes garam ADR-0190 decision 2 in part.
-3. **A token outlives its gateway's restart** (TOKEN-2). The bot's process renews after 40 minutes at most, so a restart that voided tokens would leave every workspace without a model until then. At a cluster the signing key is in a Secret the gateway writes.
+3. **A token outlives its gateway's restart** (TOKEN-2). The bot's process renews after 40 minutes at most, so a restart that voided tokens would leave every workspace without a model until then. At a cluster the signing key is in a Secret the gateway writes. A gateway that rotates its key goes on accepting the earlier key's tokens for at least an hour after.
 4. **The gateway holds the organization's own key, and v1 serves no other** (KEY-1, KEY-2). A gateway with no key serves no model call. The key reaches no workspace, harness, answer or log, and the gateway forwards none of a call's headers but the provider API's own, so a workspace's credential reaches no upstream (MOD-2). Platform billing is a later key or upstream the gateway chooses per bot, behind the same surfaces.
 5. **Usage is recorded per bot** (USE-1): the bot, the model, the status and the provider's token counts, never the content. How a deployment keeps the records is its own, and reporting them to garam is an open question of interface 5.
 6. **Both surfaces are limited**, each bot's model calls and each issuer's token calls, and a refusal costs no other bot (LIMIT-1, LIMIT-2).
@@ -40,8 +41,9 @@ A record states one current decision and is kept current: update the body when t
 
 - garam's `ai-gateway` builds to this specification (garam ADR-0190 §Consequences), with its own token.
 - The connector's issuer obtains a bot's model token from the gateway. A Bot that declares tools waits for the tool proxy (G6), since TOK-1 answers a token per tool.
-- `v1` needs two production implementations passing the suite: the place's gateway and `ai.garam.sh`.
+- `v1` needs two production implementations passing the suite in the model profile, the place's gateway and `ai.garam.sh`, and the place's gateway passing it in the place profile too.
 - A model token is a bearer within its hour: one read from a workspace can be presented from elsewhere until it expires.
+- A deleted Bot's model tokens go on working until they expire, an hour at most. Refusing them sooner is an open question of interface 5.
 
 ## Signs the decision was wrong
 

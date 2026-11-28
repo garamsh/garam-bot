@@ -28,6 +28,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	v1alpha1 "github.com/garamsh/garam-bot/api/model-gateway/v1alpha1"
 	"github.com/garamsh/garam-bot/api/model-gateway/v1alpha1/gatewayfake"
 )
 
@@ -52,11 +53,12 @@ const (
 
 const usage = `usage: model-gateway-reference --dir DIR <subcommand> [arguments]
 
-  serve
-  credential [--issuer NAME] [--audience AUDIENCE] [--expired] [--lifetime DURATION]
+  serve [--base-path PATH]
+  credential [--issuer NAME] [--audience AUDIENCE] [--expired] [--lifetime DURATION] [--foreign]
+  token --namespace NS --name NAME --uid UID [--foreign]
   provider-key
-  seen
-  answer [--status N] [--stream] [--redirect] [--close]
+  seen [--redirected]
+  answer [--status N] [--retry-after SECONDS] [--stream] [--long] [--break] [--redirect STATUS] [--close]
   release
   usage
   restart
@@ -78,7 +80,12 @@ func run(args []string, out io.Writer) error {
 	}
 	command, rest := flags.Arg(0), flags.Args()[1:]
 	if command == "serve" {
-		return serve(*dir)
+		serveFlags := flag.NewFlagSet("serve", flag.ContinueOnError)
+		basePath := serveFlags.String("base-path", "", "the path of the gateway's base URL (T-2)")
+		if err := serveFlags.Parse(rest); err != nil {
+			return err
+		}
+		return serve(*dir, *basePath)
 	}
 	body := map[string]string{}
 	sub := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -88,14 +95,24 @@ func run(args []string, out io.Writer) error {
 		sub.Func("audience", "", func(v string) error { body["audience"] = v; return nil })
 		sub.Func("lifetime", "", func(v string) error { body["lifetime"] = v; return nil })
 		sub.BoolFunc("expired", "", func(string) error { body["expired"] = "true"; return nil })
+		sub.BoolFunc("foreign", "", func(string) error { body["foreign"] = "true"; return nil })
+	case "token":
+		for _, name := range []string{"namespace", "name", "uid"} {
+			sub.Func(name, "", func(v string) error { body[name] = v; return nil })
+		}
+		sub.BoolFunc("foreign", "", func(string) error { body["foreign"] = "true"; return nil })
+	case "seen":
+		sub.BoolFunc("redirected", "", func(string) error { body["redirected"] = "true"; return nil })
 	case "answer":
-		sub.Func("status", "", func(v string) error { body["status"] = v; return nil })
-		for _, name := range []string{"stream", "redirect", "close"} {
+		for _, name := range []string{"status", "retry-after", "redirect"} {
+			sub.Func(name, "", func(v string) error { body[name] = v; return nil })
+		}
+		for _, name := range []string{"stream", "long", "break", "close"} {
 			sub.BoolFunc(name, "", func(string) error { body[name] = "true"; return nil })
 		}
 	case "clock":
 		sub.Func("advance", "", func(v string) error { body["advance"] = v; return nil })
-	case "provider-key", "seen", "release", "usage", "restart", "limits":
+	case "provider-key", "release", "usage", "restart", "limits":
 	default:
 		return errors.New(usage)
 	}
@@ -122,20 +139,26 @@ func run(args []string, out io.Writer) error {
 
 // place is what serve runs: the gateway, restartable, its provider, and its clock.
 type place struct {
+	basePath    string
 	provider    *gatewayfake.Provider
+	elsewhere   *gatewayfake.Recorder
 	upstream    *url.URL
 	credentials *gatewayfake.Credentials
 	signing     *ecdsa.PrivateKey
-	offset      atomic.Int64
-	mu          sync.Mutex
-	gateway     *gatewayfake.Gateway
+	// foreign is a gateway of another key, and foreignCredentials a place's of another key, whose
+	// tokens and credentials the gateway does not trust (MOD-1, ISS-1).
+	foreign            *gatewayfake.Gateway
+	foreignCredentials *gatewayfake.Credentials
+	offset             atomic.Int64
+	mu                 sync.Mutex
+	gateway            *gatewayfake.Gateway
 }
 
 func (p *place) now() time.Time { return time.Now().Add(time.Duration(p.offset.Load())) }
 
 func (p *place) start() error {
 	g, err := gatewayfake.New(gatewayfake.Config{
-		Upstream: p.upstream, Key: providerKey, SigningKey: p.signing,
+		BasePath: p.basePath, Upstream: p.upstream, Key: providerKey, SigningKey: p.signing,
 		Credentials: p.credentials, Issuers: []string{issuer}, Now: p.now,
 		BotBurst: botBurst, BotEvery: botEvery, IssuerBurst: issuerBurst, IssuerEvery: issuerEvery,
 	})
@@ -148,14 +171,34 @@ func (p *place) start() error {
 	return nil
 }
 
+// others makes the foreign gateway and credentials, each of a key of its own.
+func (p *place) others() error {
+	key, err := gatewayfake.NewSigningKey()
+	if err != nil {
+		return err
+	}
+	credentialKey, err := gatewayfake.NewSigningKey()
+	if err != nil {
+		return err
+	}
+	p.foreignCredentials = &gatewayfake.Credentials{Key: credentialKey}
+	p.foreign, err = gatewayfake.New(gatewayfake.Config{
+		Upstream: p.upstream, Key: providerKey, SigningKey: key, Credentials: p.foreignCredentials, Now: p.now,
+	})
+	return err
+}
+
 func (p *place) current() *gatewayfake.Gateway {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.gateway
 }
 
-func serve(dir string) error {
-	p := &place{provider: &gatewayfake.Provider{}}
+func serve(dir, basePath string) error {
+	p := &place{basePath: basePath, provider: &gatewayfake.Provider{}, elsewhere: &gatewayfake.Recorder{}}
+	elsewhere := httptest.NewServer(p.elsewhere)
+	defer elsewhere.Close()
+	p.provider.Elsewhere = elsewhere.URL
 	upstream := httptest.NewServer(p.provider)
 	defer upstream.Close()
 	p.upstream, _ = url.Parse(upstream.URL)
@@ -169,6 +212,9 @@ func serve(dir string) error {
 		return err
 	}
 	if err := p.start(); err != nil {
+		return err
+	}
+	if err := p.others(); err != nil {
 		return err
 	}
 	certificate, trust, err := selfSigned()
@@ -190,7 +236,7 @@ func serve(dir string) error {
 	}
 	go func() { _ = (&http.Server{Handler: p.control(), ReadHeaderTimeout: 10 * time.Second}).Serve(control) }()
 	for name, content := range map[string][]byte{
-		trustFile: trust, urlFile: []byte("https://" + listener.Addr().String()), controlFile: []byte("http://" + control.Addr().String()),
+		trustFile: trust, urlFile: []byte("https://" + listener.Addr().String() + basePath), controlFile: []byte("http://" + control.Addr().String()),
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), content, 0o600); err != nil {
 			return err
@@ -229,19 +275,41 @@ func (p *place) control() http.Handler {
 		if a["expired"] != "" {
 			o.IssuedAt, o.Life = p.now().Add(-20*time.Minute), 10*time.Minute
 		}
-		credential, err := p.credentials.Issue(name, p.now(), o)
+		credentials := p.credentials
+		if a["foreign"] != "" {
+			credentials = p.foreignCredentials
+		}
+		credential, err := credentials.Issue(name, p.now(), o)
 		return map[string]string{"credential": credential, "issuer": name}, err
 	})
+	handle("token", func(a map[string]string) (any, error) {
+		g := p.current()
+		if a["foreign"] != "" {
+			g = p.foreign
+		}
+		return g.Issue(v1alpha1.TokenRequest{Namespace: a["namespace"], Name: a["name"], UID: a["uid"]})
+	})
 	handle("provider-key", func(map[string]string) (any, error) { return map[string]string{"key": providerKey}, nil })
-	handle("seen", func(map[string]string) (any, error) { return map[string]any{"seen": p.provider.Seen()}, nil })
+	handle("seen", func(a map[string]string) (any, error) {
+		if a["redirected"] != "" {
+			return map[string]any{"seen": p.elsewhere.Seen()}, nil
+		}
+		return map[string]any{"seen": p.provider.Seen()}, nil
+	})
 	handle("answer", func(a map[string]string) (any, error) {
-		answer := gatewayfake.Answer{Stream: a["stream"] != "", Redirect: a["redirect"] != "", Close: a["close"] != ""}
-		if a["status"] != "" {
-			status, err := strconv.Atoi(a["status"])
+		answer := gatewayfake.Answer{
+			Stream: a["stream"] != "", Long: a["long"] != "", Break: a["break"] != "", Close: a["close"] != "",
+			RetryAfter: a["retry-after"],
+		}
+		for name, into := range map[string]*int{"status": &answer.Status, "redirect": &answer.Redirect} {
+			if a[name] == "" {
+				continue
+			}
+			n, err := strconv.Atoi(a[name])
 			if err != nil {
 				return nil, err
 			}
-			answer.Status = status
+			*into = n
 		}
 		p.provider.Script(answer)
 		return map[string]string{}, nil
@@ -253,6 +321,7 @@ func (p *place) control() http.Handler {
 			records = append(records, map[string]any{
 				"namespace": u.Bot.Namespace, "name": u.Bot.Name, "uid": u.Bot.UID, "model": u.Model,
 				"status": u.Status, "inputTokens": u.InputTokens, "outputTokens": u.OutputTokens,
+				"cacheCreationInputTokens": u.CacheCreationInputTokens, "cacheReadInputTokens": u.CacheReadInputTokens,
 			})
 		}
 		return map[string]any{"usage": records}, nil

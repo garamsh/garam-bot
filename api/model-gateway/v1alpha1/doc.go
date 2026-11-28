@@ -37,6 +37,8 @@ const (
 	CodeInvalidCredential Code = "invalid_credential"
 	// CodeForbidden is a credential naming no issuer the gateway serves (ISS-1).
 	CodeForbidden Code = "forbidden"
+	// CodeNotFound is a path below PathPrefix that is no call of the issue surface (ISS-3).
+	CodeNotFound Code = "not_found"
 	// CodeTemporarilyUnavailable is a 429 past a limit, or a 503 the gateway cannot answer now.
 	CodeTemporarilyUnavailable Code = "temporarily_unavailable"
 )

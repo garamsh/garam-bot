@@ -8,13 +8,13 @@ import (
 	"crypto/ecdsa"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +25,9 @@ import (
 
 // Config is what a Gateway serves under.
 type Config struct {
+	// BasePath is the path of the gateway's base URL, below which both surfaces are (T-2). Empty is
+	// the root.
+	BasePath string
 	// Upstream is where the model surface is forwarded, and Key the provider's key it sets (KEY-2).
 	Upstream *url.URL
 	Key      string
@@ -55,11 +58,13 @@ type Request struct {
 
 // Usage is the record of one forwarded call (USE-1).
 type Usage struct {
-	Bot          v1alpha1.TokenRequest
-	Model        string
-	Status       int
-	InputTokens  int64
-	OutputTokens int64
+	Bot                      v1alpha1.TokenRequest
+	Model                    string
+	Status                   int
+	InputTokens              int64
+	OutputTokens             int64
+	CacheCreationInputTokens int64
+	CacheReadInputTokens     int64
 }
 
 // Gateway serves both surfaces of interface 5.
@@ -72,8 +77,10 @@ type Gateway struct {
 	requests []Request
 	refused  int
 	usage    []Usage
-	bots     map[string]*rate.Limiter
-	issuers  map[string]*rate.Limiter
+	// The limiters, one per bot and per issuer. A reference's run is short, so they are never
+	// dropped; a production gateway bounds them.
+	bots    map[string]*rate.Limiter
+	issuers map[string]*rate.Limiter
 }
 
 // New returns the Gateway under cfg.
@@ -82,6 +89,7 @@ func New(cfg Config) (*Gateway, error) {
 		// A gateway with no key serves no model surface (KEY-2).
 		return nil, errors.New("a gateway needs its upstream, the provider's key, its signing key and its issuers' credentials")
 	}
+	cfg.BasePath = strings.TrimRight(cfg.BasePath, "/")
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
@@ -95,7 +103,11 @@ func New(cfg Config) (*Gateway, error) {
 		cfg.IssuerBurst, cfg.IssuerEvery = 60, time.Second
 	}
 	if cfg.Transport == nil {
-		cfg.Transport = &http.Transport{Proxy: http.ProxyFromEnvironment, ResponseHeaderTimeout: v1alpha1.UpstreamHeaderTimeout}
+		cfg.Transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment, ResponseHeaderTimeout: v1alpha1.UpstreamHeaderTimeout,
+			// The answer's body passes on as the upstream encoded it.
+			DisableCompression: true,
+		}
 	}
 	g := &Gateway{
 		cfg: cfg, tokens: &tokens{key: cfg.SigningKey, now: cfg.Now},
@@ -146,26 +158,68 @@ func (g *Gateway) Usage() []Usage {
 	return slices.Clone(g.usage)
 }
 
-// ServeHTTP serves the issue surface under PathPrefix and the model surface at its paths.
+// ServeHTTP serves the issue surface below PathPrefix and the model surface at its paths, both below
+// BasePath. Paths are compared as the request carries them (T-2).
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	answer := &started{ResponseWriter: w}
 	defer func() {
-		if recover() != nil {
+		v := recover()
+		switch {
+		case v == nil:
+		case v == http.ErrAbortHandler || answer.begun:
+			// An answer already begun is broken off, never added to (MOD-6).
+			panic(http.ErrAbortHandler)
+		default:
 			writeError(w, http.StatusServiceUnavailable, v1alpha1.CodeTemporarilyUnavailable, "the gateway failed")
 		}
 	}()
-	if r.URL.Path == v1alpha1.TokensPath {
-		g.issue(w, r)
+	path, below := strings.CutPrefix(r.URL.EscapedPath(), g.cfg.BasePath)
+	if !below {
+		path = ""
+	}
+	if strings.HasPrefix(path, v1alpha1.PathPrefix) {
+		g.issue(answer, r, path)
 		return
 	}
-	g.model(w, r)
+	g.model(answer, r, path)
 }
 
-func (g *Gateway) issue(w http.ResponseWriter, r *http.Request) {
+// started notes whether an answer has begun, so a failure after it is not answered into it.
+type started struct {
+	http.ResponseWriter
+	begun bool
+}
+
+func (s *started) WriteHeader(status int) {
+	s.begun = true
+	s.ResponseWriter.WriteHeader(status)
+}
+
+func (s *started) Write(b []byte) (int, error) {
+	s.begun = true
+	return s.ResponseWriter.Write(b)
+}
+
+func (s *started) Flush() {
+	s.begun = true
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (s *started) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
+func (g *Gateway) issue(w http.ResponseWriter, r *http.Request, path string) {
+	// The order of refusals is ISS-3's.
+	if path != v1alpha1.TokensPath {
+		writeError(w, http.StatusNotFound, v1alpha1.CodeNotFound, "the issue surface serves no such call")
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, v1alpha1.CodeInvalid, "POST alone")
 		return
 	}
-	issuer, err := g.cfg.Credentials.Verify(bearer(r), g.cfg.Now())
+	issuer, err := g.cfg.Credentials.Verify(v1alpha1.BearerToken(r.Header.Get(v1alpha1.HeaderAuthorization)), g.cfg.Now())
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, v1alpha1.CodeInvalidCredential, err.Error())
 		return
@@ -179,14 +233,16 @@ func (g *Gateway) issue(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusTooManyRequests, v1alpha1.CodeTemporarilyUnavailable, "the issuer's limit is reached")
 		return
 	}
-	var request v1alpha1.TokenRequest
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 4<<10))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4<<10+1))
+	if err != nil || len(body) > 4<<10 {
 		writeError(w, http.StatusBadRequest, v1alpha1.CodeInvalid, "the body is no TokenRequest")
 		return
 	}
-	if err := request.Check(); err != nil {
+	request, err := v1alpha1.ParseTokenRequest(body)
+	if err == nil {
+		err = request.Check()
+	}
+	if err != nil {
 		writeError(w, http.StatusBadRequest, v1alpha1.CodeInvalid, err.Error())
 		return
 	}
@@ -199,8 +255,9 @@ func (g *Gateway) issue(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(answer)
 }
 
-func (g *Gateway) model(w http.ResponseWriter, r *http.Request) {
-	bot, err := g.tokens.verify(bearer(r))
+func (g *Gateway) model(w http.ResponseWriter, r *http.Request, path string) {
+	// The order of refusals is MOD-7's.
+	bot, err := g.tokens.verify(v1alpha1.BearerToken(r.Header.Get(v1alpha1.HeaderAuthorization)))
 	if err != nil {
 		g.mu.Lock()
 		g.refused++
@@ -208,13 +265,17 @@ func (g *Gateway) model(w http.ResponseWriter, r *http.Request) {
 		writeProvider(w, http.StatusUnauthorized, v1alpha1.ErrorAuthentication, "the model token is missing, invalid or expired")
 		return
 	}
-	if r.Method != http.MethodPost || !slices.Contains(v1alpha1.ModelPaths, r.URL.Path) {
+	if r.Method != http.MethodPost || !slices.Contains(v1alpha1.ModelPaths, path) {
 		writeProvider(w, http.StatusNotFound, v1alpha1.ErrorNotFound, "the gateway serves no such call")
 		return
 	}
 	if !g.allow(g.bots, bot.UID, g.cfg.BotBurst, g.cfg.BotEvery) {
 		w.Header().Set(v1alpha1.HeaderRetryAfter, strconv.Itoa(retryAfter(g.cfg.BotEvery)))
 		writeProvider(w, http.StatusTooManyRequests, v1alpha1.ErrorRateLimit, "the bot's limit is reached")
+		return
+	}
+	if r.ContentLength > v1alpha1.MaxRequestBody {
+		writeProvider(w, http.StatusRequestEntityTooLarge, v1alpha1.ErrorRequestTooLarge, "the body is above 32 MiB")
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, v1alpha1.MaxRequestBody+1))
@@ -231,7 +292,7 @@ func (g *Gateway) model(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.Unmarshal(body, &named)
 	g.mu.Lock()
-	g.requests = append(g.requests, Request{Bot: bot, Path: r.URL.Path})
+	g.requests = append(g.requests, Request{Bot: bot, Path: path})
 	g.mu.Unlock()
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.ContentLength = int64(len(body))
@@ -241,10 +302,12 @@ func (g *Gateway) model(w http.ResponseWriter, r *http.Request) {
 
 var errRedirect = errors.New("the upstream answered a redirect")
 
-// rewrite forwards a call with none of its headers but ForwardedHeaders, and the provider's key (MOD-2).
+// rewrite forwards a call with none of its headers but ForwardedHeaders, and the provider's key, at
+// its path below the upstream's (MOD-2).
 func (g *Gateway) rewrite(p *httputil.ProxyRequest) {
+	path, _ := strings.CutPrefix(p.In.URL.Path, g.cfg.BasePath)
 	p.SetURL(g.cfg.Upstream)
-	p.Out.URL.Path, p.Out.URL.RawPath = joinPath(g.cfg.Upstream.Path, p.In.URL.Path), ""
+	p.Out.URL.Path, p.Out.URL.RawPath = strings.TrimRight(g.cfg.Upstream.Path, "/")+path, ""
 	p.Out.Host = g.cfg.Upstream.Host
 	header := http.Header{}
 	for _, name := range v1alpha1.ForwardedHeaders {
@@ -256,7 +319,8 @@ func (g *Gateway) rewrite(p *httputil.ProxyRequest) {
 	p.Out.Header = header
 }
 
-// answered drops the upstream's cookies, and records the call's usage as its body passes (MOD-2, USE-1).
+// answered refuses a redirect, drops the upstream's cookies, and records the call's usage as its body
+// passes (MOD-2, MOD-5, USE-1).
 func (g *Gateway) answered(response *http.Response) error {
 	if response.StatusCode >= 300 && response.StatusCode < 400 {
 		// A redirect is neither followed nor passed on (MOD-5).
@@ -267,12 +331,13 @@ func (g *Gateway) answered(response *http.Response) error {
 	if c == nil {
 		return nil
 	}
+	status := response.StatusCode
 	record := func(u counted) {
 		g.mu.Lock()
 		defer g.mu.Unlock()
 		g.usage = append(g.usage, Usage{
-			Bot: c.bot, Model: c.model, Status: response.StatusCode,
-			InputTokens: u.input, OutputTokens: u.output,
+			Bot: c.bot, Model: c.model, Status: status,
+			InputTokens: u.input, OutputTokens: u.output, CacheCreationInputTokens: u.cacheCreation, CacheReadInputTokens: u.cacheRead,
 		})
 	}
 	response.Body = &metered{body: response.Body, stream: isStream(response), done: record}
@@ -292,29 +357,6 @@ func (g *Gateway) allow(limiters map[string]*rate.Limiter, key string, burst int
 
 func retryAfter(every time.Duration) int {
 	return max(1, int((every+time.Second-1)/time.Second))
-}
-
-func joinPath(base, path string) string {
-	if base == "" || base == "/" {
-		return path
-	}
-	return fmt.Sprintf("%s%s", trimSlash(base), path)
-}
-
-func trimSlash(s string) string {
-	for len(s) > 0 && s[len(s)-1] == '/' {
-		s = s[:len(s)-1]
-	}
-	return s
-}
-
-func bearer(r *http.Request) string {
-	value := r.Header.Get(v1alpha1.HeaderAuthorization)
-	const prefix = "Bearer "
-	if len(value) <= len(prefix) || value[:len(prefix)] != prefix {
-		return ""
-	}
-	return value[len(prefix):]
 }
 
 func writeError(w http.ResponseWriter, status int, code v1alpha1.Code, description string) {

@@ -58,7 +58,7 @@ type model struct {
 // call (MODEL-1). A call that fails fails its task.
 func (a *Adapter) WithModel(readFile func(path string) ([]byte, error), client *http.Client) *Adapter {
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: 30 * time.Second}
 	}
 	a.model = &model{readFile: readFile, client: client}
 	return a
@@ -208,11 +208,11 @@ func (a *Adapter) postTask(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	text := strings.Join(texts, "\n")
 	if a.model != nil && text != HoldText {
-		if err := a.model.call(s.spec.Model); err != nil {
-			a.add(s, v1alpha1.Event{Task: task.ID, Type: v1alpha1.EventTaskDone, Outcome: v1alpha1.OutcomeFailed})
-			w.WriteHeader(http.StatusAccepted)
-			return
-		}
+		// The task runs while its model call is made, outside the lock, as a harness's turn does.
+		s.running = task.ID
+		go a.callModel(s, task.ID, text)
+		w.WriteHeader(http.StatusAccepted)
+		return
 	}
 	a.add(s, v1alpha1.Event{Task: task.ID, Type: v1alpha1.EventMessage, Text: text})
 	if text == HoldText {
@@ -221,6 +221,24 @@ func (a *Adapter) postTask(w http.ResponseWriter, r *http.Request, id string) {
 		a.add(s, v1alpha1.Event{Task: task.ID, Type: v1alpha1.EventTaskDone, Outcome: v1alpha1.OutcomeCompleted})
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// callModel makes task's model call, then ends the task, unless it was stopped or its session ended
+// meanwhile.
+func (a *Adapter) callModel(s *session, task, text string) {
+	err := a.model.call(s.spec.Model)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.session != s || s.running != task {
+		return
+	}
+	s.running = ""
+	if err != nil {
+		a.add(s, v1alpha1.Event{Task: task, Type: v1alpha1.EventTaskDone, Outcome: v1alpha1.OutcomeFailed})
+		return
+	}
+	a.add(s, v1alpha1.Event{Task: task, Type: v1alpha1.EventMessage, Text: text})
+	a.add(s, v1alpha1.Event{Task: task, Type: v1alpha1.EventTaskDone, Outcome: v1alpha1.OutcomeCompleted})
 }
 
 func (a *Adapter) stopTask(w http.ResponseWriter, id, task string) {

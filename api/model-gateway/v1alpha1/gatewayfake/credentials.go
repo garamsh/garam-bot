@@ -58,10 +58,14 @@ func (c *Credentials) Verify(credential string, now time.Time) (string, error) {
 	if err := parsed.Claims(&c.Key.PublicKey, &claims); err != nil {
 		return "", errors.New("the credential does not verify")
 	}
-	if err := claims.ValidateWithLeeway(jwt.Expected{AnyAudience: jwt.Audience{v1alpha1.Audience}, Time: now}, 0); err != nil {
-		return "", errors.New("the credential has expired or names another audience")
+	// iat and nbf are read with CredentialLeeway, and exp with none (ISS-1).
+	if err := claims.ValidateWithLeeway(jwt.Expected{AnyAudience: jwt.Audience{v1alpha1.Audience}, Time: now}, v1alpha1.CredentialLeeway); err != nil {
+		return "", errors.New("the credential is not yet valid, has expired or names another audience")
 	}
-	if claims.IssuedAt == nil || claims.Expiry == nil || claims.Expiry.Time().Sub(claims.IssuedAt.Time()) > v1alpha1.MaxTokenLife {
+	if claims.IssuedAt == nil || claims.Expiry == nil || !now.Before(claims.Expiry.Time()) {
+		return "", errors.New("the credential carries no iat, or has expired")
+	}
+	if claims.Expiry.Time().Sub(claims.IssuedAt.Time()) > v1alpha1.MaxTokenLife {
 		return "", errors.New("the credential lives past an hour")
 	}
 	return claims.Subject, nil

@@ -21,7 +21,7 @@ The workspace (`garam-bot workspace`) is the data plane and owns the untrusted-c
 
 The workspace's gRPC listener is unauthenticated in this phase, so it serves loopback binds only: an unauthenticated gRPC listener carrying Exec is a remote shell into the workspace, and a non-loopback addr fails startup. The operations (`garam-bot workspace read|write|list|exec`) and the MCP server (`garam-bot workspace mcp`) reach it only through that listener (ADR 0027, ADR 0028).
 
-The in-house agent, its gateway and its tool client are removed (ADR 0040); the model, tool and channel credentials they held have no holder in this repository. Where a bot's credentials live is the declaration spec's and the connector's to state (ADR 0037, ADR 0042).
+The in-house agent, its gateway and its tool client are removed (ADR 0040); the model, tool and channel credentials they held have no holder in this repository. The organization's provider key is to be held by interface 5's model gateway at the place, which is not built yet (ADR 0044). Where a bot's credentials live is the declaration spec's and the connector's to state (ADR 0037, ADR 0042).
 
 ## Rejected alternatives
 

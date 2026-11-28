@@ -1,4 +1,4 @@
-.PHONY: lint format format-fix test test-privileged test-podworkspace test-claude-code build build-images toolchain-image proto generate ci hooks conformance-bot-token conformance-workspace-access conformance-model-gateway
+.PHONY: lint format format-fix test test-privileged test-podworkspace test-claude-code build build-images toolchain-image proto generate ci hooks conformance-bot-token conformance-workspace-access conformance-model-gateway conformance-model-gateway-place conformance-model-gateway-model
 
 # The toolchain floor every go command below runs under: `go install tool@version`
 # and `go run tool@version` take the toolchain from the tool's own `go.mod` rather
@@ -415,24 +415,30 @@ conformance-workspace-access:
 
 # Interface 5's server suite against gatewayfake, its reference gateway
 # (api/model-gateway/v1alpha1/conformance.md), served and counted as
-# interface 7's is above.
+# interface 7's is above. It runs once per profile (PRO-1, PRO-2): the place
+# profile with the gateway's base URL below a path of its own, and the model
+# profile at the root (T-2).
 MODEL_GATEWAY_REFERENCE = $(CURDIR)/.cache/model-gateway-reference
+model_gateway_base_place = /gateway
+model_gateway_base_model =
 
-conformance-model-gateway:
+conformance-model-gateway: conformance-model-gateway-place conformance-model-gateway-model
+
+conformance-model-gateway-place conformance-model-gateway-model: conformance-model-gateway-%:
 	cd api && go build -o "$(MODEL_GATEWAY_REFERENCE)" ./model-gateway/v1alpha1/gatewayfake/cmd/model-gateway-reference
 	@dir=$$(mktemp -d); status=0; \
-	"$(MODEL_GATEWAY_REFERENCE)" --dir "$$dir" serve >"$$dir/ready" 2>"$$dir/server.log" & pid=$$!; \
+	"$(MODEL_GATEWAY_REFERENCE)" --dir "$$dir" serve --base-path "$(model_gateway_base_$*)" >"$$dir/ready" 2>"$$dir/server.log" & pid=$$!; \
 	trap 'kill $$pid 2>/dev/null; rm -r -- "$${dir:?}"' EXIT; \
 	for _ in $$(seq 100); do [ -s "$$dir/ready" ] && break; sleep 0.1; done; \
 	[ -s "$$dir/ready" ] || { cat "$$dir/server.log" >&2; exit 1; }; \
 	cd api || exit 1; \
-	CONFORMANCE_BASE_URL="$$(cat "$$dir/url")" CONFORMANCE_TRUST_FILE="$$dir/ca.pem" \
+	CONFORMANCE_PROFILE=$* CONFORMANCE_BASE_URL="$$(cat "$$dir/url")" CONFORMANCE_TRUST_FILE="$$dir/ca.pem" \
 	CONFORMANCE_FIXTURE="$(MODEL_GATEWAY_REFERENCE) --dir $$dir" \
 		go test -tags=conformance ./model-gateway/v1alpha1/conformance/server/ -v -count=1 >"$$dir/log" 2>&1 || status=$$?; \
 	cat "$$dir/log"; \
 	passed=$$(grep -c '^    --- PASS' "$$dir/log"); \
-	echo "conformance-model-gateway: conformance.md's server suite against gatewayfake:" \
-		"$$passed passed, $$(grep -c '^    --- FAIL' "$$dir/log") failed"; \
+	echo "conformance-model-gateway: conformance.md's server suite against gatewayfake, profile $*, base path '$(model_gateway_base_$*)':" \
+		"$$passed passed, $$(grep -c '^    --- FAIL' "$$dir/log") failed, $$(grep -c '^    --- SKIP' "$$dir/log") skipped"; \
 	test "$$passed" -gt 0 || exit 1; \
 	exit $$status
 
