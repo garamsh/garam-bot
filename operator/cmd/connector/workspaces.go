@@ -6,13 +6,17 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
@@ -36,6 +40,8 @@ type workspaceOptions struct {
 	naruToolProxyURL  string
 	naruEgress        string
 	maxDials          int
+	// given are the workspace flags the command line sets, --workspace-namespace aside, read by visit.
+	given []string
 }
 
 // stringList is a flag given once per value.
@@ -67,11 +73,16 @@ func (o *workspaceOptions) register(fs *flag.FlagSet) {
 	fs.IntVar(&o.maxDials, "max-dials", workspaceaccess.DefaultMaxDials, "The most dials open in all (DIAL-3).")
 }
 
-// set reports whether any option but the defaults is given.
-func (o workspaceOptions) set() bool {
-	return o.namespace != "" || len(o.agentImages) > 0 || o.helperImage != "" || o.podModelURL != "" ||
-		o.podToolProxyURL != "" || o.podEgress != "" || o.naruModelURL != "" || o.naruToolProxyURL != "" ||
-		o.naruEgress != ""
+// visit records the workspace flags fs's command line set, after fs is parsed, so a flag given its
+// default value is seen as given too.
+func (o *workspaceOptions) visit(fs *flag.FlagSet) {
+	workspaceFlags := flag.NewFlagSet("workspaces", flag.ContinueOnError)
+	(&workspaceOptions{}).register(workspaceFlags)
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name != "workspace-namespace" && workspaceFlags.Lookup(f.Name) != nil {
+			o.given = append(o.given, "--"+f.Name)
+		}
+	})
 }
 
 // workspaceEnv is what interface 7 is built from beside its options.
@@ -95,8 +106,8 @@ type workspaceEnv struct {
 // is refused, so the connector does not start on one.
 func workspaceAccess(ctx context.Context, o workspaceOptions, env workspaceEnv) (workspaceaccess.Service, error) {
 	if o.namespace == "" {
-		if o.set() {
-			return nil, errors.New("a workspace option is set without --workspace-namespace")
+		if len(o.given) > 0 {
+			return nil, fmt.Errorf("%s is set without --workspace-namespace", strings.Join(o.given, ", "))
 		}
 		return nil, nil
 	}
@@ -153,20 +164,65 @@ func workspaceAccess(ctx context.Context, o workspaceOptions, env workspaceEnv) 
 	})
 }
 
+// The API server budget of interface 7's clients. Its rechecks read every open dial's Pod and
+// workspace every 2 seconds, which client-go's default of 5 a second would queue behind; and a read
+// stuck on a half-open connection ends at readTimeout rather than holding its caller.
+const (
+	workspaceQPS   = 50
+	workspaceBurst = 100
+	readTimeout    = 10 * time.Second
+)
+
+// workspaceClients are interface 7's rest config, for the providers, whose dials stream and so take no
+// request timeout, and a clientset of it whose every request ends at readTimeout, for the Pods and the
+// workspace namespace's ServiceAccount.
+func workspaceClients(base *rest.Config) (*rest.Config, kubernetes.Interface, error) {
+	streaming := rest.CopyConfig(base)
+	streaming.QPS, streaming.Burst = workspaceQPS, workspaceBurst
+	reads := rest.CopyConfig(streaming)
+	reads.Timeout = readTimeout
+	kube, err := kubernetes.NewForConfig(reads)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build interface 7's Kubernetes client: %w", err)
+	}
+	return streaming, kube, nil
+}
+
+// unmountBackoff is how unmountDefaultToken waits for the default ServiceAccount, which the
+// ServiceAccount controller creates after the Namespace, and through a conflicting update.
+var unmountBackoff = wait.Backoff{
+	Duration: 100 * time.Millisecond, Factor: 2, Cap: 5 * time.Second, Steps: math.MaxInt32,
+}
+
 // unmountDefaultToken sets automountServiceAccountToken false on the workspace namespace's default
-// ServiceAccount, before any workspace is served (ADR 0099 decision 4).
+// ServiceAccount, before any workspace is served (ADR 0099 decision 4). It waits, until ctx ends,
+// while that ServiceAccount is not made yet or another update conflicts with its own.
 func unmountDefaultToken(ctx context.Context, kube kubernetes.Interface, namespace string) error {
 	accounts := kube.CoreV1().ServiceAccounts(namespace)
-	account, err := accounts.Get(ctx, "default", metav1.GetOptions{})
+	var last error
+	err := wait.ExponentialBackoffWithContext(ctx, unmountBackoff, func(ctx context.Context) (bool, error) {
+		account, err := accounts.Get(ctx, "default", metav1.GetOptions{})
+		if err == nil {
+			if account.AutomountServiceAccountToken != nil && !*account.AutomountServiceAccountToken {
+				return true, nil
+			}
+			off := false
+			account.AutomountServiceAccountToken = &off
+			_, err = accounts.Update(ctx, account, metav1.UpdateOptions{})
+		}
+		switch {
+		case err == nil:
+			return true, nil
+		case apierrors.IsNotFound(err), apierrors.IsConflict(err):
+			last = err
+			return false, nil
+		}
+		return false, err
+	})
 	if err != nil {
-		return fmt.Errorf("read the default ServiceAccount of %s: %w", namespace, err)
-	}
-	if account.AutomountServiceAccountToken != nil && !*account.AutomountServiceAccountToken {
-		return nil
-	}
-	off := false
-	account.AutomountServiceAccountToken = &off
-	if _, err := accounts.Update(ctx, account, metav1.UpdateOptions{}); err != nil {
+		if last != nil && ctx.Err() != nil {
+			err = last
+		}
 		return fmt.Errorf("stop the default ServiceAccount of %s mounting its token: %w", namespace, err)
 	}
 	return nil

@@ -150,12 +150,12 @@ These follow [ADR 0099](adr/0099-serve-every-bots-process-its-workspace-from-the
 - **The credential and the key.**
   - **The credential** is reused while it lives, and one issued before the connector started is refused.
   - **The instance** is the Pod's UID with its `runtime` container's `containerID` while that container runs. A Pod whose `runtime` container is not running is refused.
-  - **The binding cache.** A credential's binding is kept 10 seconds at most, and read again live before `invalid_key` is answered.
+  - **The binding cache.** A credential's binding is kept 10 seconds at most. It is read again live before `invalid_key` is answered, and before any refusal where the cached read disagrees with the credential, as it does for a Pod made again under its name.
   - **The pin.** The first key whose DPoP proof verifies for an instance is pinned. Another key for that instance is answered 401 `invalid_key`. Pins are held in memory alone, and a gone Pod's pins, or a restarted container's, are dropped when it is read again every 2 seconds.
 - **What a process may do:** acquire its own attachment's workspace, write up to 16 files at once under `/run/garam-bot/`, dial port 7700, and obtain the session's tokens. No exec, no file read, no delete.
 - **The workspace namespace, `--workspace-namespace`,** holds every workspace. It is never a watched namespace or the release namespace.
   - **The chart renders it,** labelled for its release and `pod-security.kubernetes.io/enforce: restricted`, so Helm refuses a second release that names it.
-  - **The default ServiceAccount.** The connector sets `automountServiceAccountToken: false` on its `default` ServiceAccount at start.
+  - **The default ServiceAccount.** The connector sets `automountServiceAccountToken: false` on its `default` ServiceAccount at start, before it serves any workspace. It waits while that ServiceAccount is not made yet, and through a conflicting update.
   - **The Pod provider**, moved to garam-bot's `pkg/podworkspace`, runs there with the rights garam-bot `interfaces.md` lists. Its `Capabilities.Egress` is `workspaces.pod.enforcesNetworkPolicy`, true by default, which needs a network plugin that enforces NetworkPolicy egress.
   - **The naru Machine provider** stays as it runs. A Machine's port is guarded by the adapter's token alone, since naru-proxy serves it to whoever reaches it. Its file write does not yet promise to follow no link, as interface 7's FILE-1 requires, so a link planted in a Machine can redirect a token file within that Machine alone, until naru#455 (ADR 0099's errata).
   - **Choosing a provider.** A WorkspaceClass's `spec.provider`, `pod` or `naru`, picks one.
@@ -168,10 +168,11 @@ These follow [ADR 0099](adr/0099-serve-every-bots-process-its-workspace-from-the
 - **Images.** The workspace image is `--agent-image <harness>=<ref>` by digest, and the Pod provider's file helper is `--workspace-helper-image`.
 - **Session tokens.** Before G3 and G6 there is no production issuer, so the call answers 503 `waiting_for_gateway`. The stub issuer is compiled only under the build tag `e2e`, into the end-to-end suite's own connector image (garam-bot#1252).
 - **Limits.**
-  - **Per Bot.** Each Bot has a bucket of 20 calls that reach a provider or an issuer, refilled one every 3 seconds, answered 429 past it to that Bot alone. A read of the workspace takes nothing, and a renewal is two calls.
+  - **Per Bot.** Each Bot has a bucket of 20 calls that reach a provider or an issuer, refilled one every 3 seconds, answered 429 past it to that Bot alone. It is taken before the call's first provider call, so a call past it asks no provider. A read of the workspace takes nothing, and a renewal is two calls.
   - **Per instance.** Each instance has a bucket of 30 requests, refilled one a second, taken right after the credential verifies, before any Pod is read.
-  - **Dials.** At most 4 are open per instance, at most `--max-dials` (256) in all, and one idle for 120 seconds is closed. An instance's dials close when its Pod or container ends, its Bot goes, or its workspace stops, each read again every 2 seconds.
+  - **Dials.** At most 4 are open per instance, at most `--max-dials` (256) in all, and one idle for 120 seconds is closed. An instance's dials close when its Pod or container ends, its Bot goes, or its workspace stops, each read again every 2 seconds. A dial waits 30 seconds at most for its provider to connect.
 - **A restart mid-`Dial`** breaks the connection. The process dials again once its credential is replaced, within 8 minutes, and the adapter keeps its session and events.
+- **The rechecks.** The idle close reads nothing, and runs apart from the reads. The dial and pin rechecks each end at their 2-second period. Each Bot, Pod and workspace is read once a pass, and a workspace read still running past its pass is not started again. Interface 7's clients have a budget of 50 requests a second, bursting to 100, and every Pod and ServiceAccount request ends at 10 seconds.
 - **What is logged.** Each call, with the Bot, the call and the outcome. Never a credential, a proof, a token, a file's content or the bytes of a dial.
 
 ### Rights in the user's cluster

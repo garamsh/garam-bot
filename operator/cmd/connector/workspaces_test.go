@@ -2,17 +2,23 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"net/netip"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
+	k8stesting "k8s.io/client-go/testing"
 
 	workspace "github.com/garamsh/garam-bot/api/workspace/v1alpha1"
 	"github.com/garamsh/garam-bot/operator/internal/workspaceaccess"
@@ -25,6 +31,8 @@ const (
 	watchedTeam = "game-team"
 	workspaces  = "garam-workspaces"
 	gatewayURL  = "https://gateway.invalid"
+	// defaultAccount is the ServiceAccount every namespace is given.
+	defaultAccount = "default"
 )
 
 func TestAgentImages_TakesEachHarnessOnceAndEachImageByDigest(t *testing.T) {
@@ -111,7 +119,7 @@ func TestWorkspaceAccess_IsOffWithoutTheNamespaceAndRefusesAPartialConfiguration
 		in := []string{workspaces, namespace, watchedTeam}
 		all := make([]runtime.Object, 0, len(in))
 		for _, in := range in {
-			all = append(all, &corev1.ServiceAccount{Namespace: in, Name: "default"})
+			all = append(all, &corev1.ServiceAccount{Namespace: in, Name: defaultAccount})
 		}
 		return kubefake.NewClientset(all...)
 	}
@@ -120,16 +128,24 @@ func TestWorkspaceAccess_IsOffWithoutTheNamespaceAndRefusesAPartialConfiguration
 	require.NoError(t, err)
 	assert.Nil(t, off)
 	// Control: the complete configuration is served.
-	env.kube = accounts()
+	kube := accounts()
+	env.kube = kube
 	served, err := workspaceAccess(context.Background(), complete, env)
 	require.NoError(t, err)
 	assert.NotNil(t, served)
+	account, err := kube.CoreV1().ServiceAccounts(workspaces).Get(
+		context.Background(), defaultAccount, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, account.AutomountServiceAccountToken, "the ServiceAccount is changed before a service is served")
+	assert.False(t, *account.AutomountServiceAccountToken)
 
 	tests := []struct {
 		name   string
 		change func(*workspaceOptions)
 	}{
-		{"an option without the namespace", func(o *workspaceOptions) { *o = workspaceOptions{podModelURL: gatewayURL} }},
+		{"an option without the namespace", func(o *workspaceOptions) {
+			*o = workspaceOptions{given: []string{"--max-dials"}}
+		}},
 		{"the release namespace", func(o *workspaceOptions) { o.namespace = namespace }},
 		{"a watched namespace", func(o *workspaceOptions) { o.namespace = watchedTeam }},
 		{"no helper image", func(o *workspaceOptions) { o.helperImage = "" }},
@@ -169,13 +185,59 @@ func (placeStub) Class(context.Context, string, string) (workspaceaccess.Class, 
 
 func TestUnmountDefaultToken_StopsTheDefaultServiceAccountMountingItsToken(t *testing.T) {
 	ctx := context.Background()
-	kube := kubefake.NewClientset(&corev1.ServiceAccount{Namespace: workspaces, Name: "default"})
+	kube := kubefake.NewClientset(&corev1.ServiceAccount{Namespace: workspaces, Name: defaultAccount})
 
 	require.NoError(t, unmountDefaultToken(ctx, kube, workspaces))
 
-	read, err := kube.CoreV1().ServiceAccounts(workspaces).Get(ctx, "default", metav1.GetOptions{})
+	read, err := kube.CoreV1().ServiceAccounts(workspaces).Get(ctx, defaultAccount, metav1.GetOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, read.AutomountServiceAccountToken)
 	assert.False(t, *read.AutomountServiceAccountToken)
-	assert.Error(t, unmountDefaultToken(ctx, kube, "elsewhere"), "a namespace with no default ServiceAccount")
+	waiting, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	assert.Error(t, unmountDefaultToken(waiting, kube, "elsewhere"), "a default ServiceAccount never made")
+}
+
+func TestUnmountDefaultToken_WaitsForTheServiceAccountAndThroughAConflict(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	kube := kubefake.NewClientset()
+	conflicts := 1
+	kube.PrependReactor("update", "serviceaccounts", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if conflicts == 0 {
+			return false, nil, nil
+		}
+		conflicts--
+		return true, nil, apierrors.NewConflict(corev1.Resource("serviceaccounts"), "default", errors.New("changed"))
+	})
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		_, _ = kube.CoreV1().ServiceAccounts(workspaces).Create(context.Background(),
+			&corev1.ServiceAccount{Namespace: workspaces, Name: defaultAccount}, metav1.CreateOptions{})
+	}()
+
+	require.NoError(t, unmountDefaultToken(ctx, kube, workspaces))
+
+	read, err := kube.CoreV1().ServiceAccounts(workspaces).Get(ctx, defaultAccount, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, read.AutomountServiceAccountToken)
+	assert.False(t, *read.AutomountServiceAccountToken)
+	assert.Zero(t, conflicts, "the conflict was met")
+}
+
+func TestVisit_SeesEveryWorkspaceFlagGivenDefaultsAmongThem(t *testing.T) {
+	fs := flag.NewFlagSet("connector", flag.ContinueOnError)
+	var o workspaceOptions
+	o.register(fs)
+	fs.String("garam-url", "", "")
+	require.NoError(t, fs.Parse([]string{
+		"--max-dials=" + strconv.Itoa(workspaceaccess.DefaultMaxDials),
+		"--workspace-audience", workspaceaccess.DefaultAudience, "--workspace-namespace", workspaces,
+		"--garam-url", "https://garam.invalid",
+	}))
+
+	o.visit(fs)
+
+	assert.ElementsMatch(t, []string{"--max-dials", "--workspace-audience"}, o.given,
+		"--workspace-namespace is not counted, and another program's flag is not")
 }

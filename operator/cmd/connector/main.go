@@ -97,6 +97,7 @@ func main() {
 	o.naru.register(flag.CommandLine)
 	o.workspaces.register(flag.CommandLine)
 	flag.Parse()
+	o.workspaces.visit(flag.CommandLine)
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -160,9 +161,13 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		return err
 	}
 	release := workspaceaccess.Release{Namespace: o.releaseNamespace, Name: o.releaseName}
+	workspaceRest, workspaceKube, err := workspaceClients(restConfig)
+	if err != nil {
+		return err
+	}
 	env := workspaceEnv{
-		rest: restConfig, kube: kube, release: release, namespaces: namespaces,
-		keys: workspaceKeys{botkube.Keys{Kube: kube}}, pods: workspacekube.Pods{Kube: kube},
+		rest: workspaceRest, kube: workspaceKube, release: release, namespaces: namespaces,
+		keys: workspaceKeys{botkube.Keys{Kube: kube}}, pods: workspacekube.Pods{Kube: workspaceKube},
 		bots: workspacekube.Bots{
 			Reader: objects.Reader(), Claims: objects, Release: o.releaseNamespace + "/" + o.releaseName,
 		},

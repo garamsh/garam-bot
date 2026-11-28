@@ -6,8 +6,10 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,6 +20,12 @@ import (
 // dial opens a dial of main, and answers its status and, where it opened, its connection.
 func (p *process) dial(t *testing.T) (int, net.Conn) {
 	t.Helper()
+	return p.dialWith(t, "")
+}
+
+// dialWith opens a dial whose request carries body.
+func (p *process) dialWith(t *testing.T, body string) (int, net.Conn) {
+	t.Helper()
 	path := mainPath + access.DialSuffix
 	u, err := url.Parse(p.h.server.URL)
 	require.NoError(t, err)
@@ -25,7 +33,7 @@ func (p *process) dial(t *testing.T) (int, net.Conn) {
 	require.True(t, ok)
 	conn, err := tls.Dial("tcp", u.Host, transport.TLSClientConfig)
 	require.NoError(t, err)
-	request, err := http.NewRequest(http.MethodGet, p.h.server.URL+path, http.NoBody)
+	request, err := http.NewRequest(http.MethodGet, p.h.server.URL+path, strings.NewReader(body))
 	require.NoError(t, err)
 	request.Header.Set("Authorization", "Bearer "+p.credential)
 	request.Header.Set(access.HeaderProof, p.proof(http.MethodGet, path))
@@ -99,4 +107,34 @@ func TestDial_HoldsTheServersCapUnderDialsAtOnce(t *testing.T) {
 	assert.Equal(t, maxDials, total, "the server holds its cap and fills it")
 	assert.Equal(t, instances*each-maxDials, refused[http.StatusTooManyRequests]+refused[http.StatusServiceUnavailable],
 		"every other dial is refused as a limit or the cap: %v", refused)
+}
+
+func TestDial_RefusesABody(t *testing.T) {
+	h := newHarness(t, options{})
+	p := h.instance(h.bot())
+	p.running()
+
+	status, _ := p.dialWith(t, `{"port":22}`)
+
+	assert.Equal(t, http.StatusBadRequest, status)
+	control, _ := p.dial(t)
+	assert.Equal(t, http.StatusSwitchingProtocols, control)
+}
+
+func TestDial_GivesBackTheSlotOfAProviderThatDoesNotConnect(t *testing.T) {
+	h := newHarness(t, options{maxDials: 1, dialTimeout: 100 * time.Millisecond})
+	p := h.instance(h.bot())
+	p.running()
+	stuck := make(chan struct{})
+	h.provider.set(func(p *provider) { p.stuckDial = stuck })
+	t.Cleanup(func() { close(stuck) })
+
+	start := time.Now()
+	status, _ := p.dial(t)
+
+	assert.Equal(t, http.StatusServiceUnavailable, status)
+	assert.Less(t, time.Since(start), 5*time.Second, "the dial waited no longer than its connect time")
+	h.provider.set(func(p *provider) { p.stuckDial = nil })
+	again, _ := p.dial(t)
+	assert.Equal(t, http.StatusSwitchingProtocols, again, "the server's one slot was given back")
 }

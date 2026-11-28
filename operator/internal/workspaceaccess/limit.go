@@ -53,6 +53,19 @@ func (l *limits) take(key string) error {
 	return limitedError{what: l.what, wait: wait}
 }
 
+// forgetFull drops every bucket that is full again, which a new one would be too, so the keys of
+// callers that stopped calling are not held for ever.
+func (l *limits) forgetFull() {
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for key, limiter := range l.each {
+		if limiter.TokensAt(now) >= float64(l.burst) {
+			delete(l.each, key)
+		}
+	}
+}
+
 // forget drops key's bucket, for a Bot or an instance that is gone.
 func (l *limits) forget(key string) {
 	l.mu.Lock()

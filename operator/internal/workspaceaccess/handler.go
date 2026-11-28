@@ -134,8 +134,19 @@ func (s *service) declared(ctx context.Context, bot Bot) (Declared, error) {
 }
 
 // instanceOf answers the running Pod the credential is bound to, which the Bot's StatefulSet controls,
-// read again from the API server where again is set (CRED-2, BOT-1).
+// read again from the API server where again is set (CRED-2, BOT-1). A cached read that disagrees
+// with the credential may be another credential's, of a Pod made again under its name or read before
+// its container ran, so it is read again before the credential is refused.
 func (s *service) instanceOf(ctx context.Context, held bound, declared Declared, again bool) (Pod, error) {
+	pod, err := s.boundPod(ctx, held, declared, again)
+	if !again && (errors.Is(err, errCredential) || errors.Is(err, errUnknownBot)) {
+		return s.boundPod(ctx, held, declared, true)
+	}
+	return pod, err
+}
+
+// boundPod checks the Pod named by held against it and the Bot declared.
+func (s *service) boundPod(ctx context.Context, held bound, declared Declared, again bool) (Pod, error) {
 	pod, exists, err := s.bindings.pod(ctx, held.bot.Namespace, held.pod.Name, again)
 	switch {
 	case err != nil:

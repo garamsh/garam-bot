@@ -103,14 +103,22 @@ func (p *proofs) check(r *http.Request, credential string) (string, error) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if at, seen := p.seen[claims.JTI]; seen && now.Sub(at) <= access.ProofMemory {
+		return "", errors.New("its jti was seen")
+	}
+	p.seen[claims.JTI] = now
+	return base64.RawURLEncoding.EncodeToString(sum), nil
+}
+
+// forget drops the jtis seen longer ago than a proof is remembered, on Run's tick rather than per
+// request.
+func (p *proofs) forget() {
+	now := p.now()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	for jti, at := range p.seen {
 		if now.Sub(at) > access.ProofMemory {
 			delete(p.seen, jti)
 		}
 	}
-	if _, seen := p.seen[claims.JTI]; seen {
-		return "", errors.New("its jti was seen")
-	}
-	p.seen[claims.JTI] = now
-	return base64.RawURLEncoding.EncodeToString(sum), nil
 }

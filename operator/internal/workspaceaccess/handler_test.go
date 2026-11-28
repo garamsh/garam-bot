@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -141,4 +142,83 @@ func TestHandler_ReadsABoundPodOnceWhileItsBindingIsFresh(t *testing.T) {
 	defer h.api.mu.Unlock()
 	assert.Equal(t, before, h.api.read)
 	assert.Positive(t, before, "the first call read the Pod") // control
+}
+
+func TestHandler_ReadsAPodAgainWhereItsCachedReadDisagreesWithTheCredential(t *testing.T) {
+	t.Run("a Pod made again under its name", func(t *testing.T) {
+		h := newHarness(t, options{bindingFresh: 10 * time.Second})
+		declared := h.bot()
+		earlier := h.instance(declared)
+		require.Equal(t, http.StatusOK, earlier.acquire().status) // the earlier Pod is cached
+		made := *earlier
+		made.pod.UID = "pod-made-again"
+		made.key = h.key()
+		made.credential = h.credential(watched, earlier.podName, made.pod.UID)
+		h.api.setPod(earlier.podName, made.pod)
+
+		assert.Equal(t, http.StatusOK, made.acquire().status, "the new Pod's credential is served at once")
+		assert.Equal(t, access.CodeInvalidCredential, earlier.acquire().code, "control: the earlier Pod's is not")
+	})
+	t.Run("a runtime container read before it ran", func(t *testing.T) {
+		h := newHarness(t, options{bindingFresh: 10 * time.Second})
+		p := h.instance(h.bot())
+		starting := p.pod
+		starting.Container = ""
+		h.api.setPod(p.podName, starting)
+		require.Equal(t, access.CodeInvalidCredential, p.acquire().code, "control: a container not running is refused")
+		h.api.setPod(p.podName, p.pod)
+
+		assert.Equal(t, http.StatusOK, p.acquire().status, "the running container is served at once")
+	})
+}
+
+func TestHandler_RefusesABotOfAWatchedNamespaceNotClaimedForTheRelease(t *testing.T) {
+	h := newHarness(t, options{})
+	p := h.instance(h.bot())
+	require.Equal(t, http.StatusOK, p.acquire().status) // control
+	h.namespaces.set(func(n *namespaces) { n.unclaimed[watched] = true })
+
+	refused := p.acquire()
+
+	assert.Equal(t, http.StatusForbidden, refused.status)
+	assert.Equal(t, access.CodeUnknownBot, refused.code)
+}
+
+func TestHandler_RefusesABotOfANamespaceNotWatched(t *testing.T) {
+	h := newHarness(t, options{})
+	// The namespace is claimed and holds the Bot and its Pod; only the watched namespaces leave it out.
+	p := h.instanceIn("unwatched", h.botIn("unwatched"))
+	control := h.instance(h.bot())
+
+	refused := p.acquire()
+
+	assert.Equal(t, http.StatusForbidden, refused.status)
+	assert.Equal(t, access.CodeUnknownBot, refused.code)
+	assert.Equal(t, http.StatusOK, control.acquire().status)
+}
+
+func TestHandler_RefusesACredentialWhoseBindingNamesAnotherServiceAccountThanItsSubject(t *testing.T) {
+	tests := []struct {
+		name   string
+		change claimChange
+	}{
+		{"another namespace", func(_ *jwt.Claims, bound map[string]any) { bound["namespace"] = "other-team" }},
+		{"another ServiceAccount", func(_ *jwt.Claims, bound map[string]any) {
+			bound["serviceaccount"] = map[string]string{nameClaim: "rin"}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t, options{})
+			declared := h.bot()
+			p := h.instanceIn(watched, declared, tt.change)
+			control := h.instance(declared)
+
+			refused := p.acquire()
+
+			assert.Equal(t, http.StatusUnauthorized, refused.status)
+			assert.Equal(t, access.CodeInvalidCredential, refused.code)
+			assert.Equal(t, http.StatusOK, control.acquire().status)
+		})
+	}
 }

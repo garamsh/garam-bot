@@ -30,6 +30,7 @@ const (
 	botUID    = "bot-uid"
 	runtimeID = "containerd://runtime"
 	standard  = "standard"
+	rin       = "rin"
 )
 
 // controller is the owner reference of mira's controller, of the kind.
@@ -167,7 +168,7 @@ func TestBots_ReadsTheBotsAttachmentsAndToolsAndRefusesWhatThisReleaseDoesNotSer
 	assert.Equal(t, workspaceaccess.Attachment{Class: standard}, declared.Attachments["main"])
 	assert.NotEmpty(t, declared.Attachments["scratch"].Unsupported, "the Session lifetime")
 	assert.NotEmpty(t, declared.Attachments["shared"].Unsupported, "a ref")
-	_, ok, err = bots.Bot(context.Background(), workspaceaccess.Bot{Namespace: team, Name: "rin"})
+	_, ok, err = bots.Bot(context.Background(), workspaceaccess.Bot{Namespace: team, Name: rin})
 	require.NoError(t, err)
 	assert.False(t, ok, "a Bot that does not exist")
 }
@@ -191,4 +192,20 @@ func TestBots_ReadsAClassInWholeCPUsAndBytesRoundedUp(t *testing.T) {
 	_, ok, err = bots.Class(context.Background(), team, "large")
 	require.NoError(t, err)
 	assert.False(t, ok, "a class that does not exist")
+}
+
+func TestBots_AnswersABotBeingDeletedAsAbsent(t *testing.T) {
+	deleting := &botv1.Bot{
+		Namespace: team, Name: mira, UID: botUID, Finalizers: []string{"bot.garam.sh/test"},
+		DeletionTimestamp: &metav1.Time{Time: metav1.Now().Time},
+	}
+	living := &botv1.Bot{Namespace: team, Name: rin, UID: "rin-uid"}
+	bots := kube.Bots{Reader: reader(t, deleting, living)}
+
+	_, ok, err := bots.Bot(context.Background(), workspaceaccess.Bot{Namespace: team, Name: mira})
+	require.NoError(t, err)
+	assert.False(t, ok)
+	_, ok, err = bots.Bot(context.Background(), workspaceaccess.Bot{Namespace: team, Name: rin})
+	require.NoError(t, err)
+	assert.True(t, ok, "control: a Bot not being deleted is read")
 }

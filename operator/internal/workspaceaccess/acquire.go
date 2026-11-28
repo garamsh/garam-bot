@@ -58,6 +58,10 @@ func (s *service) acquire(w http.ResponseWriter, r *http.Request, c caller) erro
 	if !ok {
 		return fmt.Errorf("%w: the connector has no image for the harness %q", errUnsupported, c.declared.Harness)
 	}
+	// The Bot's limit is taken before the first call that reaches the provider (LIMIT-1).
+	if err := s.botLimits.take(c.declared.UID); err != nil {
+		return err
+	}
 	caps, err := t.place.Provider.Capabilities(ctx)
 	if err != nil {
 		return fmt.Errorf("read the %s provider's capabilities: %w", t.provider, err)
@@ -65,9 +69,6 @@ func (s *service) acquire(w http.ResponseWriter, r *http.Request, c caller) erro
 	spec := specOf(image, t.class, t.place)
 	if caps.Labels {
 		spec.Labels = labelsOf(s.cfg.Release, c.bot, c.declared.UID, c.attachment)
-	}
-	if err := s.botLimits.take(c.declared.UID); err != nil {
-		return err
 	}
 	ws, _, err := t.place.Provider.Create(ctx, t.name, spec)
 	if err != nil {

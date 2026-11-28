@@ -11,10 +11,12 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -39,6 +41,8 @@ const (
 	podProvider = "pod"
 	// mainPath is the Bot's one attachment's workspace.
 	mainPath = access.WorkspacesPath + "main"
+	// nameClaim names an object in a credential's kubernetes.io claim.
+	nameClaim = "name"
 )
 
 // apiServer stands in for the API server: its ServiceAccount issuer's key and the Pods it holds.
@@ -46,8 +50,14 @@ type apiServer struct {
 	key *ecdsa.PrivateKey
 
 	mu   sync.Mutex
-	pods map[string]workspaceaccess.Pod // by name
+	pods map[string]heldPod // by name
 	read int
+}
+
+// heldPod is a Pod and its namespace.
+type heldPod struct {
+	namespace string
+	pod       workspaceaccess.Pod
 }
 
 func (a *apiServer) Keys(context.Context) (workspaceaccess.Issuer, error) {
@@ -59,14 +69,26 @@ func (a *apiServer) Pod(_ context.Context, namespace, name string) (workspaceacc
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.read++
-	pod, ok := a.pods[name]
-	return pod, ok && namespace == watched, nil
+	held, ok := a.pods[name]
+	if !ok || held.namespace != namespace {
+		return workspaceaccess.Pod{}, false, nil
+	}
+	return held.pod, true, nil
 }
 
+// setPod replaces the Pod of the name, in the namespace it is in.
 func (a *apiServer) setPod(name string, pod workspaceaccess.Pod) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.pods[name] = pod
+	held := a.pods[name]
+	held.pod = pod
+	a.pods[name] = held
+}
+
+func (a *apiServer) setPodIn(namespace, name string, pod workspaceaccess.Pod) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.pods[name] = heldPod{namespace: namespace, pod: pod}
 }
 
 func (a *apiServer) endPod(name string) {
@@ -77,12 +99,23 @@ func (a *apiServer) endPod(name string) {
 
 // namespaces stands in for the watched namespaces: their claims, Bots and WorkspaceClasses.
 type namespaces struct {
-	mu   sync.Mutex
-	bots map[workspaceaccess.Bot]workspaceaccess.Declared
+	mu        sync.Mutex
+	bots      map[workspaceaccess.Bot]workspaceaccess.Declared
+	unclaimed map[string]bool
 }
 
+// Served answers every namespace claimed but those the test unclaims, so the watched namespaces alone
+// stand between a caller and an unwatched one.
 func (n *namespaces) Served(_ context.Context, namespace string) (bool, error) {
-	return namespace == watched, nil
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return !n.unclaimed[namespace], nil
+}
+
+func (n *namespaces) set(change func(*namespaces)) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	change(n)
 }
 
 func (n *namespaces) Bot(_ context.Context, b workspaceaccess.Bot) (workspaceaccess.Declared, bool, error) {
@@ -106,6 +139,10 @@ type provider struct {
 	failWith map[string]error // by call
 	failAt   string
 	panicOn  string
+	// calls counts the calls that reach the provider, by method.
+	calls map[string]int
+	// stuck, while set, holds every Get or Dial until it is closed, whatever its context says.
+	stuckGet, stuckDial chan struct{}
 }
 
 // set changes what the provider fails on.
@@ -118,6 +155,7 @@ func (p *provider) set(change func(*provider)) {
 func (p *provider) fail(call string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.calls[call]++
 	if p.panicOn == call {
 		panic("the provider's " + call + " panicked")
 	}
@@ -129,6 +167,57 @@ func (p *provider) Create(ctx context.Context, name workspace.Name, spec workspa
 		return workspace.Workspace{}, false, err
 	}
 	return p.Provider.Create(ctx, name, spec)
+}
+
+// called answers how many calls reached the provider, of every method.
+func (p *provider) called() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	n := 0
+	for _, c := range p.calls {
+		n += c
+	}
+	return n
+}
+
+// gets answers how many Gets reached the provider.
+func (p *provider) gets() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.calls["Get"]
+}
+
+func (p *provider) Capabilities(ctx context.Context) (workspace.Capabilities, error) {
+	if err := p.fail("Capabilities"); err != nil {
+		return workspace.Capabilities{}, err
+	}
+	return p.Provider.Capabilities(ctx)
+}
+
+func (p *provider) Get(ctx context.Context, name workspace.Name) (workspace.Workspace, error) {
+	if err := p.fail("Get"); err != nil {
+		return workspace.Workspace{}, err
+	}
+	p.mu.Lock()
+	stuck := p.stuckGet
+	p.mu.Unlock()
+	if stuck != nil {
+		<-stuck
+	}
+	return p.Provider.Get(ctx, name)
+}
+
+func (p *provider) Dial(ctx context.Context, name workspace.Name, port uint16) (net.Conn, error) {
+	if err := p.fail("Dial"); err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	stuck := p.stuckDial
+	p.mu.Unlock()
+	if stuck != nil {
+		<-stuck
+	}
+	return p.Provider.Dial(ctx, name, port)
 }
 
 func (p *provider) WriteFile(ctx context.Context, name workspace.Name, path string, content []byte) error {
@@ -189,12 +278,19 @@ type harness struct {
 	log        *syncBuffer
 	server     *httptest.Server
 	service    workspaceaccess.Service
+	// offset is how far the service's clock is moved past the wall clock, in nanoseconds.
+	offset atomic.Int64
 }
 
 type options struct {
 	maxDials     int
 	bindingFresh time.Duration
+	dialTimeout  time.Duration
 }
+
+// advance moves the service's clock by d. Proofs are signed by the wall clock, so a test that
+// advances it past the proof window makes no call after.
+func (h *harness) advance(d time.Duration) { h.offset.Add(int64(d)) }
 
 func newHarness(t *testing.T, o options) *harness {
 	t.Helper()
@@ -202,10 +298,11 @@ func newHarness(t *testing.T, o options) *harness {
 	require.NoError(t, err)
 	h := &harness{
 		t:          t,
-		api:        &apiServer{key: key, pods: map[string]workspaceaccess.Pod{}},
-		namespaces: &namespaces{bots: map[workspaceaccess.Bot]workspaceaccess.Declared{}},
+		api:        &apiServer{key: key, pods: map[string]heldPod{}},
+		namespaces: &namespaces{bots: map[workspaceaccess.Bot]workspaceaccess.Declared{}, unclaimed: map[string]bool{}},
 		provider: &provider{
 			Provider: workspacefake.New(workspace.Capabilities{Labels: true}), failWith: map[string]error{},
+			calls: map[string]int{},
 		},
 		issuer: &issuer{},
 		log:    &syncBuffer{},
@@ -224,7 +321,8 @@ func newHarness(t *testing.T, o options) *harness {
 			Provider: h.provider, ModelURL: "https://gateway.invalid/v1", ToolProxyURL: "https://tools.invalid",
 		}},
 		Images: map[string]string{harnessName: image}, Issuer: h.issuer,
-		MaxDials: o.maxDials, BindingFresh: o.bindingFresh, Recheck: 20 * time.Millisecond,
+		MaxDials: o.maxDials, BindingFresh: o.bindingFresh, Recheck: 20 * time.Millisecond, DialTimeout: o.dialTimeout,
+		Now: func() time.Time { return time.Now().Add(time.Duration(h.offset.Load())) },
 		Log: slog.New(slog.NewJSONHandler(h.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	})
 	require.NoError(t, err)
@@ -236,14 +334,16 @@ func newHarness(t *testing.T, o options) *harness {
 	return h
 }
 
-// bot places mira, with the attachment main and the tool github.
-func (h *harness) bot() workspaceaccess.Declared {
+// bot places mira in the watched namespace, with the attachment main and the tool github.
+func (h *harness) bot() workspaceaccess.Declared { return h.botIn(watched) }
+
+func (h *harness) botIn(namespace string) workspaceaccess.Declared {
 	declared := workspaceaccess.Declared{
 		UID: "bot-" + rand.Text(), Harness: harnessName, Tools: []string{"github"},
 		Attachments: map[string]workspaceaccess.Attachment{"main": {Class: "standard"}},
 	}
 	h.namespaces.mu.Lock()
-	h.namespaces.bots[workspaceaccess.Bot{Namespace: watched, Name: mira}] = declared
+	h.namespaces.bots[workspaceaccess.Bot{Namespace: namespace, Name: mira}] = declared
 	h.namespaces.mu.Unlock()
 	return declared
 }
@@ -257,16 +357,28 @@ type process struct {
 	key        *ecdsa.PrivateKey
 }
 
-// instance starts an instance of declared's Bot.
+// instance starts an instance of declared's Bot, in the watched namespace.
 func (h *harness) instance(declared workspaceaccess.Declared) *process {
 	h.t.Helper()
+	return h.instanceIn(watched, declared)
+}
+
+// instanceIn starts an instance of declared's Bot in namespace, its credential's claims changed by
+// change.
+func (h *harness) instanceIn(namespace string, declared workspaceaccess.Declared, change ...claimChange) *process {
+	h.t.Helper()
 	name := "mira-" + strings.ToLower(rand.Text()[:6])
-	pod := workspaceaccess.Pod{UID: "pod-" + rand.Text(), ServiceAccount: mira, BotUID: declared.UID, Container: "containerd://" + rand.Text()}
-	h.api.setPod(name, pod)
+	pod := workspaceaccess.Pod{
+		UID: "pod-" + rand.Text(), ServiceAccount: mira, BotUID: declared.UID, Container: "containerd://" + rand.Text(),
+	}
+	h.api.setPodIn(namespace, name, pod)
 	p := &process{h: h, podName: name, pod: pod, key: h.key()}
-	p.credential = h.credential(name, pod.UID)
+	p.credential = h.credential(namespace, name, pod.UID, change...)
 	return p
 }
+
+// claimChange changes a credential's registered claims or its kubernetes.io claim before it is signed.
+type claimChange func(claims *jwt.Claims, bound map[string]any)
 
 func (h *harness) key() *ecdsa.PrivateKey {
 	h.t.Helper()
@@ -276,21 +388,25 @@ func (h *harness) key() *ecdsa.PrivateKey {
 }
 
 // credential signs a projected ServiceAccount token bound to the Pod, as the API server does.
-func (h *harness) credential(podName, podUID string) string {
+func (h *harness) credential(namespace, podName, podUID string, change ...claimChange) string {
 	h.t.Helper()
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: h.api.key},
 		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", "sa-key"))
 	require.NoError(h.t, err)
 	now := time.Now()
 	claims := jwt.Claims{
-		Issuer: issuerURL, Subject: "system:serviceaccount:" + watched + ":" + mira,
+		Issuer: issuerURL, Subject: "system:serviceaccount:" + namespace + ":" + mira,
 		Audience: jwt.Audience{workspaceaccess.DefaultAudience},
 		IssuedAt: jwt.NewNumericDate(now), NotBefore: jwt.NewNumericDate(now), Expiry: jwt.NewNumericDate(now.Add(10 * time.Minute)),
 	}
-	bound := map[string]any{"kubernetes.io": map[string]any{
-		"namespace": watched, "pod": map[string]string{"name": podName, "uid": podUID},
-		"serviceaccount": map[string]string{"name": mira, "uid": "sa-uid"},
-	}}
+	kubernetesIO := map[string]any{
+		"namespace": namespace, "pod": map[string]string{nameClaim: podName, "uid": podUID},
+		"serviceaccount": map[string]string{nameClaim: mira, "uid": "sa-uid"},
+	}
+	for _, c := range change {
+		c(&claims, kubernetesIO)
+	}
+	bound := map[string]any{"kubernetes.io": kubernetesIO}
 	raw, err := jwt.Signed(signer).Claims(claims).Claims(bound).Serialize()
 	require.NoError(h.t, err)
 	return raw

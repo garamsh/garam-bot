@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	workspace "github.com/garamsh/garam-bot/api/workspace/v1alpha1"
@@ -18,6 +19,8 @@ const (
 	DefaultMaxDials = 256
 	// defaultRecheck is how often the authority of open dials and pins is read again (DIAL-4, PIN-1).
 	defaultRecheck = 2 * time.Second
+	// defaultDialTimeout is how long a dial waits for its provider to connect.
+	defaultDialTimeout = 30 * time.Second
 )
 
 // Place is what the connector runs of one workspace provider: the provider, and what its workspaces
@@ -59,6 +62,8 @@ type Config struct {
 	Now          func() time.Time
 	BindingFresh time.Duration
 	Recheck      time.Duration
+	// DialTimeout is how long a dial waits for its provider to connect, 30 seconds by default.
+	DialTimeout time.Duration
 }
 
 // Service serves interface 7 to the bots' processes of the watched namespaces.
@@ -80,6 +85,7 @@ type service struct {
 	botLimits   *limits
 	instLimits  *limits
 	dials       *dials
+	reads       *reads
 }
 
 // NewService returns a Service under cfg.
@@ -105,6 +111,9 @@ func NewService(cfg Config) (Service, error) {
 	if cfg.Recheck <= 0 {
 		cfg.Recheck = defaultRecheck
 	}
+	if cfg.DialTimeout <= 0 {
+		cfg.DialTimeout = defaultDialTimeout
+	}
 	proofs, err := newProofs(cfg.Origins, cfg.Now)
 	if err != nil {
 		return nil, fmt.Errorf("the origins: %w", err)
@@ -123,59 +132,124 @@ func NewService(cfg Config) (Service, error) {
 		botLimits:   newLimits("the bot's limit", botEvery, botBurst, cfg.Now),
 		instLimits:  newLimits("the instance's request limit", instanceEvery, instanceBurst, cfg.Now),
 		dials:       newDials(cfg.MaxDials, cfg.Now),
+		reads:       newReads(),
 	}, nil
 }
 
 func (s *service) Run(ctx context.Context) error {
-	tick := time.NewTicker(s.cfg.Recheck)
-	defer tick.Stop()
 	defer s.dials.closeWhere(func(*dial) bool { return true })
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-tick.C:
-		}
+	var loops sync.WaitGroup
+	every := func(pass func(context.Context)) {
+		loops.Go(func() {
+			tick := time.NewTicker(s.cfg.Recheck)
+			defer tick.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-tick.C:
+					pass(ctx)
+				}
+			}
+		})
+	}
+	// The local passes read nothing, so no stuck read delays the idle close (DIAL-3).
+	every(func(context.Context) {
 		s.dials.closeIdle()
-		s.recheckDials(ctx)
-		s.recheckPins(ctx)
+		s.proofs.forget()
+		s.bindings.forget()
+		s.botLimits.forgetFull()
+		s.instLimits.forgetFull()
+	})
+	// Each pass that reads is bounded by its period, and neither waits on the other.
+	every(s.bounded(s.recheckDials))
+	every(s.bounded(s.recheckPins))
+	<-ctx.Done()
+	loops.Wait()
+	return ctx.Err()
+}
+
+// bounded is pass with a deadline of one recheck period.
+func (s *service) bounded(pass func(context.Context)) func(context.Context) {
+	return func(ctx context.Context) {
+		ctx, cancel := context.WithTimeout(ctx, s.cfg.Recheck)
+		defer cancel()
+		pass(ctx)
 	}
 }
 
+// spaceKey is a workspace, by its place's provider and its name.
+type spaceKey struct {
+	provider string
+	name     workspace.Name
+}
+
+// rechecked holds what one pass of recheckDials has read, so each Bot, Pod and workspace is read once
+// however many dials it carries.
+type rechecked struct {
+	bots   map[Bot]read[Declared]
+	pods   map[podKey]read[Pod]
+	spaces map[spaceKey]read[workspace.Workspace]
+}
+
+// read is one answer of a read: the value, whether it exists, and the error.
+type read[T any] struct {
+	value  T
+	exists bool
+	err    error
+}
+
 // recheckDials closes each open dial whose instance ended, whose Bot is gone or made again, or whose
-// workspace stopped or is deleted (DIAL-4). A read that fails keeps the dial until the next.
+// workspace stopped or is deleted (DIAL-4). A read that fails keeps the dial until the next pass.
 func (s *service) recheckDials(ctx context.Context) {
+	r := rechecked{bots: map[Bot]read[Declared]{}, pods: map[podKey]read[Pod]{}, spaces: map[spaceKey]read[workspace.Workspace]{}}
 	for _, d := range s.dials.snapshot() {
-		if s.lapsed(ctx, d) {
+		if s.lapsed(ctx, d, r) {
 			s.dials.release(d)
 		}
 	}
 }
 
-func (s *service) lapsed(ctx context.Context, d *dial) bool {
-	declared, ok, err := s.cfg.Bots.Bot(ctx, d.bot)
-	if err != nil {
+// lapsed answers whether the dial's authority has ended, reading the Bot, then the Pod, then the
+// workspace, so a dial whose instance ended is closed without a provider being asked.
+func (s *service) lapsed(ctx context.Context, d *dial, r rechecked) bool {
+	bot, ok := r.bots[d.bot]
+	if !ok {
+		bot.value, bot.exists, bot.err = s.cfg.Bots.Bot(ctx, d.bot)
+		r.bots[d.bot] = bot
+	}
+	if bot.err != nil {
 		return false
 	}
-	if !ok || declared.UID != d.botUID {
+	if !bot.exists || bot.value.UID != d.botUID {
 		return true
 	}
-	pod, exists, err := s.bindings.pod(ctx, d.instance.namespace, d.instance.name, false)
-	if err != nil {
+	key := podKey{d.instance.namespace, d.instance.name}
+	pod, ok := r.pods[key]
+	if !ok {
+		pod.value, pod.exists, pod.err = s.bindings.pod(ctx, key.namespace, key.name, false)
+		r.pods[key] = pod
+	}
+	if pod.err != nil {
 		return false
 	}
-	if !exists || pod.UID != d.instance.pod || pod.Container != d.instance.container {
+	if !pod.exists || pod.value.UID != d.instance.pod || pod.value.Container != d.instance.container {
 		return true
 	}
 	place, ok := s.cfg.Places[d.provider]
 	if !ok {
 		return true
 	}
-	ws, err := place.Provider.Get(ctx, d.workspace)
-	if errors.Is(err, workspace.ErrNotFound) {
+	space := spaceKey{d.provider, d.workspace}
+	ws, ok := r.spaces[space]
+	if !ok {
+		ws.value, ws.err = s.reads.get(ctx, space, place.Provider)
+		r.spaces[space] = ws
+	}
+	if errors.Is(ws.err, workspace.ErrNotFound) {
 		return true
 	}
-	return err == nil && ws.Status.Phase != workspace.PhaseRunning
+	return ws.err == nil && ws.value.Status.Phase != workspace.PhaseRunning
 }
 
 // recheckPins drops the pin of every instance whose Pod is gone, or whose runtime container is another

@@ -20,14 +20,15 @@ func (s *service) tokens(w http.ResponseWriter, r *http.Request, c caller) error
 	if err != nil {
 		return err
 	}
-	if _, err := t.place.Provider.Get(ctx, t.name); err != nil {
-		return providerError(err)
-	}
 	if s.cfg.Issuer == nil || !s.cfg.Issuer.Available(ctx) {
 		return errWaitingForGateway
 	}
+	// The Bot's limit is taken before the first call that reaches the provider (LIMIT-1).
 	if err := s.botLimits.take(c.declared.UID); err != nil {
 		return err
+	}
+	if _, err := t.place.Provider.Get(ctx, t.name); err != nil {
+		return providerError(err)
 	}
 	answer, err := s.cfg.Issuer.Tokens(ctx, c.bot, c.declared.Tools)
 	if err != nil {

@@ -52,10 +52,17 @@ func (b *bindings) pod(ctx context.Context, namespace, name string, again bool) 
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.held[key] = heldPod{pod: pod, exists: exists, readAt: b.now()}
+	return pod, exists, nil
+}
+
+// forget drops the reads no longer fresh, on Run's tick rather than per request.
+func (b *bindings) forget() {
+	now := b.now()
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	for k, h := range b.held {
-		if b.now().Sub(h.readAt) >= b.fresh {
+		if now.Sub(h.readAt) >= b.fresh {
 			delete(b.held, k)
 		}
 	}
-	return pod, exists, nil
 }
