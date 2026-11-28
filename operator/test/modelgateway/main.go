@@ -15,7 +15,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
@@ -24,6 +23,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -38,10 +38,13 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
 	gateway "github.com/garamsh/garam-bot/api/model-gateway/v1alpha1"
 	"github.com/garamsh/garam-bot/api/model-gateway/v1alpha1/gatewayfake"
+
+	"github.com/garamsh/garam-bot/operator/internal/certificate"
 
 	"github.com/garamsh/garam-bot/operator/internal/modelgateway"
 	gatewaykube "github.com/garamsh/garam-bot/operator/internal/modelgateway/kube"
@@ -53,6 +56,11 @@ const (
 	urlFile     = "url"
 	controlFile = "control"
 )
+
+// emptySecret is the signing key's Secret as the chart creates it, holding no key.
+func emptySecret() *corev1.Secret {
+	return &corev1.Secret{Namespace: namespace, Name: secretName, Type: corev1.SecretTypeOpaque}
+}
 
 // seen is the fixture subcommand, and the answer's field, naming what the provider received.
 const seen = "seen"
@@ -216,7 +224,7 @@ func (p *place) record(u modelgateway.Usage) {
 
 func (p *place) config(secrets *fake.Clientset) modelgateway.Config {
 	return modelgateway.Config{
-		BasePath: p.basePath, Upstream: p.upstream, Key: providerKey,
+		BasePath: p.basePath, Upstream: p.upstream, Key: modelgateway.StaticKey(providerKey),
 		SigningKeys: gatewaykube.SigningKeys{Kube: secrets, Namespace: namespace, Name: secretName},
 		Keys:        p.api, Issuer: namespace + "/" + connector, Record: p.record, Now: p.now,
 		Limits: modelgateway.Limits{
@@ -250,7 +258,7 @@ func newKey() (*ecdsa.PrivateKey, error) { return ecdsa.GenerateKey(elliptic.P25
 func serve(dir, basePath string) error {
 	p := &place{
 		basePath: basePath, provider: &gatewayfake.Provider{}, elsewhere: &gatewayfake.Recorder{},
-		secrets: fake.NewClientset(),
+		secrets: fake.NewClientset(emptySecret()),
 	}
 	elsewhere := httptest.NewServer(p.elsewhere)
 	defer elsewhere.Close()
@@ -268,25 +276,30 @@ func serve(dir, basePath string) error {
 	if err := p.start(); err != nil {
 		return err
 	}
-	foreign, err := modelgateway.New(context.Background(), p.config(fake.NewClientset()))
+	foreign, err := modelgateway.New(context.Background(), p.config(fake.NewClientset(emptySecret())))
 	if err != nil {
 		return err
 	}
 	p.foreign = foreign
-	certificate, trust, err := selfSigned()
+	trust, err := selfSigned(dir)
 	if err != nil {
 		return err
 	}
-	listener, err := tls.Listen("tcp", "127.0.0.1:0",
-		&tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12})
+	certificates, err := certificate.NewReloader(filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key"))
 	if err != nil {
 		return err
 	}
-	server := &http.Server{
-		Handler:           http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { p.current().ServeHTTP(w, r) }),
-		ReadHeaderTimeout: 10 * time.Second,
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return err
 	}
-	go func() { _ = server.Serve(listener) }()
+	// The gateway is served as the binary serves it: HTTP/2 and HTTP/1.1 over TLS, its certificate
+	// read through internal/certificate's reloader.
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { p.current().ServeHTTP(w, r) })
+	go func() {
+		_ = modelgateway.Serve(context.Background(), listener, handler, certificates.GetCertificate,
+			slog.New(slog.DiscardHandler))
+	}()
 	control, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
@@ -427,10 +440,12 @@ func (p *place) control() http.Handler {
 }
 
 // selfSigned makes the gateway's serving certificate for 127.0.0.1, and its PEM for the suite to trust.
-func selfSigned() (tls.Certificate, []byte, error) {
+// selfSigned writes a certificate for 127.0.0.1 that its key signs itself, and the key, to dir's
+// tls.crt and tls.key, as a mounted TLS Secret holds them, and answers the certificate's PEM.
+func selfSigned(dir string) ([]byte, error) {
 	key, err := newKey()
 	if err != nil {
-		return tls.Certificate{}, nil, err
+		return nil, err
 	}
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "model-gateway-harness"},
@@ -440,8 +455,19 @@ func selfSigned() (tls.Certificate, []byte, error) {
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
-		return tls.Certificate{}, nil, err
+		return nil, err
+	}
+	private, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return nil, err
 	}
 	trust := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, trust, nil
+	for name, content := range map[string][]byte{
+		"tls.crt": trust, "tls.key": pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: private}),
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), content, 0o600); err != nil {
+			return nil, err
+		}
+	}
+	return trust, nil
 }

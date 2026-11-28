@@ -1,4 +1,4 @@
-# Build the model gateway binary (cmd/model-gateway). The build context is the repository root.
+# Build the model gateway binary (cmd/model-gateway). The build context is the module root, operator/.
 # Both digests are the multi-platform index, not one platform's manifest, so the
 # build's target platform still selects each base.
 # Dependabot moves both lines (`.github/dependabot.yml`, the `/build` entry), rewriting

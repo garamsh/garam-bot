@@ -16,8 +16,13 @@ type Limit struct {
 
 // Limits are each bot's limit on the model surface (LIMIT-1) and each issuer's on the issue surface
 // (LIMIT-2). A zero Limit is 60 calls, one back a second.
+//
+// BotCalls and Calls bound the model calls held at once by one bot and by the gateway in all, as each
+// holds up to 32 MiB of its body: zero is 8 and 32. So no bot's calls can take the gateway's memory
+// from another's.
 type Limits struct {
-	Bot, Issuer Limit
+	Bot, Issuer     Limit
+	BotCalls, Calls int
 }
 
 // maxCallers bounds the callers a limiter holds. Past it, a caller's limiter idle the longest is
@@ -76,4 +81,57 @@ func (l *limiter) dropIdlest() {
 		}
 	}
 	delete(l.callers, idlest)
+}
+
+// refusal is why inFlight refused a call.
+type refusal int
+
+const (
+	notRefused refusal = iota
+	refusedBot
+	refusedGateway
+)
+
+// inFlight bounds the model calls held at once, per bot and in all.
+type inFlight struct {
+	perBot, all int
+
+	mu    sync.Mutex
+	held  int
+	byBot map[string]int
+}
+
+func newInFlight(perBot, all int) *inFlight {
+	if perBot <= 0 {
+		perBot = 8
+	}
+	if all <= 0 {
+		all = 32
+	}
+	return &inFlight{perBot: perBot, all: all, byBot: map[string]int{}}
+}
+
+// take holds a call of bot, and answers how to release it, or why it is refused.
+func (f *inFlight) take(bot string) (func(), refusal) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch {
+	case f.byBot[bot] >= f.perBot:
+		return nil, refusedBot
+	case f.held >= f.all:
+		return nil, refusedGateway
+	}
+	f.byBot[bot]++
+	f.held++
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.held--
+			if f.byBot[bot]--; f.byBot[bot] == 0 {
+				delete(f.byBot, bot)
+			}
+		})
+	}, notRefused
 }

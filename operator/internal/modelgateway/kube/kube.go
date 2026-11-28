@@ -22,8 +22,11 @@ import (
 // SigningKeyData is the key of the Secret's data the signing key is held under, a PKCS #8 PEM block.
 const SigningKeyData = "signing-key.pem"
 
-// SigningKeys is the Secret Name in Namespace. The first gateway to start writes a new P-256 key to
-// it, and every later one, and every replica, reads that key (garam-bot ADR 0044 decision 3).
+// SigningKeys is the Secret Name in Namespace, which the chart creates empty. The first gateway to
+// start writes a new P-256 key into it, and every later one, and every replica, reads that key
+// (garam-bot ADR 0044 decision 3). The gateway gets and updates that one Secret, by name, and creates
+// none: RBAC cannot bound a create by name, and a gateway that may create Secrets in its namespace can
+// mint a token Secret of any ServiceAccount there (ADR 0044 decision 8).
 type SigningKeys struct {
 	Kube      kubernetes.Interface
 	Namespace string
@@ -35,11 +38,13 @@ var _ modelgateway.SigningKeys = SigningKeys{}
 func (s SigningKeys) Load(ctx context.Context) (*ecdsa.PrivateKey, error) {
 	secrets := s.Kube.CoreV1().Secrets(s.Namespace)
 	held, err := secrets.Get(ctx, s.Name, metav1.GetOptions{})
-	if err == nil {
-		return parse(held, s.Namespace)
-	}
-	if !apierrors.IsNotFound(err) {
+	switch {
+	case apierrors.IsNotFound(err):
+		return nil, fmt.Errorf("the Secret %s/%s does not exist: the chart creates it empty", s.Namespace, s.Name)
+	case err != nil:
 		return nil, fmt.Errorf("read the Secret %s/%s: %w", s.Namespace, s.Name, err)
+	case len(held.Data[SigningKeyData]) > 0:
+		return parse(held, s.Namespace)
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -49,16 +54,17 @@ func (s SigningKeys) Load(ctx context.Context) (*ecdsa.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	secret := &corev1.Secret{
-		Namespace: s.Namespace, Name: s.Name,
-		Type: corev1.SecretTypeOpaque,
-		Data: map[string][]byte{SigningKeyData: pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})},
+	written := held.DeepCopy()
+	if written.Data == nil {
+		written.Data = map[string][]byte{}
 	}
-	_, err = secrets.Create(ctx, secret, metav1.CreateOptions{})
+	written.Data[SigningKeyData] = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	// The update carries the resourceVersion read, so of two replicas writing at once, one wins.
+	_, err = secrets.Update(ctx, written, metav1.UpdateOptions{})
 	switch {
 	case err == nil:
 		return key, nil
-	case apierrors.IsAlreadyExists(err):
+	case apierrors.IsConflict(err):
 		// Another replica wrote it first, and its key is the one every replica signs with.
 		held, err := secrets.Get(ctx, s.Name, metav1.GetOptions{})
 		if err != nil {

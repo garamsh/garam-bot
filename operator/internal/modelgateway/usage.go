@@ -31,10 +31,15 @@ const (
 	maxEvent = 1 << 20
 )
 
-// call is what the gateway knows of a forwarded call, carried to its answer.
+// call is what the gateway knows of a forwarded call, carried to its answer: the bot, the model as
+// boundedModel records it, the provider's key read for it, how to break it off, and the status of a
+// redirect it was answered.
 type call struct {
-	bot   gateway.TokenRequest
-	model string
+	bot    gateway.TokenRequest
+	model  string
+	key    string
+	cancel context.CancelCauseFunc
+	status int
 }
 
 type callKey struct{}

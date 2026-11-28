@@ -38,3 +38,28 @@ func TestLimiter_AnswersTheWholeSecondsUntilACallComesBack(t *testing.T) {
 	_, ok = l.allow("bot")
 	assert.True(t, ok, "control: once the call comes back it is taken, so the refusal took no call")
 }
+
+func TestInFlight_BoundsEachBotsCallsAndTheGatewaysAndGivesThemBack(t *testing.T) {
+	f := newInFlight(2, 3)
+	releases := make([]func(), 0, 2)
+	for range 2 {
+		release, refused := f.take("a")
+		require.Equal(t, notRefused, refused)
+		releases = append(releases, release)
+	}
+	_, refused := f.take("a")
+	assert.Equal(t, refusedBot, refused, "a bot holds more calls than its bound")
+	release, refused := f.take("b")
+	require.Equal(t, notRefused, refused, "another bot is refused for the first bot's calls")
+	_, refused = f.take("c")
+	assert.Equal(t, refusedGateway, refused, "the gateway holds more calls than its bound")
+	release()
+	release()
+	_, refused = f.take("c")
+	assert.Equal(t, notRefused, refused, "a released call is not given back, or given back twice")
+	releases[0]()
+	_, refused = f.take("a")
+	assert.Equal(t, notRefused, refused, "a bot's released call is not given back to it")
+	_, refused = f.take("d")
+	assert.Equal(t, refusedGateway, refused, "control: the gateway is full again")
+}

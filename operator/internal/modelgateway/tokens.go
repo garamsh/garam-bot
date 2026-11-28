@@ -1,7 +1,9 @@
 package modelgateway
 
 import (
+	"crypto"
 	"crypto/ecdsa"
+	"encoding/base64"
 	"errors"
 	"time"
 
@@ -23,7 +25,10 @@ const maxToken = 4 << 10
 type tokens struct {
 	signer jose.Signer
 	key    *ecdsa.PublicKey
-	now    func() time.Time
+	// kid names the key, its RFC 7638 thumbprint, so a later key ring holding the key before it as
+	// well (TOKEN-2) changes no token's form.
+	kid string
+	now func() time.Time
 }
 
 type tokenClaims struct {
@@ -33,11 +38,17 @@ type tokenClaims struct {
 }
 
 func newTokens(key *ecdsa.PrivateKey, now func() time.Time) (*tokens, error) {
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: key}, (&jose.SignerOptions{}).WithType("JWT"))
+	thumbprint, err := (&jose.JSONWebKey{Key: &key.PublicKey}).Thumbprint(crypto.SHA256)
 	if err != nil {
 		return nil, err
 	}
-	return &tokens{signer: signer, key: &key.PublicKey, now: now}, nil
+	kid := base64.RawURLEncoding.EncodeToString(thumbprint)
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: key},
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader(jose.HeaderKey("kid"), kid))
+	if err != nil {
+		return nil, err
+	}
+	return &tokens{signer: signer, key: &key.PublicKey, kid: kid, now: now}, nil
 }
 
 func (t *tokens) issue(bot gateway.TokenRequest, life time.Duration) (string, error) {
@@ -59,6 +70,9 @@ func (t *tokens) verify(raw string) (gateway.TokenRequest, error) {
 	if err != nil {
 		return gateway.TokenRequest{}, err
 	}
+	if len(parsed.Headers) != 1 || parsed.Headers[0].KeyID != t.kid {
+		return gateway.TokenRequest{}, errors.New("the token names no key of the gateway's")
+	}
 	var claims tokenClaims
 	if err := parsed.Claims(t.key, &claims); err != nil {
 		return gateway.TokenRequest{}, err
@@ -67,7 +81,14 @@ func (t *tokens) verify(raw string) (gateway.TokenRequest, error) {
 	if err := claims.ValidateWithLeeway(jwt.Expected{AnyAudience: jwt.Audience{TokenAudience}, Time: now}, 0); err != nil {
 		return gateway.TokenRequest{}, err
 	}
-	if claims.Expiry == nil || claims.IssuedAt == nil || claims.Expiry.Time().Sub(claims.IssuedAt.Time()) > gateway.MaxTokenLife {
+	switch {
+	case claims.Expiry == nil || claims.IssuedAt == nil:
+		return gateway.TokenRequest{}, errors.New("the token carries no exp or no iat")
+	case !now.Before(claims.Expiry.Time()):
+		// go-jose takes a token at the second of its exp; the gateway refuses it there, as it
+		// refuses a credential (ISS-1).
+		return gateway.TokenRequest{}, errors.New("the token has expired")
+	case claims.Expiry.Time().Sub(claims.IssuedAt.Time()) > gateway.MaxTokenLife:
 		return gateway.TokenRequest{}, errors.New("the token lives longer than an hour")
 	}
 	bot := gateway.TokenRequest{Namespace: claims.Namespace, Name: claims.Name, UID: claims.Subject}

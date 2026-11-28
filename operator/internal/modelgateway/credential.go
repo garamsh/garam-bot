@@ -23,6 +23,8 @@ const (
 	// how soon after a read a credential signed by a key not held reads them again.
 	keysFresh = 5 * time.Minute
 	keysRetry = 10 * time.Second
+	// keysTimeout bounds one read of the API server's keys.
+	keysTimeout = 10 * time.Second
 	// maxCredential bounds the credential read, as a projected ServiceAccount token is a few KiB.
 	maxCredential = 16 << 10
 )
@@ -49,6 +51,9 @@ type credentials struct {
 	mu     sync.Mutex
 	issuer Issuer
 	readAt time.Time
+	// failedAt is when the last read failed, zero once one succeeds. Until keysRetry has passed, no
+	// credential reads the keys again, so a failing API server is not read for every call.
+	failedAt time.Time
 }
 
 // verify answers the ServiceAccount raw names, as <namespace>/<name>, or errCredential where it is
@@ -108,8 +113,11 @@ func (c *credentials) check(ctx context.Context, raw string) (string, error) {
 // issuerFor answers the issuer, read again where kid names no key held and the last read is old enough.
 func (c *credentials) issuerFor(ctx context.Context, kid string) (Issuer, error) {
 	c.mu.Lock()
-	issuer, readAt := c.issuer, c.readAt
+	issuer, readAt, failedAt := c.issuer, c.readAt, c.failedAt
 	c.mu.Unlock()
+	if !failedAt.IsZero() && c.now().Sub(failedAt) < keysRetry {
+		return Issuer{}, fmt.Errorf("%w: the last read failed less than %v ago", errKeysUnread, keysRetry)
+	}
 	age := c.now().Sub(readAt)
 	held := len(issuer.Keys.Key(kid)) > 0
 	if !readAt.IsZero() && (held && age < keysFresh || !held && age < keysRetry) {
@@ -119,13 +127,18 @@ func (c *credentials) issuerFor(ctx context.Context, kid string) (Issuer, error)
 		return issuer, nil
 	}
 	read, err, _ := c.reads.Do("keys", func() (any, error) {
+		// The read is shared by every caller waiting on it, so it is not ended by the first one's
+		// hanging up.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), keysTimeout)
+		defer cancel()
 		read, err := c.keys.Keys(ctx)
+		c.mu.Lock()
+		defer c.mu.Unlock()
 		if err != nil {
+			c.failedAt = c.now()
 			return Issuer{}, err
 		}
-		c.mu.Lock()
-		c.issuer, c.readAt = read, c.now()
-		c.mu.Unlock()
+		c.issuer, c.readAt, c.failedAt = read, c.now(), time.Time{}
 		return read, nil
 	})
 	if err != nil {
