@@ -67,6 +67,9 @@ func (p *Provider) Create(_ context.Context, name v1alpha1.Name, spec v1alpha1.S
 	if len(spec.Egress) > 0 && !p.caps.Egress {
 		return v1alpha1.Workspace{}, false, fmt.Errorf("%w: egress rules", v1alpha1.ErrUnsupported)
 	}
+	if len(spec.Labels) > 0 && !p.caps.Labels {
+		return v1alpha1.Workspace{}, false, fmt.Errorf("%w: labels", v1alpha1.ErrUnsupported)
+	}
 	if spec.FromSnapshot != "" && !p.caps.Snapshot {
 		return v1alpha1.Workspace{}, false, fmt.Errorf("%w: restore", v1alpha1.ErrUnsupported)
 	}
@@ -345,6 +348,7 @@ func clone(spec v1alpha1.Spec) v1alpha1.Spec {
 	spec.Env = maps.Clone(spec.Env)
 	spec.Ports = slices.Clone(spec.Ports)
 	spec.Egress = slices.Clone(spec.Egress)
+	spec.Labels = maps.Clone(spec.Labels)
 
 	return spec
 }

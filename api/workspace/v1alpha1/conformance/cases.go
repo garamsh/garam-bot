@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"io"
+	"maps"
 	"net/netip"
 	"slices"
 	"testing"
@@ -35,6 +36,8 @@ func Cases() []Case {
 		{Requirement: "FILE-2", Name: "a read of a missing file is file not found", run: fileMissing},
 		{Requirement: "ISO-1", Name: "one workspace does not see another's files", run: isolated},
 		{Requirement: "DIAL-1", Name: "dial reaches a spec port and refuses another", run: dial},
+		{Requirement: "LABEL-1", Name: "labels are answered by every read as written", run: labelsKept},
+		{Requirement: "LABEL-1", Name: "labels are refused without the labels capability", run: labelsRefused},
 		{Requirement: "NET-1", Name: "egress rules are refused without the egress capability", run: egressRefused},
 		{Requirement: "NET-1", Name: "egress rules are taken with the egress capability", run: egressTaken},
 		{
@@ -283,6 +286,41 @@ func dial(t *testing.T, e *env) {
 	}
 	_, err = e.Provider.Dial(t.Context(), name, EchoPort+1)
 	wantErr(t, "Dial a port not in the spec", err, v1alpha1.ErrInvalid)
+}
+
+func labelsKept(t *testing.T, e *env) {
+	if !e.caps.Labels {
+		t.Skip("the implementation offers no labels")
+	}
+	spec := e.spec()
+	labels := map[string]string{"bot.garam.sh/bot-uid": "6d3c0f1e-1b2a-4c5d-8e9f-0a1b2c3d4e5f", "attachment": "main"}
+	spec.Labels = maps.Clone(labels)
+	name := e.running(t, spec)
+	got, err := e.Provider.Get(t.Context(), name)
+	wantNoErr(t, "Get", err)
+	if !maps.Equal(got.Spec.Labels, labels) {
+		t.Fatalf("Get: labels %v, want %v", got.Spec.Labels, labels)
+	}
+	all, err := e.Provider.List(t.Context())
+	wantNoErr(t, "List", err)
+	i := slices.IndexFunc(all, func(w v1alpha1.Workspace) bool { return w.Name == name })
+	if i < 0 || !maps.Equal(all[i].Spec.Labels, labels) {
+		t.Fatalf("List: %s with labels %v absent", name, labels)
+	}
+	spec.Labels["attachment"] = "other"
+	_, _, err = e.Provider.Create(t.Context(), name, spec)
+	wantErr(t, "Create again with other labels", err, v1alpha1.ErrConflict)
+}
+
+func labelsRefused(t *testing.T, e *env) {
+	if e.caps.Labels {
+		t.Skip("the implementation offers labels")
+	}
+	spec := e.spec()
+	spec.Labels = map[string]string{"attachment": "main"}
+	_, _, err := e.Provider.Create(t.Context(), e.name(t), spec)
+	wantErr(t, "Create with a label", err, v1alpha1.ErrUnsupported)
+	e.running(t, e.spec()) // control: the spec without the label is taken
 }
 
 func egressRefused(t *testing.T, e *env) {

@@ -7,7 +7,7 @@ import (
 )
 
 // SpecRelease is the release of v1alpha1's specification this package states.
-const SpecRelease = "0.2.1"
+const SpecRelease = "0.3.0"
 
 // DataPath is where a workspace's data volume is mounted: what survives a stop, a start and a
 // restore is under it (DATA-1, SNAP-2).
@@ -65,4 +65,7 @@ type Capabilities struct {
 	// Stdin is whether an Exec's Stdin reaches the command. Without it, only an Exec with no Stdin
 	// is taken (EXEC-2).
 	Stdin bool
+	// Labels is whether a spec's Labels are kept and answered by reads. Without it, only a spec with
+	// no label is taken (LABEL-1).
+	Labels bool
 }

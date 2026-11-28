@@ -53,8 +53,11 @@ A record states one current decision and is kept current: update the body when t
    - **Addressing.** A request names one of the Bot's `spec.workspaces` attachments, never a workspace.
    - **Naming.** The connector names the workspace from the authenticated Bot's namespace, name and UID and the attachment. No request can address another Bot's workspace, and a Bot made again under the same name gets a new one.
    - **The spec.** The connector builds it from the attachment's WorkspaceClass and the place's configuration: the image for the Bot's `spec.agent.harness`, by digest (interface 1's IMG-1), interface 2's port, and egress to the place's model gateway and tool proxy.
-   - **Labels.** Each workspace carries its owner, the place's release and the Bot's namespace, name and UID, as labels. Interface 3 gains an optional `Spec.Labels` for them in a compatible release, mapped to a naru Machine's `labels` and to the Pod provider's objects' labels, and answered by a read as created.
-   - **Deletion.** The connector deletes a workspace only on evidence that its Bot is gone, and only its own place's workspaces. At a cluster, garam-bot-operator ADR 0099 states the evidence: a live read of the Bot, and a grace.
+   - **Labels.** Each workspace carries its owner, the place's release and the Bot's namespace, name and UID, as labels. Interface 3 gains an optional `Spec.Labels` for them in its release 0.3.0, with `Capabilities.Labels` saying whether a provider keeps them. A provider that keeps them answers them in every read as written. One that cannot refuses a spec carrying any.
+     - **The Pod provider** keeps them, on its objects and in the spec its claim records.
+     - **The naru Machine provider** cannot. `machines/v1alpha1` carries no caller's label on a Machine: its shape's `labels` are values a host must carry. naru#453 asks for caller-set Machine metadata labels, and the provider reports `Labels` true once naru serves them.
+     - **The connector** sends labels only to a provider that keeps them.
+   - **Deletion.** The connector deletes a workspace only on evidence that its Bot is gone, and only its own place's workspaces. At a cluster, garam-bot-operator ADR 0099 states the evidence: a live read of the Bot, and a grace. A workspace whose labels it cannot read is never deleted by it, so until naru#453 a deleted Bot's naru Machines are deleted by hand.
 3. **Each call is cut to what the driver needs:**
    - acquire, which creates or starts the workspace and answers its phase with the session's model and tool URLs;
    - read the workspace's state;
@@ -109,7 +112,7 @@ A record states one current decision and is kept current: update the body when t
 
 - **Rights.** A workspace's rights and credentials stay in one party at the place, the connector. Through interface 7, a bot's process can reach its own workspaces' token files and adapter, and nothing else of any workspace. What the network allows besides is the provider's: a Pod workspace's NetworkPolicy holds only where the cluster's network plugin enforces it, and a naru Machine's port is guarded by interface 2's AUTH-1 alone.
 - **Standalone.** The connector serves every Bot, garam-owned or declared at the place, so it runs where garam is off too. The manager gives every Bot the workspace credential and the trust bundle.
-- **Interface 3 gains `Spec.Labels`**, a compatible release, built with the connector's side.
+- **Interface 3 gains `Spec.Labels` and `Capabilities.Labels`** in its release 0.3.0, ahead of the connector's side.
 - **The Pod provider moves** from `internal/podworkspace` to `pkg/podworkspace`, as the naru Machine provider is under `pkg/`, so the operator module's connector links it.
 - **Builds owed.** Interface 7 needs its reference server and its server suite, built with the connector's side. The callers' suites of interfaces 2 and 3 (G9, garam-bot#1216) run against `garam-bot run` and this interface's reference server.
 - **A connector restart** costs each process up to 8 minutes of reading its events and writing its files, while its tasks run on in the adapter.

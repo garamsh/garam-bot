@@ -59,6 +59,10 @@ type Spec struct {
 	Egress []EgressRule
 	// FromSnapshot, when set, makes the data volume from that snapshot (SNAP-2).
 	FromSnapshot Name
+	// Labels are the caller's marks on the workspace, such as who owns it, answered by every read as
+	// written. They hold no secret, and an implementation without Capabilities.Labels refuses any
+	// (LABEL-1).
+	Labels map[string]string
 }
 
 // Resources are what one workspace gets, each more than zero.
@@ -93,6 +97,32 @@ type PortRange struct {
 	Last  uint16
 }
 
+var (
+	labelPrefixPattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+	labelNamePattern   = regexp.MustCompile(`^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$`)
+)
+
+// checkLabel refuses a key or a value that is not a Kubernetes label's: a key is a name of at most
+// 63 characters behind an optional DNS subdomain prefix of at most 253 and a "/", and a value is
+// such a name or empty (LABEL-1).
+func checkLabel(key, value string) error {
+	name := key
+	if prefix, rest, found := strings.Cut(key, "/"); found {
+		if len(prefix) > 253 || !labelPrefixPattern.MatchString(prefix) {
+			return fmt.Errorf("%w: label key %q has a prefix that is not a DNS subdomain", ErrInvalid, key)
+		}
+		name = rest
+	}
+	if !labelNamePattern.MatchString(name) {
+		return fmt.Errorf("%w: label key %q is not a label name", ErrInvalid, key)
+	}
+	if value != "" && !labelNamePattern.MatchString(value) {
+		return fmt.Errorf("%w: label %q has a value that is not a label value", ErrInvalid, key)
+	}
+
+	return nil
+}
+
 var imagePattern = regexp.MustCompile(`^[^@\s]+@sha256:[0-9a-f]{64}$`)
 
 // Check returns ErrInvalid naming the first part of spec this version refuses (SPEC-1).
@@ -116,6 +146,11 @@ func (s Spec) Check() error {
 	}
 	for _, r := range s.Egress {
 		if err := r.check(); err != nil {
+			return err
+		}
+	}
+	for key, value := range s.Labels {
+		if err := checkLabel(key, value); err != nil {
 			return err
 		}
 	}
@@ -151,7 +186,8 @@ func SameSpec(a, b Spec) bool {
 		slices.EqualFunc(a.Egress, b.Egress, func(x, y EgressRule) bool {
 			return x.Prefix == y.Prefix && x.Protocol == y.Protocol && slices.Equal(x.Ports, y.Ports)
 		}) &&
-		a.FromSnapshot == b.FromSnapshot
+		a.FromSnapshot == b.FromSnapshot &&
+		maps.Equal(a.Labels, b.Labels)
 }
 
 // Phase is where a workspace is in its life. A caller reads a phase it does not know as
