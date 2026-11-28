@@ -18,7 +18,20 @@ Governs garam-bot's public interfaces: where they live, how each is versioned an
   - A session runs one harness. Tasks carry the bot's mailbox inputs, and the events are read by long poll. Each tool is an MCP server outside the workspace with a token file, and the model is interface 5's gateway.
   - Its implementations are `agentfake`, the reference, and the claude-code and codex adapters, not built yet. `make test` runs the suite against `agentfake`.
 - **Interface 3, the workspace provider, is `api/workspace/v1alpha1/`:** the Go driver interface `Provider` that a program at an execution place links (ADR 0034). Its specification maps every operation onto naru's Machine API.
-  - Its implementations are `workspacefake`, the reference, and the naru Machine, Pod, container and mvmd providers, not built yet. `make test` runs the suite against `workspacefake`, with every capability and with none.
+  - Its implementations are `workspacefake`, the reference, and the Pod provider, `internal/podworkspace/`, built; the naru Machine, container and mvmd providers are not built yet. `make test` runs the suite against `workspacefake`, with every capability and with none.
+  - `make test-podworkspace` runs the suite against the Pod provider on a kind cluster, as a ServiceAccount that holds the Role below and nothing else, and reports the cases `Capabilities` turns off as skips. It sits behind the build tag `conformance`, so `make test` leaves it out.
+  - **The Pod provider holds namespaced rights only,** in the one namespace its workspaces live in (`internal/podworkspace/testdata/rbac.yaml` is the Role the run applies):
+
+    | Resource | Verbs | For |
+    |---|---|---|
+    | `pods` | `get`, `list`, `create`, `delete` | the workspace's Pod |
+    | `pods/exec`, `pods/portforward` | `create` | `Exec` and the file calls, `Dial` |
+    | `persistentvolumeclaims` | `get`, `list`, `create`, `patch`, `delete` | the data volume, which also records the spec and whether the workspace is meant to run |
+    | `networkpolicies` (`networking.k8s.io`) | `create`, `delete` | egress |
+    | `volumesnapshots` (`snapshot.storage.k8s.io`) | `get`, `create`, `delete` | `Snapshot` |
+
+  - **`Capabilities.Egress` is the place's setting,** because the Kubernetes API cannot say whether the network plugin enforces a NetworkPolicy; **`Capabilities.Snapshot` is read from the cluster,** true when it serves `snapshot.storage.k8s.io/v1`. A kind cluster enforces egress through kindnet and serves no snapshots, so the run skips the snapshot cases.
+  - **The file calls exec garam-bot's file helper** (`cmd/workspacefile`, ADR 0034), which an init container copies into a read-only mount of the workspace container, so the workspace's image carries no `cat` for them.
 - **Interface 4, the control connection protocol, is `api/cluster-connection/v1alpha1/` for a cluster:** the HTTPS long-poll protocol between garam's connection service and the connector a user's cluster runs (operator ADR 0092). It came with the operator's move into `operator/` (#1205), its contents unchanged.
   - Its implementations are the reference server in `reference/`, the server suite's own client, and the connector, `operator/cmd/connector`. garam's connection service is not built yet.
   - Its server and client suites sit behind the build tag `conformance`, so `make test` leaves them out. `make -C operator conformance-server` runs the server suite against the reference server, and `make -C operator conformance-client` the client suite against the connector.

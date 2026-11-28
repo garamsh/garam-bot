@@ -1,4 +1,4 @@
-.PHONY: lint format format-fix test test-privileged build build-tools build-images toolchain-image proto generate ci hooks conformance-bot-token
+.PHONY: lint format format-fix test test-privileged test-podworkspace build build-tools build-images toolchain-image proto generate ci hooks conformance-bot-token
 
 # The toolchain floor every go command below runs under: `go install tool@version`
 # and `go run tool@version` take the toolchain from the tool's own `go.mod` rather
@@ -166,6 +166,48 @@ test-privileged:
 		setpriv --bounding-set=$(DEPLOYED_CAP_SET) $(PRIVILEGED_BINARY_TEST_BIN) \
 		-test.v -test.run='^TestEndToEnd_PrivilegedWorkspaceExec$$'
 
+# The Pod workspace provider's conformance run (api/workspace/v1alpha1/conformance)
+# against a kind cluster, as the namespaced ServiceAccount of
+# internal/podworkspace/testdata/rbac.yaml, so a right the provider uses and that
+# Role omits fails the run. The kubelet pulls an image by digest, so the two
+# images are pushed to a registry beside the cluster and referenced by the digest
+# the push reports; the conformance image is built for this run only and no
+# release carries it (build/conformance.Dockerfile). The cluster has its own
+# kubeconfig under dist/, so nothing here writes the contributor's. Egress is
+# true because kindnet enforces NetworkPolicy; the cluster has no snapshot
+# controller, so the suite skips the snapshot cases as Capabilities says.
+PODWORKSPACE_CLUSTER ?= garam-bot-podworkspace
+PODWORKSPACE_REGISTRY ?= garam-bot-podworkspace-registry
+PODWORKSPACE_REGISTRY_PORT ?= 5001
+PODWORKSPACE_NAMESPACE = garam-bot-workspaces
+PODWORKSPACE_ADMIN_KUBECONFIG = $(CURDIR)/dist/kubeconfig-$(PODWORKSPACE_CLUSTER)
+PODWORKSPACE_KUBECONFIG = $(CURDIR)/dist/kubeconfig-$(PODWORKSPACE_CLUSTER)-provider
+KIND = go run sigs.k8s.io/kind@v0.33.0
+
+test-podworkspace:
+	@mkdir -p dist
+	@docker inspect $(PODWORKSPACE_REGISTRY) >/dev/null 2>&1 || docker run -d --restart=always -p 127.0.0.1:$(PODWORKSPACE_REGISTRY_PORT):5000 --name $(PODWORKSPACE_REGISTRY) registry:2
+	@$(KIND) get clusters | grep -qx $(PODWORKSPACE_CLUSTER) || $(KIND) create cluster --name $(PODWORKSPACE_CLUSTER) --kubeconfig $(PODWORKSPACE_ADMIN_KUBECONFIG)
+	@$(KIND) export kubeconfig --name $(PODWORKSPACE_CLUSTER) --kubeconfig $(PODWORKSPACE_ADMIN_KUBECONFIG)
+	@docker network connect kind $(PODWORKSPACE_REGISTRY) 2>/dev/null || true
+	@for node in $$($(KIND) get nodes --name $(PODWORKSPACE_CLUSTER)); do \
+		docker exec $$node mkdir -p /etc/containerd/certs.d/localhost:$(PODWORKSPACE_REGISTRY_PORT) && \
+		printf 'server = "http://%s:5000"\n' $(PODWORKSPACE_REGISTRY) | docker exec -i $$node tee /etc/containerd/certs.d/localhost:$(PODWORKSPACE_REGISTRY_PORT)/hosts.toml >/dev/null || exit $$?; \
+	done
+	$(BUILD_ENV) docker build -f build/conformance.Dockerfile -t localhost:$(PODWORKSPACE_REGISTRY_PORT)/conformance:test .
+	$(BUILD_ENV) docker build -f $(WORKSPACEFILE_DOCKERFILE) -t localhost:$(PODWORKSPACE_REGISTRY_PORT)/workspacefile:test .
+	@docker push -q localhost:$(PODWORKSPACE_REGISTRY_PORT)/conformance:test >/dev/null && docker push -q localhost:$(PODWORKSPACE_REGISTRY_PORT)/workspacefile:test >/dev/null
+	KUBECONFIG=$(PODWORKSPACE_ADMIN_KUBECONFIG) kubectl apply -f internal/podworkspace/testdata/rbac.yaml
+	@server=$$(KUBECONFIG=$(PODWORKSPACE_ADMIN_KUBECONFIG) kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}') && \
+	token=$$(KUBECONFIG=$(PODWORKSPACE_ADMIN_KUBECONFIG) kubectl -n $(PODWORKSPACE_NAMESPACE) create token pod-workspace-provider --duration=1h) && \
+	printf 'apiVersion: v1\nkind: Config\nclusters:\n- name: kind\n  cluster: {server: "%s", insecure-skip-tls-verify: true}\nusers:\n- name: provider\n  user: {token: "%s"}\ncontexts:\n- name: provider\n  context: {cluster: kind, user: provider, namespace: $(PODWORKSPACE_NAMESPACE)}\ncurrent-context: provider\n' "$$server" "$$token" > $(PODWORKSPACE_KUBECONFIG) && chmod 0600 $(PODWORKSPACE_KUBECONFIG)
+	@conformance=$$(docker inspect --format '{{index .RepoDigests 0}}' localhost:$(PODWORKSPACE_REGISTRY_PORT)/conformance:test) && \
+	helper=$$(docker inspect --format '{{index .RepoDigests 0}}' localhost:$(PODWORKSPACE_REGISTRY_PORT)/workspacefile:test) && \
+	echo "conformance image $$conformance, helper image $$helper" && \
+	POD_WORKSPACE_KUBECONFIG=$(PODWORKSPACE_KUBECONFIG) POD_WORKSPACE_NAMESPACE=$(PODWORKSPACE_NAMESPACE) \
+		POD_WORKSPACE_CONFORMANCE_IMAGE=$$conformance POD_WORKSPACE_HELPER_IMAGE=$$helper POD_WORKSPACE_EGRESS=true \
+		go test -tags conformance -count=1 -timeout 30m -v ./internal/podworkspace/ -run TestConformance
+
 # `go build ./...` prints nothing on success and reports an empty match as a
 # stderr warning rather than an error, so a module holding no packages exits
 # zero exactly like a run that compiled every one (#715, #653). The count
@@ -251,7 +293,8 @@ shapeless_ignores = $(strip $(foreach file,$(dockerignores),$(if $(call context_
 AGENT_DOCKERFILE = build/agent.Dockerfile
 WORKSPACE_DOCKERFILE = build/workspace.Dockerfile
 RUNTIME_DOCKERFILE = build/runtime.Dockerfile
-build_inputs = $(AGENT_DOCKERFILE) $(WORKSPACE_DOCKERFILE) $(RUNTIME_DOCKERFILE) $(dockerignores)
+WORKSPACEFILE_DOCKERFILE = build/workspacefile.Dockerfile
+build_inputs = $(AGENT_DOCKERFILE) $(WORKSPACE_DOCKERFILE) $(RUNTIME_DOCKERFILE) $(WORKSPACEFILE_DOCKERFILE) $(dockerignores)
 checked_paths = $(context_paths) $(build_inputs)
 
 # Read paths that are not in the tree. They are handed to git as pathspecs,
@@ -291,7 +334,7 @@ BUILD_ENV = BUILDX_NO_DEFAULT_ATTESTATIONS=1
 # numeric Config.User: the kubelet checks `runAsNonRoot` against the image's
 # user and refuses a name it cannot resolve. The workspace image runs as root
 # in the privileged shape and is not one of them.
-non_root_images = sherlock-agent garam-bot-runtime
+non_root_images = sherlock-agent garam-bot-runtime garam-bot-workspacefile
 
 build-images:
 	@test -n "$(REVISION)" || { echo "build-images: REVISION is empty, and it is both the tag and the label; the default reads 'git rev-parse HEAD', which a checkout with no git metadata does not answer - pass one: make build-images REVISION=<commit>"; exit 1; }
@@ -302,6 +345,7 @@ build-images:
 	$(BUILD_ENV) docker build -f $(AGENT_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t sherlock-agent:$(REVISION) .
 	$(BUILD_ENV) docker build -f $(WORKSPACE_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t sherlock-workspace:$(REVISION) .
 	$(BUILD_ENV) docker build -f $(RUNTIME_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t garam-bot-runtime:$(REVISION) .
+	$(BUILD_ENV) docker build -f $(WORKSPACEFILE_DOCKERFILE) --build-arg REVISION="$(REVISION)" -t garam-bot-workspacefile:$(REVISION) .
 	@for image in $(non_root_images); do user=$$(docker image inspect --format '{{.Config.User}}' $$image:$(REVISION)) && printf '%s' "$$user" | grep -Eq '^[0-9]+(:[0-9]+)?$$' || { echo "$$image:$(REVISION): Config.User is [$$user], want a numeric uid or uid:gid, which the kubelet can check runAsNonRoot against"; exit 1; }; done
 
 # The toolchain image the privileged CI job runs in, read out of the
