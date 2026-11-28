@@ -25,6 +25,14 @@ func CheckSession(id string, spec SessionSpec) error {
 	if err := checkEndpoint("model", spec.Model.BaseURL, spec.Model.TokenFile); err != nil {
 		return err
 	}
+	if trust := spec.Model.TrustFile; trust != "" {
+		if !absolute(trust) {
+			return fmt.Errorf("model trustFile %q is not an absolute, clean path", trust)
+		}
+		if u, _ := url.Parse(spec.Model.BaseURL); u.Scheme != "https" {
+			return fmt.Errorf("model trustFile is given for %q, which is not an https URL", spec.Model.BaseURL)
+		}
+	}
 	names := map[string]bool{}
 	for _, t := range spec.Tools {
 		if t.Name == "" || names[t.Name] {

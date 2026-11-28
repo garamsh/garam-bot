@@ -39,6 +39,12 @@ type Subject struct {
 	Gateway         *gatewayfake.Gateway
 	ModelBot        gateway.TokenRequest
 	WriteModelToken func(token string) error
+	// GatewayTrust, where set, is the PEM root Gateway's certificate chains to, and WriteModelTrust
+	// writes roots to Session's model.trustFile as the bot's process writes them. MODEL-2 runs only
+	// with both, MODEL-1's three, and a Session whose model.trustFile is set. The suite writes
+	// GatewayTrust back before each case ends.
+	GatewayTrust    []byte
+	WriteModelTrust func(roots []byte) error
 }
 
 // Case is one test of the suite.

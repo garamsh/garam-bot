@@ -8,6 +8,8 @@ package agentfake
 import (
 	"bytes"
 	"crypto/subtle"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -55,7 +57,9 @@ type model struct {
 
 // WithModel has each task first call the session's model once, at model.baseUrl's Messages path, with
 // the token of model.tokenFile, which readFile reads as the workspace holds it, read again for each
-// call (MODEL-1). A call that fails fails its task.
+// call (MODEL-1). Where the session gives model.trustFile, readFile reads it for each call too, and
+// the call verifies the gateway against its roots alone (MODEL-2); client is used otherwise. A call
+// that fails fails its task.
 func (a *Adapter) WithModel(readFile func(path string) ([]byte, error), client *http.Client) *Adapter {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
@@ -78,7 +82,11 @@ func (m *model) call(spec v1alpha1.Model) error {
 	request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Anthropic-Version", "2023-06-01")
-	response, err := m.client.Do(request)
+	client, err := m.clientFor(spec)
+	if err != nil {
+		return err
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return err
 	}
@@ -87,6 +95,26 @@ func (m *model) call(spec v1alpha1.Model) error {
 		return fmt.Errorf("the model answered %d", response.StatusCode)
 	}
 	return nil
+}
+
+// clientFor is the client of a call under spec: one that trusts model.trustFile's roots alone where it
+// is given, read now (MODEL-2), and m.client otherwise.
+func (m *model) clientFor(spec v1alpha1.Model) (*http.Client, error) {
+	if spec.TrustFile == "" {
+		return m.client, nil
+	}
+	trust, err := m.readFile(spec.TrustFile)
+	if err != nil {
+		return nil, err
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(trust) {
+		return nil, errors.New("the trust file holds no certificate")
+	}
+	return &http.Client{
+		Timeout:   m.client.Timeout,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}, DisableKeepAlives: true},
+	}, nil
 }
 
 // New returns an Adapter that takes the bearer token token returns, read at each request as an

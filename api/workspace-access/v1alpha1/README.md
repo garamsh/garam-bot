@@ -137,8 +137,11 @@ Interface 3's errors reach the client so:
   - `attachment`: the attachment's name;
   - `phase`: one of interface 3's phases;
   - `reason`: why it is pending, failed or unknown, and empty otherwise;
-  - `model`: `{"baseUrl": <url>}`, the model gateway this workspace reaches;
+  - `model`: `{"baseUrl": <url>, "trust": <PEM>}`, the model gateway this workspace reaches, and the roots its certificate chains to where TRUST-1 asks for them;
   - `tools`: an array of `{"name": <tool>, "url": <MCP URL>}`, one per tool the bot may use, at the tool proxy this workspace reaches.
+- **TRUST-1.** Where the workspace's system roots do not verify the model gateway's certificate, `model.trust` MUST carry the roots it chains to, as `CheckTrust` takes them: one or more PEM `CERTIFICATE` blocks, `MaxTrustBytes`, 16 KiB, at most, and nothing else. Where they do, it MAY be absent. A server MUST NOT answer a root the gateway's chain does not end in.
+  - **A root that replaces another** MUST be answered beside it for `TrustOverlap`, an hour, before the gateway serves a chain ending in it. The root replaced stays in the answer while the gateway still serves a chain ending in it.
+  - **Why an hour.** A client writes the trust with its tokens (TRUST-2), at least every 40 minutes, so a new root reaches the workspace before the gateway's chain ends in it.
 - **WS-3.** While the phase is `pending`, the answer MUST carry `Retry-After`, and the client MUST NOT read again sooner. A client that is given none backs off from 1 second, doubling to 60.
 - **VER-2.** A client MUST read a phase it does not know as `unknown`.
 - **What the server deletes.** It deletes a workspace once the bot that owned it is gone, as the place decides it safely (at a cluster, garam-bot-operator ADR 0099). The client deletes nothing.
@@ -182,6 +185,7 @@ Interface 3's errors reach the client so:
   - **The issuers.** The server obtains the tokens from the place's model gateway (interface 5) and tool proxy for the bot, and MUST NOT keep them past its answer.
   - **No issuer.** A server with no issuer configured MUST answer 503 `waiting_for_gateway`.
 - **TOK-2.** The client MUST write the tokens into the workspace's token files with FILE-1, and MUST obtain and write new ones before two thirds of the shortest `expiresIn` have passed. So none in the workspace is more than an hour old (interface 2's CRED-1).
+- **TRUST-2.** A client that gives its harness `model.trust` MUST write it into one file under `TokenDir` in each of TOK-2's writes, from a read of the workspace (WS-2) made for that write. Where the answer carries no trust, it writes none. A trust `CheckTrust` refuses MUST NOT be written, and the client writes no tokens with it. The trust is no secret, and interface 2's `model.trustFile` names its file to the adapter.
 
 ## Limits
 
@@ -214,6 +218,7 @@ Interface 3's errors reach the client so:
   - change what a status means.
 
   A new version is served at a new path, beside the earlier one while clients move.
+- **An added member of an answer** is a release, as `model.trust` is (release 0.3.0). A client of an earlier release ignores it (T-2), and its workspace verifies the gateway against its system roots, as before. TRUST-2 binds only a client that reads it.
 - **A new requirement of the server** that no conforming client relies on, a tightening, is a release, as FILE-1's refusal of a link at any component is (release 0.2.0). One a client must act on is a new version.
 - **VER-1.** Each release has a number, `SpecRelease` in this package, from `0.1.0`, and the `api/` module's tag moves with every release.
 - **A deprecated element** is marked so here and in its Go doc comment, stays in its version, and is removed only by a new version.

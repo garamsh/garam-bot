@@ -3,7 +3,7 @@ package v1alpha1
 import "encoding/json"
 
 // SpecRelease is the release of v1alpha1's specification this package states.
-const SpecRelease = "0.1.1"
+const SpecRelease = "0.2.0"
 
 // Version is the version of the protocol these types speak.
 const Version = "agent/v1alpha1"
@@ -57,6 +57,10 @@ type Model struct {
 	BaseURL string `json:"baseUrl"`
 	// TokenFile is the workspace file holding the short-lived token the gateway takes.
 	TokenFile string `json:"tokenFile"`
+	// TrustFile is the workspace file holding the PEM roots the gateway's certificate is verified
+	// against, alone, read again when it changes. Empty, the system's roots verify it (MODEL-2).
+	// Added in release 0.2.0.
+	TrustFile string `json:"trustFile,omitempty"`
 	// Name is the model the harness asks for, the harness's default when empty.
 	Name string `json:"name,omitempty"`
 }

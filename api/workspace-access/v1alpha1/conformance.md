@@ -1,6 +1,6 @@
 # Workspace access v1alpha1 conformance
 
-The tests an implementation of `README.md`'s server must pass, each named and mapped to the requirements it holds. KEY-1, AUTH-2, WS-3's wait, TOK-2, DIAL-2, REN-1 and VER-2 are the client's, and no suite holds them: `internal/bot`'s tests hold them for `garam-bot run`, against this reference server where it reaches them. CRED-2's binding to a place's own workload, PIN-1's binding cache and BOT-1's resolution from what a place runs need a place that runs workloads; the fixture models them, and the connector's tests hold them for the cluster.
+The tests an implementation of `README.md`'s server must pass, each named and mapped to the requirements it holds. KEY-1, AUTH-2, WS-3's wait, TOK-2, TRUST-2, DIAL-2, REN-1 and VER-2 are the client's, and no suite holds them: `internal/bot`'s tests hold them for `garam-bot run`, against this reference server where it reaches them. CRED-2's binding to a place's own workload, PIN-1's binding cache and BOT-1's resolution from what a place runs need a place that runs workloads; the fixture models them, and the connector's tests hold them for the cluster.
 
 ## The suite
 
@@ -77,6 +77,7 @@ Each case is a subtest of `TestServer`.
 | DIAL-1 | `DIAL-1/a dial reaches the adapter's port and passes bytes unchanged`, `DIAL-1/another upgrade token is refused`, `DIAL-1/a workspace not running is answered not_running`. Every dial offers `http/1.1` alone and reads the 101's headers |
 | DIAL-3 | `DIAL-3/a fifth open dial of one instance is answered 429`, `DIAL-3/the server's cap is answered 503`, `DIAL-3/a dial idle for 120 seconds is closed, and one idle for 50 is not`. The cases dial one at a time, so the bounds under concurrent dials are the connector's tests' |
 | DIAL-4 | `DIAL-4/a dial closes when its instance ends`, `DIAL-4/a dial closes when its bot is gone`, `DIAL-4/a dial closes when its workspace stops` |
+| TRUST-1 | `TRUST-1/a model's trust is PEM roots, as CheckTrust takes them`. A root answered beside another for an hour before the gateway serves it needs a gateway that rotates; the connector's tests hold it for the cluster |
 | TOK-1 | `TOK-1/session tokens name the model and every tool`, `TOK-1/a server with no issuer answers waiting_for_gateway` |
 | LIMIT-1 | `LIMIT-1/a bot past its limit is answered 429 alone, for each call that reaches a provider or an issuer`, `LIMIT-1/a call refused before a provider or an issuer is asked takes nothing` |
 | LIMIT-2 | `LIMIT-2/an instance past its request limit is answered 429, refused requests counted` |
@@ -84,5 +85,5 @@ Each case is a subtest of `TestServer`.
 | SEC-1 | `SEC-1/a refusal carries no token and no credential`. What a server logs is the connector's tests' |
 | REACH-1 | Read by review: no call reaches past `TokenDir` and the adapter's port |
 | Interface 3's errors | The table of README §Answers and refusals mapping a provider's errors: the connector's tests', since the reference links no provider |
-| KEY-1, AUTH-2, TOK-2, DIAL-2, REN-1, VER-2 | the client's, `internal/bot`'s tests: AUTH-2 in `TestWorkspace_WaitsAfterEach401…`, WS-3's wait in `TestWorkspace_ReadsAPendingWorkspaceNoSoonerThanItsRetryAfter` and `TestPendingWait_…`, TOK-2 in `TestWorkspace_AcquiresTheWorkspace…` and `TestRenewal_…`, WS-1's rewrite in `TestWorkspace_WritesItsTokensAgainAfterAnAcquireThatStartedTheWorkspace`, REN-1 in `TestBackoff_…`, VER-2 in `TestKnownPhase_…`. DIAL-2 in `TestDriver_DialsAgainAfterABrokenConnectionFromOneSecondDoublingTo60ResetByA101`, against `agentfake`. KEY-1 is read by review, one key made per process for both interfaces |
+| KEY-1, AUTH-2, TOK-2, TRUST-2, DIAL-2, REN-1, VER-2 | the client's, `internal/bot`'s tests: TRUST-2 once `garam-bot run` reads `model.trust`, which it does not yet (garam-bot#1211), so it gives its harness no trust and TRUST-2 does not bind it; AUTH-2 in `TestWorkspace_WaitsAfterEach401…`, WS-3's wait in `TestWorkspace_ReadsAPendingWorkspaceNoSoonerThanItsRetryAfter` and `TestPendingWait_…`, TOK-2 in `TestWorkspace_AcquiresTheWorkspace…` and `TestRenewal_…`, WS-1's rewrite in `TestWorkspace_WritesItsTokensAgainAfterAnAcquireThatStartedTheWorkspace`, REN-1 in `TestBackoff_…`, VER-2 in `TestKnownPhase_…`. DIAL-2 in `TestDriver_DialsAgainAfterABrokenConnectionFromOneSecondDoublingTo60ResetByA101`, against `agentfake`. KEY-1 is read by review, one key made per process for both interfaces |
 | VER-1 | `SpecRelease` in this package, read by review: the release is a constant, not behaviour |

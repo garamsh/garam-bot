@@ -36,6 +36,7 @@ A record states one current decision and is kept current: update the body when t
 6. **Both surfaces are limited**, each bot's model calls and each issuer's token calls, and a refusal costs no other bot (LIMIT-1, LIMIT-2).
 7. **The reference implementation is `gatewayfake`**, which passes the server suite in `make ci` and is the stub interface 2's MODEL-1 case runs against.
 8. **At a cluster**, the gateway is a program of its own beside the connector, so the provider's key stays out of the program holding the cluster's identity (garam-bot#1211 PRs (b) and (c), garam-bot-operator ADR 0100). naru Machines, which run outside the cluster, reach a gateway the installer names, in v1.
+9. **The place gives the workspace the roots its gateway's certificate is verified against** (T-1), so the agent image runs unchanged at any place. A place's gateway serves a certificate of its own making, as the connector does. Interface 7's acquire answers the roots as `model.trust` (TRUST-1), the bot's process writes them with its tokens (TRUST-2), and interface 2's `model.trustFile` names the file, whose roots the adapter trusts alone for `model.baseUrl` (MODEL-2). A root that replaces another is answered beside it for an hour before the gateway serves it, so a workspace that renews every 40 minutes holds it in time. The PM chose this on 2026-11-29.
 
 ## Consequences
 
@@ -58,4 +59,5 @@ A record states one current decision and is kept current: update the body when t
 - **The connector signs the model token.** The gateway would check a key the connector holds, and the connector, which holds the cluster's identity, would be the one place both a token's issue and its check could be forged from. The gateway issuing its own keeps each key with the one program that uses it.
 - **The gateway inside the connector.** One program would hold the provider's key and the cluster's identity, so a fault in either surface exposes both.
 - **The provider's key in the workspace**, with no gateway. It breaks the design bar: a long-lived secret in a workspace, readable by every harness that runs there.
+- **The installer's own CA in the agent image.** The gateway's certificate would be the installer's to issue, and every installer would rebuild the agent image to trust it. The image is garam-bot's, and runs unchanged anywhere.
 - **A gateway that forwards a call's headers but its credentials.** A header the harness or a workspace's process adds reaches the provider unread. An allow list of the provider API's own headers is the smaller surface.

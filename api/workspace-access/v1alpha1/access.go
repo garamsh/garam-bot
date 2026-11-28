@@ -1,6 +1,10 @@
 package v1alpha1
 
 import (
+	"bytes"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -25,6 +29,11 @@ const (
 	ProofMemory = 2 * ProofWindow
 	// MaxCredentialLife bounds a credential's exp - iat (CRED-2).
 	MaxCredentialLife = time.Hour
+	// MaxTrustBytes is the most a model's trust holds (TRUST-1).
+	MaxTrustBytes = 16 << 10
+	// TrustOverlap is how long a root that replaces another is answered beside it before the gateway
+	// serves a chain ending in it (TRUST-1).
+	TrustOverlap = time.Hour
 )
 
 // Paths below PathPrefix, each under the attachment's workspace (T-2).
@@ -51,6 +60,10 @@ type Workspace struct {
 // Model is the model gateway the workspace reaches.
 type Model struct {
 	BaseURL string `json:"baseUrl"`
+	// Trust is the PEM of the roots the gateway's certificate chains to, one or more CERTIFICATE
+	// blocks, where the workspace's system roots do not verify it (TRUST-1). Empty, they do. Added
+	// in release 0.3.0.
+	Trust string `json:"trust,omitempty"`
 }
 
 // Tool is one MCP server the workspace reaches, at the place's tool proxy.
@@ -104,4 +117,31 @@ func CheckTokenPath(p string) error {
 		return fmt.Errorf("path %q is not a clean path under %s", p, TokenDir)
 	}
 	return nil
+}
+
+// CheckTrust refuses a model's trust TRUST-1 does not take: one above MaxTrustBytes, or one that is
+// not one or more PEM CERTIFICATE blocks, each an X.509 certificate, with nothing else but space. An
+// empty trust is taken.
+func CheckTrust(trust string) error {
+	if len(trust) > MaxTrustBytes {
+		return fmt.Errorf("the trust holds more than %d bytes", MaxTrustBytes)
+	}
+	rest := []byte(trust)
+	for n := 0; ; n++ {
+		rest = bytes.TrimSpace(rest)
+		if len(rest) == 0 {
+			return nil
+		}
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			return errors.New("the trust holds something that is not a PEM block")
+		}
+		if block.Type != "CERTIFICATE" {
+			return fmt.Errorf("block %d of the trust is a %s, not a CERTIFICATE", n+1, block.Type)
+		}
+		if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+			return fmt.Errorf("block %d of the trust is no X.509 certificate: %w", n+1, err)
+		}
+	}
 }
