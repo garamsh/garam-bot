@@ -29,11 +29,11 @@ The normative specification of garam-bot's interface 7, workspace access, at ver
 
   It carries nothing else of interface 3: no exec, no read of a file, no snapshot and no delete. REACH-1 keeps it so.
 - **The server serves every bot the place runs,** whether garam declared it or the place did. Interface 7 needs no garam identity, so a bot declared at its place has a workspace too.
-- **The package's constants are the schema's names:** `SpecRelease`, the path prefix, the token directory, the dial's upgrade token, and the error codes (`doc.go`). Its Go types arrive with the reference server.
+- **The package is the schema:** its constants name `SpecRelease`, the paths, the token directory, the dial's upgrade token, the error codes and the bounds (`doc.go`, `access.go`), its types are the bodies, and `CheckTokenPath` is FILE-1's path rule.
 
 | Implementation | Place | State |
 |---|---|---|
-| `reference` | none: it issues its own place credentials, models workload instances and their restarts, holds its bots and workspaces in memory over `workspacefake`, and issues stub session tokens | the reference implementation; to build |
+| `reference` | none: it issues its own place credentials, models workload instances and their restarts, holds its bots and workspaces in memory, echoes on each workspace's interface 2 port, and issues stub session tokens | the reference implementation, built, passing the server suite |
 | `operator/cmd/connector` | a user's cluster (`operator/docs/architecture/connector.md`, garam-bot-operator ADR 0099) | first production implementation; to build |
 | the daemon | a PC or a naru host (ADR 0039) | second production implementation; to build |
 

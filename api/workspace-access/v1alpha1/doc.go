@@ -1,8 +1,7 @@
 // Package v1alpha1 is version v1alpha1 of garam-bot's workspace access interface, interface 7: the
 // protocol by which a bot's process acquires its workspace from its execution place's connector, writes
-// the workspace's token files, dials its adapter and obtains the session's tokens. These are its names;
-// its answer types arrive with its reference server. README.md beside this file is the normative
-// specification.
+// the workspace's token files, dials its adapter and obtains the session's tokens. These are its names,
+// bounds and answer types. README.md beside this file is the normative specification.
 package v1alpha1
 
 // SpecRelease is the release of v1alpha1's specification this package states (VER-1).
