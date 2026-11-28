@@ -1,7 +1,8 @@
 name: operator release
 
-# Publishes a release: the manager's image to garam-bot/operator-manager and the
-# control service's to garam-bot/operator-control (garam-bot ADR 0041), each tagged with the version
+# Publishes a release: the manager's image to garam-bot/operator-manager, the
+# control service's to garam-bot/operator-control and the connector's to
+# garam-bot/operator-connector (garam-bot ADR 0041), each tagged with the version
 # its git tag names without the operator/v, from an operator/v0.1.0-dev.N,
 # operator/v0.1.0-rc.N or operator/v0.1.0 tag on main (operator ADR 0051, ADR 0081,
 # operator/docs/architecture/delivery.md). Modelled on sherlock's release
@@ -91,7 +92,7 @@ jobs:
             exit 1
           fi
 
-      # Both images are built before either is pushed, through the one entry point
+      # All three images are built before any is pushed, through the one entry point
       # a person also uses (ci.md §One entry point per task); the Makefile owns the
       # commands and pushes nothing. Each is one linux/amd64 manifest, labelled
       # with the commit the tag names.
@@ -107,8 +108,8 @@ jobs:
       - id: ecr
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
 
-      # The only irreversible step. Both references pass the rule every push here
-      # passes (#325) and both images are renamed first, so a reference that cannot
+      # The only irreversible step. Every reference passes the rule every push here
+      # passes (#325) and every image is renamed first, so a reference that cannot
       # be formed or is refused fails before any upload begins. The local names are
       # the ones build-images writes; a rename there leaves `docker tag` with no
       # such image, which fails here rather than pushing something else.
@@ -117,11 +118,11 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          for image in manager control; do
+          for image in manager control connector; do
             make verify-image-ref IMAGE_REF="$REGISTRY/garam-bot/operator-$image:$VERSION"
             docker tag "garam-bot/operator-$image:$GITHUB_SHA" "$REGISTRY/garam-bot/operator-$image:$VERSION"
           done
-          for image in manager control; do
+          for image in manager control connector; do
             docker push "$REGISTRY/garam-bot/operator-$image:$VERSION"
           done
 
@@ -142,7 +143,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          for image in manager control; do
+          for image in manager control connector; do
             ref="$REGISTRY/garam-bot/operator-$image:$VERSION"
             fields=$(aws ecr batch-get-image \
               --repository-name "garam-bot/operator-$image" \
