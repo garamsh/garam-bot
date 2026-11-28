@@ -11,7 +11,7 @@ garam-bot is the open-source execution core that runs bots. The execution unit i
 
 ## Architecture
 
-Five interfaces govern every component boundary (ADR 0031):
+Six interfaces govern every component boundary (ADR 0031, ADR 0042):
 
 | Interface | Responsibility |
 |---|---|
@@ -20,6 +20,7 @@ Five interfaces govern every component boundary (ADR 0031):
 | Workspace provider | Supplies isolated workspaces (the workspace gRPC contract and MCP server are candidates) |
 | Control connection protocol | The optional garam plane's connection to garam-bot |
 | Model gateway | Routes model requests; supports BYOK |
+| Bot token | How a bot's process obtains its garam token from its place's connector, bound to a key the process holds |
 
 The agent runs inside the workspace; the bot process runs outside. The workspace holds only short-lived gateway tokens, never the agent's real credentials. One pod is one PC: one organization's bots, a process per bot. Organizations are not mixed.
 

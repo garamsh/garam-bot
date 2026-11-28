@@ -69,6 +69,30 @@ func TestClient_ExchangesOnceMoreOn401(t *testing.T) {
 	assert.Len(t, h.sent(tokenPath), exchanges+1, "AUTH-3: one exchange more")
 }
 
+func TestToken_ExchangesAgainOnlyOnceTheHeldTokenIsInvalidated(t *testing.T) {
+	h := newHarness(t)
+	connection := h.establish()
+	held, err := connection.Token(context.Background())
+	require.NoError(t, err)
+	exchanges := len(h.sent(tokenPath))
+
+	again, err := connection.Token(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, held, again, "control: the held token is answered while it lives")
+	connection.Invalidate("another token")
+	again, err = connection.Token(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, held, again, "a token not held invalidates nothing")
+	require.Len(t, h.sent(tokenPath), exchanges)
+
+	connection.Invalidate(held)
+	fresh, err := connection.Token(context.Background())
+
+	require.NoError(t, err)
+	assert.Len(t, h.sent(tokenPath), exchanges+1, "the invalidated token is exchanged again")
+	assert.NotEmpty(t, fresh)
+}
+
 func TestRotate_SignsTheAuthorizationWithTheCurrentKeyAndThenSignsWithTheSuccessor(t *testing.T) {
 	h := newHarness(t)
 	connection := h.establish()

@@ -30,7 +30,8 @@ type Objects interface {
 	Claim(ctx context.Context, namespace string) (string, bool, error)
 	// List answers every object of a declared kind in namespace.
 	List(ctx context.Context, namespace string) ([]Held, error)
-	// Create creates object where nothing holds its name, and answers ErrNameTaken otherwise.
+	// Create creates object where nothing holds its name, and answers ErrNameTaken otherwise. On success
+	// object carries the UID the API server gave it.
 	Create(ctx context.Context, object *unstructured.Unstructured) error
 	// Apply applies object over held by server-side apply, and answers ErrChanged where the object is
 	// no longer the one held.

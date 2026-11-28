@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,7 +26,7 @@ spec:
 `
 
 type files struct {
-	bot, token, status string
+	bot, status string
 }
 
 func newFiles(t *testing.T) files {
@@ -34,7 +35,6 @@ func newFiles(t *testing.T) files {
 
 	return files{
 		bot:    filepath.Join(directory, "bot.yaml"),
-		token:  filepath.Join(directory, "token"),
 		status: filepath.Join(directory, "status.json"),
 	}
 }
@@ -42,9 +42,7 @@ func newFiles(t *testing.T) files {
 func options(f files) bot.Options {
 	return bot.Options{
 		BotFile:           f.bot,
-		TokenFile:         f.token,
 		StatusFile:        f.status,
-		TokenInterval:     10 * time.Millisecond,
 		HeartbeatInterval: 10 * time.Millisecond,
 		Now:               time.Now,
 		Logger:            slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -78,14 +76,11 @@ func runInBackground(t *testing.T, o bot.Options) func() error {
 func TestRun_RunsTheBotAndReportsItRunning(t *testing.T) {
 	f := newFiles(t)
 	writeFile(t, f.bot, mira)
-	writeFile(t, f.token, "first-token")
 	stop := runInBackground(t, options(f))
 
 	require.Eventually(t, func() bool { return bot.Probe(f.status, time.Now()) == nil }, 5*time.Second, 10*time.Millisecond)
 	status := readStatus(t, f.status)
 	assert.Equal(t, bot.BotRef{Namespace: "game-team", Name: "mira", Generation: 4}, status.Bot)
-	require.NotNil(t, status.Token)
-	assert.False(t, status.Token.Stale)
 
 	require.NoError(t, stop())
 	assert.Equal(t, bot.StateStopped, readStatus(t, f.status).State)
@@ -95,9 +90,7 @@ func TestRun_RunsTheBotAndReportsItRunning(t *testing.T) {
 func TestRun_KeepsTheHeartbeatFresh(t *testing.T) {
 	f := newFiles(t)
 	writeFile(t, f.bot, mira)
-	o := options(f)
-	o.TokenFile = ""
-	stop := runInBackground(t, o)
+	stop := runInBackground(t, options(f))
 	defer func() { require.NoError(t, stop()) }()
 
 	require.Eventually(t, func() bool { return bot.Probe(f.status, time.Now()) == nil }, 5*time.Second, 10*time.Millisecond)
@@ -106,31 +99,36 @@ func TestRun_KeepsTheHeartbeatFresh(t *testing.T) {
 	assert.Nil(t, readStatus(t, f.status).Token, "a bot with no garam identity reports no token")
 }
 
-func TestRun_ReadsAReplacedTokenAndReportsAnUnreadableOneStale(t *testing.T) {
+func TestRun_ReportsTheGaramTokenItObtainsAndRunsWhileItIsRefused(t *testing.T) {
 	f := newFiles(t)
 	writeFile(t, f.bot, mira)
-	writeFile(t, f.token, "first-token")
-	stop := runInBackground(t, options(f))
+	c := newConnector(t)
+	c.set(3, 0)
+	o := options(f)
+	o.ConnectorURL, o.ConnectorTrustFile, o.CredentialFile = c.server.URL, c.trust, c.credential
+	stop := runInBackground(t, o)
 	defer func() { require.NoError(t, stop()) }()
 	require.Eventually(t, func() bool { return bot.Probe(f.status, time.Now()) == nil }, 5*time.Second, 10*time.Millisecond)
-	firstRead := readStatus(t, f.status).Token.ReadAt
 
-	require.NoError(t, os.Remove(f.token))
-	require.Eventually(t, func() bool { return readStatus(t, f.status).Token.Stale }, 5*time.Second, 10*time.Millisecond)
-	require.NoError(t, bot.Probe(f.status, time.Now()), "a stale token does not stop the bot")
-
-	writeFile(t, f.token, "second-token")
 	require.Eventually(t, func() bool {
 		token := readStatus(t, f.status).Token
 
-		return !token.Stale && token.ReadAt.After(firstRead)
+		return token != nil && !token.ObtainedAt.IsZero() && !token.Stale
 	}, 5*time.Second, 10*time.Millisecond)
+	obtained := readStatus(t, f.status).Token
+	assert.Equal(t, obtained.ObtainedAt.Add(3*time.Second), obtained.ExpiresAt)
+
+	c.set(3, http.StatusServiceUnavailable)
+	require.Eventually(t, func() bool { return readStatus(t, f.status).Token.Stale }, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, bot.Probe(f.status, time.Now()), "a stale token does not stop the bot")
+	data, err := os.ReadFile(f.status)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "garam_bt_", "the status carries no token")
 }
 
-func TestRun_RefusesToStartOnAnInvalidBotOrToken(t *testing.T) {
+func TestRun_RefusesToStartOnAnInvalidBotOrConfiguration(t *testing.T) {
 	valid := func(t *testing.T, f files) {
 		writeFile(t, f.bot, mira)
-		writeFile(t, f.token, "first-token")
 	}
 	for _, tc := range []struct {
 		name  string
@@ -139,7 +137,10 @@ func TestRun_RefusesToStartOnAnInvalidBotOrToken(t *testing.T) {
 		// want is the reason the start fails with, and empty for the control, which starts.
 		want bot.Reason
 	}{
-		{name: "the control: a Bot and its token start", setup: valid},
+		{name: "the control: a Bot starts", setup: valid},
+		{name: "the control: a Bot with its connector starts", setup: valid, edit: func(o *bot.Options) {
+			o.ConnectorURL, o.ConnectorTrustFile, o.CredentialFile = "https://connector.test", "/ca.crt", "/token"
+		}},
 		{name: "no bot file", setup: func(*testing.T, files) {}, want: bot.ReasonBotInvalid},
 		{name: "a bot file that is not a Bot", want: bot.ReasonBotInvalid, setup: func(t *testing.T, f files) {
 			writeFile(t, f.bot, "apiVersion: bot.garam.sh/v1alpha1\nkind: BotPool\nmetadata: {name: p}\nspec: {maxBotsPerPod: 5}\n")
@@ -147,11 +148,8 @@ func TestRun_RefusesToStartOnAnInvalidBotOrToken(t *testing.T) {
 		{name: "a Bot the spec refuses", want: bot.ReasonBotInvalid, setup: func(t *testing.T, f files) {
 			writeFile(t, f.bot, mira+"  image: example.com/agent:1\n")
 		}},
-		{name: "an absent token file", want: bot.ReasonTokenUnreadable, setup: func(t *testing.T, f files) {
-			writeFile(t, f.bot, mira)
-		}},
-		{name: "a token interval of zero", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
-			o.TokenInterval = 0
+		{name: "a connector without its credential file", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
+			o.ConnectorURL, o.ConnectorTrustFile = "https://connector.test", "/ca.crt"
 		}},
 		{name: "a negative heartbeat interval", want: bot.ReasonFailed, setup: valid, edit: func(o *bot.Options) {
 			o.HeartbeatInterval = -time.Second

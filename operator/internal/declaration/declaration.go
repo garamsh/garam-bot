@@ -10,7 +10,10 @@ import (
 const ClaimName = "garam-connector-claim"
 
 // Kinds are the declared kinds, interface 1's at v1alpha1 (DECL-7).
-var Kinds = []string{"Bot", "Workspace", "WorkspaceClass", "BotPool"}
+// kindBot is the kind of a Bot, whose objects the connector answers the bot token domain for.
+const kindBot = "Bot"
+
+var Kinds = []string{kindBot, "Workspace", "WorkspaceClass", "BotPool"}
 
 // APIVersion is the apiVersion of every declared kind.
 var APIVersion = botv1.GroupVersion.String()
@@ -35,6 +38,13 @@ type Result struct {
 	Generation int64
 	Outcome    Outcome
 	Message    string
+}
+
+// AppliedBot is a Bot this record applied for a declaration it holds: the declaration's identifier, and
+// the UID of the object the connector created or applied for it.
+type AppliedBot struct {
+	DeclarationID string
+	UID           string
 }
 
 // Ref names one object of a declared kind.
