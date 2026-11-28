@@ -3,12 +3,14 @@ package conformance
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/garamsh/garam-bot/api/agent/v1alpha1"
+	gateway "github.com/garamsh/garam-bot/api/model-gateway/v1alpha1"
 )
 
 // Cases returns every case of the suite.
@@ -27,14 +29,49 @@ func Cases() []Case {
 		{Requirement: "EVT-1", Name: "an events read holds until an event is added", run: eventsHold},
 		{Requirement: "EVT-2", Name: "a task's last event is its one taskDone", run: taskDoneLast},
 		{Requirement: "MEM-1", Name: "the harness's answer is a message event", run: answered},
-		{
-			Requirement: "MODEL-1", Name: "model requests go to the gateway with the token file's token",
-			Pending: "needs a model gateway stub that records requests, which arrives with interface 5",
-		},
+		{Requirement: "MODEL-1", Name: "model requests go to the gateway with the token file's token", run: modelCalls},
 		{
 			Requirement: "TOOL-1", Name: "the harness reaches only the session's MCP servers, with their token files' tokens",
 			Pending: "needs an MCP server stub that records calls, and a harness that a task can make call it",
 		},
+	}
+}
+
+// modelCalls runs two tasks, the token file rewritten between them with a token for another bot, so
+// a harness that read the file once and kept its token is told apart from one that reads it for each
+// request.
+func modelCalls(t *testing.T, s *Subject) {
+	if s.Gateway == nil || s.WriteModelToken == nil {
+		t.Skip("the subject gives no recording model gateway, or no way to write the model token file")
+	}
+	rewritten := s.ModelBot
+	rewritten.Name, rewritten.UID = rewritten.Name+"-rewritten", rewritten.UID+"-rewritten"
+	refused := s.Gateway.Refused()
+	s.session(t, "model")
+	for i, bot := range []gateway.TokenRequest{s.ModelBot, rewritten} {
+		issued, err := s.Gateway.Issue(bot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.WriteModelToken(issued.Token); err != nil {
+			t.Fatal(err)
+		}
+		before := len(s.Gateway.Requests())
+		task := fmt.Sprintf("model-%d", i)
+		s.task(t, "model", task, "Reply with the word ready.")
+		s.until(t, "model", 0, doneOf(task))
+		calls := s.Gateway.Requests()[before:]
+		if len(calls) == 0 {
+			t.Fatalf("task %s made no model request to the gateway", task)
+		}
+		for _, c := range calls {
+			if c.Bot != bot {
+				t.Fatalf("a model request of task %s carried the token of %+v, want the token file's, of %+v", task, c.Bot, bot)
+			}
+		}
+	}
+	if n := s.Gateway.Refused() - refused; n > 0 {
+		t.Fatalf("the gateway refused %d model requests: the harness sent another credential", n)
 	}
 }
 

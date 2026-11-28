@@ -1,7 +1,8 @@
 // Package agentfake is the in-memory adapter of the agent interface, v1alpha1: the reference
-// implementation the conformance suite runs against while the version is below v1. Its harness
-// calls no model. It answers a task with one message echoing its input and completes it, except a
-// task whose input is HoldText, which it holds until the task is stopped.
+// implementation the conformance suite runs against while the version is below v1. Its harness calls
+// no model unless WithModel is given, when each task first makes one model call (MODEL-1). It answers
+// a task with one message echoing its input and completes it, except a task whose input is HoldText,
+// which it holds until the task is stopped.
 package agentfake
 
 import (
@@ -29,6 +30,7 @@ const Harness = "agentfake"
 // Adapter is an http.Handler serving agent/v1alpha1 for one workspace.
 type Adapter struct {
 	token func() ([]byte, error)
+	model *model
 
 	mu      sync.Mutex
 	session *session
@@ -42,6 +44,49 @@ type session struct {
 	tasks   map[string]v1alpha1.TaskRequest
 	running string
 	events  []v1alpha1.Event
+}
+
+// model is how the harness reaches the session's model: the workspace's files read by readFile, and
+// the gateway reached by client.
+type model struct {
+	readFile func(path string) ([]byte, error)
+	client   *http.Client
+}
+
+// WithModel has each task first call the session's model once, at model.baseUrl's Messages path, with
+// the token of model.tokenFile, which readFile reads as the workspace holds it, read again for each
+// call (MODEL-1). A call that fails fails its task.
+func (a *Adapter) WithModel(readFile func(path string) ([]byte, error), client *http.Client) *Adapter {
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	a.model = &model{readFile: readFile, client: client}
+	return a
+}
+
+// call makes a task's one model call (MODEL-1).
+func (m *model) call(spec v1alpha1.Model) error {
+	token, err := m.readFile(spec.TokenFile)
+	if err != nil {
+		return err
+	}
+	body := []byte(`{"model":"agentfake","max_tokens":16,"messages":[{"role":"user","content":"Reply with the word ready."}]}`)
+	request, err := http.NewRequest(http.MethodPost, strings.TrimRight(spec.BaseURL, "/")+"/v1/messages", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Anthropic-Version", "2023-06-01")
+	response, err := m.client.Do(request)
+	if err != nil {
+		return err
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("the model answered %d", response.StatusCode)
+	}
+	return nil
 }
 
 // New returns an Adapter that takes the bearer token token returns, read at each request as an
@@ -162,6 +207,13 @@ func (a *Adapter) postTask(w http.ResponseWriter, r *http.Request, id string) {
 		texts = append(texts, in.Text)
 	}
 	text := strings.Join(texts, "\n")
+	if a.model != nil && text != HoldText {
+		// The task runs while its model call is made, outside the lock, as a harness's turn does.
+		s.running = task.ID
+		go a.callModel(s, task.ID, text)
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
 	a.add(s, v1alpha1.Event{Task: task.ID, Type: v1alpha1.EventMessage, Text: text})
 	if text == HoldText {
 		s.running = task.ID
@@ -169,6 +221,24 @@ func (a *Adapter) postTask(w http.ResponseWriter, r *http.Request, id string) {
 		a.add(s, v1alpha1.Event{Task: task.ID, Type: v1alpha1.EventTaskDone, Outcome: v1alpha1.OutcomeCompleted})
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// callModel makes task's model call, then ends the task, unless it was stopped or its session ended
+// meanwhile.
+func (a *Adapter) callModel(s *session, task, text string) {
+	err := a.model.call(s.spec.Model)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.session != s || s.running != task {
+		return
+	}
+	s.running = ""
+	if err != nil {
+		a.add(s, v1alpha1.Event{Task: task, Type: v1alpha1.EventTaskDone, Outcome: v1alpha1.OutcomeFailed})
+		return
+	}
+	a.add(s, v1alpha1.Event{Task: task, Type: v1alpha1.EventMessage, Text: text})
+	a.add(s, v1alpha1.Event{Task: task, Type: v1alpha1.EventTaskDone, Outcome: v1alpha1.OutcomeCompleted})
 }
 
 func (a *Adapter) stopTask(w http.ResponseWriter, id, task string) {

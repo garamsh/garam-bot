@@ -40,7 +40,13 @@ Governs garam-bot's public interfaces: where they live, how each is versioned an
   - Its implementations are the reference server in `reference/`, the server suite's own client, and the connector, `operator/cmd/connector`. garam's connection service is not built yet.
   - Its server and client suites sit behind the build tag `conformance`, so `make test` leaves them out. `make -C operator conformance-server` runs the server suite against the reference server, and `make -C operator conformance-client` the client suite against the connector.
   - It is the first interface whose requirements reach past the Kubernetes libraries: its reference server and suites require go-jose, one of the signs ADR 0032 names.
-- **Interface 5, the model gateway, is not written yet.**
+- **Interface 5, the model gateway, is `api/model-gateway/v1alpha1/`:** where a workspace's harness sends its model calls, holding the organization's own provider key so no workspace does (ADR 0044).
+  - **Two surfaces.** The model surface passes the provider's API through at interface 2's `model.baseUrl`, with a model token as a bearer; `v1alpha1` names Anthropic Messages alone. The issue surface answers a bot's model token to the place's issuer, which authenticates with a credential of the place naming it.
+  - **Two profiles** (PRO-1, PRO-2). Every gateway serves the model surface, and a gateway whose tokens its place's issuer obtains from it serves the issue surface too. `ai.garam.sh` serves the model surface alone.
+  - **The token is stated abstractly** (TOKEN-1): at most an hour, of the gateway's own audience, checked by that gateway alone. A place's gateway issues its own; at `ai.garam.sh` it is garam ADR-0190's exchange of the bot's token (garam ADR-0195).
+  - **v1 is bring-your-own-key alone** (KEY-2). Platform billing is a later key or upstream behind the same surfaces.
+  - **Its implementations** are the reference gateway in `gatewayfake/`, served for the suite by `gatewayfake/cmd/model-gateway-reference`. The place's gateway and garam's `ai-gateway` are not built yet.
+  - **Its server suite** sits behind the build tag `conformance`. `make conformance-model-gateway`, a stage of `make ci`, runs it against the reference gateway in each profile. `gatewayfake` is also the stub interface 2's MODEL-1 case runs against.
 - **Interface 6, the bot token, is `api/bot-token/v1alpha1/`:** the one call by which a bot's process obtains its garam token from its place's connector, with the place's credential naming the bot and a DPoP proof the process signed, answered with garam's token bound to the proof's key (ADR 0042).
   - Its implementations are the reference server in `reference/`, which stands in for the connector and for garam at once, and the cluster's connector, `operator/cmd/connector` (garam-bot-operator ADR 0097). The PC daemon's is not built yet.
   - Its server suite sits behind the build tag `conformance`. `make conformance-bot-token`, a stage of `make ci`, runs it against the reference server. Running it against the connector needs a place that issues real credentials, and arrives with the end-to-end suite on kind (garam-bot#1252).
@@ -65,6 +71,7 @@ Governs garam-bot's public interfaces: where they live, how each is versioned an
 - ADR 0035: why the agent interface is an HTTP protocol through `Dial`, why tools are MCP servers outside the workspace, and why the bot's process keeps the memory.
 - ADR 0042: why the bot token is an interface of its own, and why the key its token is bound to stays in the bot's process.
 - ADR 0043: why a bot's process reaches its workspace through its connector rather than by linking a provider, and why the calls are cut to what interface 2's caller needs.
+- ADR 0044: why the model gateway issues its own token at the place, why it holds the organization's own key alone in v1, and why it is a program apart from the connector.
 
 ## Open questions
 

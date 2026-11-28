@@ -10,7 +10,7 @@ The tests of `README.md`'s requirements: what each one is, and how a new adapter
 - **A real adapter** runs it in a workspace of interface 3, with the conformance session's model a gateway that answers, the token written with `WriteFile`, and the base URL reached through `Dial`. The inputs are plain requests, "Reply with the word ready.", and `conformance.HoldInput`, which the harness is asked to keep working on until it is stopped.
 - **The caller suite** is `CallerCases()` in the same package, run with `conformance.RunCaller(t, caller)`: the cases of the requirements that bind the caller, VER-2 and CRED-1. A caller plugs in as a `conformance.Caller` (read the events of a session, read its state, keep the workspace's tokens), and the suite serves it a scripted adapter that says what a later release may, and a recording workspace with a clock it moves 10 minutes at a time over 3 hours. It reaches no real adapter and no workspace.
 - **`TestReferenceCaller`** runs it against `conformance.ReferenceCaller`, the smallest caller that keeps the obligations. The bot's driver binds its own code to the same cases in `internal/bot`'s `TestDriver_KeepsTheCallersRequirements`, and does not copy the reference. Its binding holds the events read and the token files of one write. The driver reads no session state, so the state case holds only the binding. The schedule of the rewrites, which the binding's `Keep` copies, is held instead by `TestRenewal_…` and the `TestWorkspace_…` cases against interface 7's reference server.
-- **A pending case** is skipped with its reason. It counts as named, not as passing.
+- **A pending case** is skipped with its reason. It counts as named, not as passing. So is MODEL-1 for a subject that gives no recording gateway, or no way to write the model token file.
 
 ## Requirements and their tests
 
@@ -28,7 +28,7 @@ The tests of `README.md`'s requirements: what each one is, and how a new adapter
 | EVT-1 | `EVT-1/events are numbered from 1 and read after a sequence number`, `EVT-1/an events read holds until an event is added` |
 | EVT-2 | `EVT-2/a task's last event is its one taskDone` |
 | MEM-1 | `MEM-1/the harness's answer is a message event`. Tool call events wait for TOOL-1's stub |
-| MODEL-1 | `MODEL-1/model requests go to the gateway with the token file's token`, pending a model gateway stub, which arrives with interface 5 |
+| MODEL-1 | `MODEL-1/model requests go to the gateway with the token file's token`, where the subject gives `Gateway`, interface 5's `gatewayfake`, which records each model call with the bot its token names, and `WriteModelToken`; skipped otherwise. It runs two tasks, the file rewritten between them with a token for another bot, and asserts each task's calls carry the token written before it, so a harness that keeps the token it read first fails. `TestReference` gives both, with `agentfake.WithModel` |
 | TOOL-1 | `TOOL-1/the harness reaches only the session's MCP servers, with their token files' tokens`, pending an MCP server stub |
 | CRED-1 | `CRED-1/the caller writes no credential but short-lived tokens into a workspace`, in the caller suite |
 | VER-1 | `INFO-1/info names the harness and the release` reads the release |
