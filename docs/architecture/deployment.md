@@ -178,13 +178,15 @@ Registry: **ECR, `ap-northeast-2`, account `486152169996`.** Each image has one 
 | workspace | `garam-bot-workspace:<commit>` | `build/workspace.Dockerfile` | `garam-bot/workspace` | the workspace container (this document) |
 | runtime | `garam-bot-runtime:<commit>` | `build/runtime.Dockerfile` | `garam-bot/runtime` | the container that runs one Bot (ADR 0033, `runtime.md`) |
 | workspacefile | `garam-bot-workspacefile:<commit>` | `build/workspacefile.Dockerfile` | `garam-bot/workspacefile` | the Pod workspace provider's init container (ADR 0034, `cmd/workspacefile`) |
-| claude-code | `garam-bot-claude-code:<commit>` | `build/claude-code.Dockerfile` | not arranged yet | the claude-code adapter (ADR 0035, `cmd/claude-adapter`) |
+| claude-code | `garam-bot-claude-code:<commit>` | `build/claude-code.Dockerfile` | `garam-bot/claude-code` | the claude-code adapter (ADR 0035, `cmd/claude-adapter`) |
 
 `make build-images` builds them and refuses an image whose `Config.User` is not numeric, so the kubelet can check `runAsNonRoot` against it. The repositories for runtime and workspacefile and the release role's push grant on them are the account owner's (garamsh/aurora#866, garamsh/aurora#1000). No development build of runtime or workspacefile is pushed by hand. The conformance image of interface 3 (`build/conformance.Dockerfile`) is built by `make test-podworkspace` for that run only, and `make test-claude-code` builds the claude-code image for that run only; no release carries either.
 
 **The sherlock agent image no longer exists** (ADR 0040). The repositories `garam-bot/agent` and the earlier `sherlock/agent` and `garam/sherlock-agent` hold what they held and receive nothing more. Releases `0.1.0` through `0.9.0` were published as `garam/sherlock-agent` and `garam/sherlock-workspace`; their digests, the role grants and the CloudTrail readings that backed them are in this file's git history (`git log -p -- docs/architecture/deployment.md`), and not restated here.
 
 **A release chooses its version against that history, not against the registry.** A tag names one commit and never moves. Immutability enforces that only within one repository's life: deleting and recreating a repository empties what it can refuse, so a name the registry accepts may still have named another commit before. A release therefore takes a version no earlier release used; `0.9.0` was the last in the earlier repositories, and `0.1.0` is the one name that named two commits.
+
+**The claude-code adapter's image** (ADR 0035, `build/claude-code.Dockerfile`, `cmd/claude-adapter`) is built by `make build-images` as `garam-bot-claude-code:<commit>`, which also refuses it unless its `Config.User` is numeric. It carries the adapter and the Claude Code CLI at a pinned version on a Node base pinned by digest. It has a fifth repository, **`garam-bot/claude-code`**, under the same naming and tag rules. The release workflow publishes it as one more entry in `IMAGES`, last in the push order, so the existing-tag check, the push and the read-back cover it with no branch of its own. `make test-claude-code` builds it and runs interface 2's suite against it for that run only.
 
 **Pushing a development build by hand.** In order, from a checkout at the commit to publish:
 
