@@ -12,7 +12,7 @@ import (
 
 	"github.com/garamsh/garam-bot/api/workspace/v1alpha1"
 	"github.com/garamsh/garam-bot/api/workspace/v1alpha1/conformance"
-	"github.com/garamsh/garam-bot/internal/podworkspace"
+	"github.com/garamsh/garam-bot/pkg/podworkspace"
 )
 
 // TestConformance runs interface 3's suite against a real cluster, as the namespaced ServiceAccount
