@@ -125,6 +125,14 @@ func (n *namespaces) Bot(_ context.Context, b workspaceaccess.Bot) (workspaceacc
 	return d, ok, nil
 }
 
+// UID reads a Bot as the API server holds it now, which these stand-ins keep in the same map.
+func (n *namespaces) UID(_ context.Context, b workspaceaccess.Bot) (string, bool, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	d, ok := n.bots[b]
+	return d.UID, ok, nil
+}
+
 func (n *namespaces) Class(_ context.Context, _, name string) (workspaceaccess.Class, bool, error) {
 	resources := workspace.Resources{CPU: 1, MemoryBytes: 1 << 30, DiskBytes: 1 << 30}
 	return workspaceaccess.Class{Provider: podProvider, Resources: resources},
@@ -316,7 +324,7 @@ func newHarness(t *testing.T, o options) *harness {
 	h.service, err = workspaceaccess.NewService(workspaceaccess.Config{
 		Release:    workspaceaccess.Release{Namespace: "garam-system", Name: "garam"},
 		Namespaces: []string{watched}, Origins: []string{h.server.URL},
-		Keys: h.api, Pods: h.api, Bots: h.namespaces,
+		Keys: h.api, Pods: h.api, Bots: h.namespaces, LiveBots: h.namespaces,
 		Places: map[string]workspaceaccess.Place{podProvider: {
 			Provider: h.provider, ModelURL: "https://gateway.invalid/v1", ToolProxyURL: "https://tools.invalid",
 		}},

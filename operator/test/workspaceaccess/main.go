@@ -91,6 +91,9 @@ type (
 		InstanceBurst        int `json:"instanceBurst"`
 		InstanceEverySeconds int `json:"instanceEverySeconds"`
 	}
+	existsAnswer struct {
+		Exists bool `json:"exists"`
+	}
 	maxDialsAnswer struct {
 		Previous int `json:"previous"`
 	}
@@ -164,7 +167,7 @@ func serve(ctx context.Context, dir string) error {
 	service, err := workspaceaccess.NewService(workspaceaccess.Config{
 		Release:    workspaceaccess.Release{Namespace: "garam-system", Name: "garam"},
 		Namespaces: watched, Origins: []string{baseURL},
-		Keys: p, Pods: p, Bots: p,
+		Keys: p, Pods: p, Bots: p, LiveBots: p,
 		Places: map[string]workspaceaccess.Place{podProvider: {
 			Provider: p.provider, ModelURL: "https://gateway.harness.invalid/v1", ToolProxyURL: "https://tools.harness.invalid",
 		}},
@@ -273,6 +276,17 @@ func (p *place) Bot(_ context.Context, b workspaceaccess.Bot) (workspaceaccess.D
 	return declared, true, nil
 }
 
+// UID reads a Bot as the API server holds it now: the fixture's Bots are the API server's.
+func (p *place) UID(_ context.Context, b workspaceaccess.Bot) (string, bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	held, ok := p.bots[b]
+	if !ok {
+		return "", false, nil
+	}
+	return held.uid, true, nil
+}
+
 func (p *place) Class(_ context.Context, _, name string) (workspaceaccess.Class, bool, error) {
 	if name != class {
 		return workspaceaccess.Class{}, false, nil
@@ -319,10 +333,6 @@ func (p *place) control() http.Handler {
 	return mux
 }
 
-type cannot struct {
-	CannotModel string `json:"cannotModel"`
-}
-
 func (p *place) run(ctx context.Context, name string, args []string) (any, error) {
 	switch name {
 	case "bot":
@@ -331,21 +341,13 @@ func (p *place) run(ctx context.Context, name string, args []string) (any, error
 		if len(args) != 2 {
 			return nil, fmt.Errorf("%s takes NAMESPACE NAME", name)
 		}
-		key := workspaceaccess.Bot{Namespace: args[0], Name: args[1]}
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		held, ok := p.bots[key]
-		if !ok {
-			return struct{}{}, nil
+		answer, err := p.change(name, workspaceaccess.Bot{Namespace: args[0], Name: args[1]})
+		if err != nil {
+			return nil, err
 		}
-		if name == "remove" {
-			delete(p.bots, key)
-			return struct{}{}, nil
-		}
-		made := *held
-		made.uid = newID()
-		p.bots[key] = &made
-		return botAnswer{UID: made.uid}, nil
+		// The earlier Bot's workspaces are deleted, past the sweep's grace, before this returns.
+		workspaceaccess.SweepPastGrace(ctx, p.service)
+		return answer, nil
 	case "instance":
 		return p.addInstance(args)
 	case "restart", "end":
@@ -372,7 +374,11 @@ func (p *place) run(ctx context.Context, name string, args []string) (any, error
 	case "file", linkCommand:
 		return p.provider.reach(ctx, name, args)
 	case "exists":
-		return cannot{"the deletion sweep of a gone Bot's workspaces is not built yet (garam-bot#1281)"}, nil
+		if len(args) != 2 {
+			return nil, errors.New("exists takes UID ATTACHMENT")
+		}
+		_, err := p.provider.named(ctx, args[0], args[1])
+		return existsAnswer{Exists: err == nil}, nil
 	case "issuer":
 		if len(args) != 1 || (args[0] != "--on" && args[0] != "--off") {
 			return nil, errors.New("issuer takes --on or --off")
@@ -405,6 +411,24 @@ func (p *place) run(ctx context.Context, name string, args []string) (any, error
 		}, nil
 	}
 	return nil, fmt.Errorf("unknown subcommand %q", name)
+}
+
+// change removes the Bot, or makes it again under its name with a new UID.
+func (p *place) change(name string, key workspaceaccess.Bot) (any, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	held, ok := p.bots[key]
+	if !ok {
+		return nil, errors.New("no such bot")
+	}
+	if name == "remove" {
+		delete(p.bots, key)
+		return struct{}{}, nil
+	}
+	made := *held
+	made.uid = newID()
+	p.bots[key] = &made
+	return botAnswer{UID: made.uid}, nil
 }
 
 func (p *place) addBot(args []string) (any, error) {

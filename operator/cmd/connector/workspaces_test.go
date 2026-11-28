@@ -107,7 +107,7 @@ func TestWorkspaceAccess_IsOffWithoutTheNamespaceAndRefusesAPartialConfiguration
 	env := workspaceEnv{
 		rest:    &rest.Config{Host: "https://kube.invalid"},
 		release: workspaceaccess.Release{Namespace: namespace, Name: "garam"}, namespaces: []string{watchedTeam},
-		keys: placeStub{}, pods: placeStub{}, bots: placeStub{},
+		keys: placeStub{}, pods: placeStub{}, bots: placeStub{}, liveBots: placeStub{},
 		service: "garam-connector", address: ":8443",
 	}
 	complete := workspaceOptions{
@@ -178,6 +178,9 @@ func (placeStub) Pod(context.Context, string, string) (workspaceaccess.Pod, bool
 func (placeStub) Served(context.Context, string) (bool, error) { return false, nil }
 func (placeStub) Bot(context.Context, workspaceaccess.Bot) (workspaceaccess.Declared, bool, error) {
 	return workspaceaccess.Declared{}, false, nil
+}
+func (placeStub) UID(context.Context, workspaceaccess.Bot) (string, bool, error) {
+	return "", false, nil
 }
 func (placeStub) Class(context.Context, string, string) (workspaceaccess.Class, bool, error) {
 	return workspaceaccess.Class{}, false, nil

@@ -36,6 +36,7 @@ func (noKeys) Keys(context.Context) (Issuer, error) { return Issuer{Keys: jose.J
 type noBots struct{}
 
 func (noBots) Served(context.Context, string) (bool, error)     { return true, nil }
+func (noBots) UID(context.Context, Bot) (string, bool, error)   { return "", false, nil }
 func (noBots) Bot(context.Context, Bot) (Declared, bool, error) { return Declared{}, false, nil }
 func (noBots) Class(context.Context, string, string) (Class, bool, error) {
 	return Class{}, false, nil
@@ -48,8 +49,8 @@ func TestRecheckPins_DropsThePinOfAnInstanceThatEndedAndKeepsALivingOnes(t *test
 		"remade":    {UID: "pod-remade-new", Container: "c-remade"},
 	}
 	built, err := NewService(Config{
-		Release: Release{Namespace: "garam-system", Name: "garam"}, Origins: []string{testOrigin},
-		Keys: noKeys{}, Pods: held, Bots: noBots{},
+		Release: sweepRelease, Origins: []string{testOrigin},
+		Keys: noKeys{}, Pods: held, Bots: noBots{}, LiveBots: noBots{},
 	})
 	require.NoError(t, err)
 	s, ok := built.(*service)
@@ -73,8 +74,8 @@ func TestRecheckPins_DropsThePinOfAnInstanceThatEndedAndKeepsALivingOnes(t *test
 func TestRun_DropsAGonePodsPin(t *testing.T) {
 	held := pods{livingPod: {UID: livingUID, Container: livingContainer}}
 	built, err := NewService(Config{
-		Release: Release{Namespace: "garam-system", Name: "garam"}, Origins: []string{testOrigin},
-		Keys: noKeys{}, Pods: held, Bots: noBots{}, Recheck: 10 * time.Millisecond, BindingFresh: time.Nanosecond,
+		Release: sweepRelease, Origins: []string{testOrigin},
+		Keys: noKeys{}, Pods: held, Bots: noBots{}, LiveBots: noBots{}, Recheck: 10 * time.Millisecond, BindingFresh: time.Nanosecond,
 	})
 	require.NoError(t, err)
 	s, ok := built.(*service)

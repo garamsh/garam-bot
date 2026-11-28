@@ -47,6 +47,8 @@ type Config struct {
 	Keys    Keys
 	Pods    Pods
 	Bots    Bots
+	// LiveBots reads a Bot live, for the deletion sweep alone.
+	LiveBots LiveBots
 	// Places are the providers the connector runs, by the name a WorkspaceClass's spec.provider gives.
 	Places map[string]Place
 	// Images are the workspace image of each harness, repository@sha256:<digest> (ADR 0099 decision 8).
@@ -57,11 +59,12 @@ type Config struct {
 	MaxDials int
 	Log      *slog.Logger
 	// Now is the clock. BindingFresh is how long a credential's binding to its instance is kept, at
-	// most and by default 10 seconds, and Recheck how often open dials' authority is read again, 2
-	// seconds by default.
+	// most and by default 10 seconds, Recheck how often open dials' authority is read again, 2
+	// seconds by default, and SweepEvery how often the deletion sweep runs, a minute by default.
 	Now          func() time.Time
 	BindingFresh time.Duration
 	Recheck      time.Duration
+	SweepEvery   time.Duration
 	// DialTimeout is how long a dial waits for its provider to connect, 30 seconds by default.
 	DialTimeout time.Duration
 }
@@ -70,8 +73,9 @@ type Config struct {
 type Service interface {
 	// Handler answers interface 7's calls.
 	Handler() http.Handler
-	// Run closes idle dials, closes dials whose authority ended, and drops the pins of instances that
-	// are gone, until ctx ends (DIAL-3, DIAL-4, PIN-1).
+	// Run closes idle dials, closes dials whose authority ended, drops the pins of instances that are
+	// gone, and deletes the workspaces of Bots that are gone, until ctx ends (DIAL-3, DIAL-4, PIN-1,
+	// ADR 0099 decision 6).
 	Run(ctx context.Context) error
 }
 
@@ -86,12 +90,13 @@ type service struct {
 	instLimits  *limits
 	dials       *dials
 	reads       *reads
+	sweeper     *sweeper
 }
 
 // NewService returns a Service under cfg.
 func NewService(cfg Config) (Service, error) {
-	if cfg.Keys == nil || cfg.Pods == nil || cfg.Bots == nil {
-		return nil, errors.New("Keys, Pods and Bots are required")
+	if cfg.Keys == nil || cfg.Pods == nil || cfg.Bots == nil || cfg.LiveBots == nil {
+		return nil, errors.New("Keys, Pods, Bots and LiveBots are required")
 	}
 	if cfg.Release.Namespace == "" || cfg.Release.Name == "" {
 		return nil, errors.New("the release is required")
@@ -114,6 +119,9 @@ func NewService(cfg Config) (Service, error) {
 	if cfg.DialTimeout <= 0 {
 		cfg.DialTimeout = defaultDialTimeout
 	}
+	if cfg.SweepEvery <= 0 {
+		cfg.SweepEvery = defaultSweepEvery
+	}
 	proofs, err := newProofs(cfg.Origins, cfg.Now)
 	if err != nil {
 		return nil, fmt.Errorf("the origins: %w", err)
@@ -133,15 +141,16 @@ func NewService(cfg Config) (Service, error) {
 		instLimits:  newLimits("the instance's request limit", instanceEvery, instanceBurst, cfg.Now),
 		dials:       newDials(cfg.MaxDials, cfg.Now),
 		reads:       newReads(),
+		sweeper:     newSweeper(),
 	}, nil
 }
 
 func (s *service) Run(ctx context.Context) error {
 	defer s.dials.closeWhere(func(*dial) bool { return true })
 	var loops sync.WaitGroup
-	every := func(pass func(context.Context)) {
+	every := func(period time.Duration, pass func(context.Context)) {
 		loops.Go(func() {
-			tick := time.NewTicker(s.cfg.Recheck)
+			tick := time.NewTicker(period)
 			defer tick.Stop()
 			for {
 				select {
@@ -154,25 +163,26 @@ func (s *service) Run(ctx context.Context) error {
 		})
 	}
 	// The local passes read nothing, so no stuck read delays the idle close (DIAL-3).
-	every(func(context.Context) {
+	every(s.cfg.Recheck, func(context.Context) {
 		s.dials.closeIdle()
 		s.proofs.forget()
 		s.bindings.forget()
 		s.botLimits.forgetFull()
 		s.instLimits.forgetFull()
 	})
-	// Each pass that reads is bounded by its period, and neither waits on the other.
-	every(s.bounded(s.recheckDials))
-	every(s.bounded(s.recheckPins))
+	// Each pass that reads is bounded by its period, and none waits on another.
+	every(s.cfg.Recheck, bounded(s.cfg.Recheck, s.recheckDials))
+	every(s.cfg.Recheck, bounded(s.cfg.Recheck, s.recheckPins))
+	every(s.cfg.SweepEvery, bounded(s.cfg.SweepEvery, func(ctx context.Context) { s.sweep(ctx, 0) }))
 	<-ctx.Done()
 	loops.Wait()
 	return ctx.Err()
 }
 
-// bounded is pass with a deadline of one recheck period.
-func (s *service) bounded(pass func(context.Context)) func(context.Context) {
+// bounded is pass with a deadline of period.
+func bounded(period time.Duration, pass func(context.Context)) func(context.Context) {
 	return func(ctx context.Context) {
-		ctx, cancel := context.WithTimeout(ctx, s.cfg.Recheck)
+		ctx, cancel := context.WithTimeout(ctx, period)
 		defer cancel()
 		pass(ctx)
 	}
