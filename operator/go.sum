@@ -66,10 +66,10 @@ github.com/fsnotify/fsnotify v1.9.0 h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S
 github.com/fsnotify/fsnotify v1.9.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
 github.com/fxamacker/cbor/v2 v2.9.0 h1:NpKPmjDBgUfBms6tr6JZkTHtfFGcMKsw3eGcmD/sapM=
 github.com/fxamacker/cbor/v2 v2.9.0/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
-github.com/garamsh/garam-bot v0.11.2-0.20261128065958-4ad5ebacf4f8 h1:Jkwi2V8G3AF8dGUh70j1OFqqHP1NHsZ9olYrs2kJHUQ=
-github.com/garamsh/garam-bot v0.11.2-0.20261128065958-4ad5ebacf4f8/go.mod h1:9zGniGKhlXY/txX6VwGLKr/5ycByQwzpa9fpKZYsoN0=
-github.com/garamsh/garam-bot/api v0.0.0-20261128065958-4ad5ebacf4f8 h1:BYKvnUZ6Naa9GV6GrxzbnKtVI2U3Ygtity+7toyCf0I=
-github.com/garamsh/garam-bot/api v0.0.0-20261128065958-4ad5ebacf4f8/go.mod h1:Qxkz05MhRDNUYaZ7mYiVb0UxQ7/s1XDvXTYVa82IR+0=
+github.com/garamsh/garam-bot v0.11.2-0.20261128115427-3f4a6e6b328c h1:7qsZF1huNNXI+dju8yRMiywK5AkL/2sTTyAl4lBMwac=
+github.com/garamsh/garam-bot v0.11.2-0.20261128115427-3f4a6e6b328c/go.mod h1:aNAHpw4cQAAof+PzvrOkSnj0UVZFVggdqUEKAdXwB9g=
+github.com/garamsh/garam-bot/api v0.0.0-20261128095648-ff0732e10ae0 h1:/F2uPzMXyoRGnbt4lfXmE1arhsQdNe5MNiS89yBDSeQ=
+github.com/garamsh/garam-bot/api v0.0.0-20261128095648-ff0732e10ae0/go.mod h1:Qxkz05MhRDNUYaZ7mYiVb0UxQ7/s1XDvXTYVa82IR+0=
 github.com/garamsh/naru/lib/machineapi v0.0.0-20261128043113-fd356f26c62a h1:6xlR0aek8OYE6mEWO8CtbRWfssbOjZuDQxVnTVd34WE=
 github.com/garamsh/naru/lib/machineapi v0.0.0-20261128043113-fd356f26c62a/go.mod h1:weQo9k6m2qn5apvT7JKHyWnZmTzvjJh3DJmQur7C4sM=
 github.com/gkampitakis/ciinfo v0.3.2 h1:JcuOPk8ZU7nZQjdUhctuhQofk7BGHuIy0c9Ez8BNhXs=

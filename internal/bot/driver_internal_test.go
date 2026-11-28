@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	agent "github.com/garamsh/garam-bot/api/agent/v1alpha1"
 	"github.com/garamsh/garam-bot/api/agent/v1alpha1/conformance"
 	access "github.com/garamsh/garam-bot/api/workspace-access/v1alpha1"
@@ -18,6 +21,19 @@ import (
 // exported: the suite's adapter is scripted, and its tokens are issued here as the connector would.
 // The driver reads no session's state, keeping its own of the tasks it gives, so ReadState is the
 // client's read with VER-2's mapping here, and holds nothing of the driver's.
+
+// TestAdapterClient_HoldsAnEventsReadPastMaxWaitWithinDIAL3 reads the client's bounds, which no
+// adapter shows in a test's time: an events read held MaxWait is answered before the request times
+// out, and the client opens at most two connections, below DIAL-3's four dials of an instance, each
+// closed idle before DIAL-3's 120 seconds.
+func TestAdapterClient_HoldsAnEventsReadPastMaxWaitWithinDIAL3(t *testing.T) {
+	client := newAdapterClient(&redialer{}, func() (string, string) { return "", "" })
+	assert.Greater(t, client.http.Timeout, agent.MaxWait*time.Second)
+	transport, ok := client.http.Transport.(*http.Transport)
+	require.True(t, ok)
+	assert.Equal(t, 2, transport.MaxConnsPerHost)
+	assert.Less(t, transport.IdleConnTimeout, 120*time.Second)
+}
 
 // TestDriver_KeepsTheCallersRequirements runs conformance.md's caller suite against the driver.
 func TestDriver_KeepsTheCallersRequirements(t *testing.T) {
@@ -36,7 +52,7 @@ func (caller) client(c conformance.Conn) (*adapterClient, error) {
 		var dialer net.Dialer
 		return dialer.DialContext(ctx, "tcp", base.Host)
 	}
-	return newAdapterClient(&redialer{dial: dial, sleep: sleep}, func() string { return c.Token }), nil
+	return newAdapterClient(&redialer{dial: dial, sleep: sleep}, func() (string, string) { return c.Token, "" }), nil
 }
 
 func (k caller) ReadEvents(ctx context.Context, c conformance.Conn, session string, after uint64) ([]agent.Event, uint64, error) {

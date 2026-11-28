@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -40,18 +41,35 @@ type adapterPlace struct {
 	t      *testing.T
 	server *httptest.Server
 	dials  atomic.Int32
-	ready  atomic.Bool
-	refuse atomic.Bool
+	// tokens is whether the adapter's token is written, and ready whether the session's are.
+	tokens, ready atomic.Bool
+	refuse        atomic.Bool
 	// answered counts the dials answered, as a 101 answers one.
 	answered atomic.Int32
 	// noHTTP makes each dial answer bytes that are no HTTP, and hold the connection open.
 	noHTTP atomic.Bool
+	// refuseInfo makes the adapter refuse info with a message carrying refusalMarker.
+	refuseInfo atomic.Bool
 	// holding is the number of events reads the adapter holds open, held how many it has held, and
 	// broken how many it had held at the test's last break.
 	holding, held atomic.Int32
 	broken        int32
-	space         access.Workspace
+	// open is the number of connections dialled and not closed, and mostOpen the most at once.
+	open, mostOpen atomic.Int32
+	space          access.Workspace
+
+	mu sync.Mutex
+	// adapter serves interface 2, and token is the one it takes; written and writing are what the place
+	// answers AdapterTokens, and next the token a Rewrite writes.
+	adapter                 http.Handler
+	token, written, writing string
+	next                    string
+	rewrites                int
+	afters                  []string
 }
+
+// refusalMarker is the adapter's message in a refusal, which reaches no log line and no status.
+const refusalMarker = "adapter-message-marker"
 
 func startAdapter(t *testing.T) *adapterPlace {
 	t.Helper()
@@ -60,18 +78,54 @@ func startAdapter(t *testing.T) *adapterPlace {
 		Model:      access.Model{BaseURL: "https://gateway.place.test/v1"},
 		Tools:      []access.Tool{{Name: tool, URL: "https://tools.place.test/" + tool}},
 	}}
-	fake := agentfake.New(func() ([]byte, error) { return []byte(adapterToken), nil })
+	p.install(adapterToken)
+	p.written = adapterToken
 	p.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/events") && r.URL.Query().Get("wait") != "0" {
+			p.mu.Lock()
+			p.afters = append(p.afters, r.URL.Query().Get("after"))
+			p.mu.Unlock()
 			p.held.Add(1)
 			p.holding.Add(1)
 			defer p.holding.Add(-1)
 		}
-		fake.ServeHTTP(w, r)
+		if p.refuseInfo.Load() && strings.HasSuffix(r.URL.Path, "/info") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":"internal","message":"` + refusalMarker + `"}`))
+			return
+		}
+		p.mu.Lock()
+		adapter := p.adapter
+		p.mu.Unlock()
+		adapter.ServeHTTP(w, r)
 	}))
 	t.Cleanup(p.server.Close)
+	p.tokens.Store(true)
 	p.ready.Store(true)
 	return p
+}
+
+// install serves a fresh agentfake, holding no session, that takes token.
+func (p *adapterPlace) install(token string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.token = token
+	p.adapter = agentfake.New(func() ([]byte, error) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return []byte(p.token), nil
+	})
+}
+
+// restart replaces the adapter with a fresh one, as a restarted adapter container is: it holds no
+// session, and takes a token the place writes on the next Rewrite. Every connection breaks.
+func (p *adapterPlace) restart(token string) {
+	p.install(token)
+	p.mu.Lock()
+	p.next = token
+	p.mu.Unlock()
+	p.server.CloseClientConnections()
 }
 
 func (p *adapterPlace) Dial(ctx context.Context) (net.Conn, error) {
@@ -88,15 +142,61 @@ func (p *adapterPlace) Dial(ctx context.Context) (net.Conn, error) {
 	}
 	var dialer net.Dialer
 	conn, err := dialer.DialContext(ctx, "tcp", p.server.Listener.Addr().String())
-	if err == nil {
-		p.answered.Add(1)
+	if err != nil {
+		return nil, err
 	}
-	return conn, err
+	p.answered.Add(1)
+	open := p.open.Add(1)
+	for most := p.mostOpen.Load(); open > most && !p.mostOpen.CompareAndSwap(most, open); most = p.mostOpen.Load() {
+	}
+	return &countedConn{Conn: conn, open: &p.open}, nil
 }
 
-func (p *adapterPlace) AdapterToken() string { return adapterToken }
+// countedConn counts itself open until it is closed.
+type countedConn struct {
+	net.Conn
+	open *atomic.Int32
+	once sync.Once
+}
+
+func (c *countedConn) Close() error {
+	c.once.Do(func() { c.open.Add(-1) })
+	return c.Conn.Close()
+}
+
+func (p *adapterPlace) AdapterTokens() (string, string) {
+	if !p.tokens.Load() {
+		return "", ""
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.written, p.writing
+}
 
 func (p *adapterPlace) Session() (access.Workspace, bool) { return p.space, p.ready.Load() }
+
+// Rewrite writes the token the restarted adapter takes, as the workspace would.
+func (p *adapterPlace) Rewrite() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.rewrites++
+	if p.next != "" {
+		p.written, p.next = p.next, ""
+	}
+}
+
+func (p *adapterPlace) rewritten() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.rewrites
+}
+
+// readFrom answers the cursors the driver's held events reads asked from, in order.
+func (p *adapterPlace) readFrom() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.afters...)
+}
 
 // call makes one request of the adapter as the test, with the adapter's token, and answers the status
 // and the body.
@@ -110,7 +210,9 @@ func (p *adapterPlace) call(method, path string, body any) (int, []byte) {
 	}
 	request, err := http.NewRequestWithContext(p.t.Context(), method, p.server.URL+agent.PathPrefix+path, reader)
 	require.NoError(p.t, err)
-	request.Header.Set("Authorization", "Bearer "+adapterToken)
+	p.mu.Lock()
+	request.Header.Set("Authorization", "Bearer "+p.token)
+	p.mu.Unlock()
 	response, err := p.server.Client().Do(request)
 	require.NoError(p.t, err)
 	defer func() { _ = response.Body.Close() }()
@@ -198,12 +300,19 @@ func (l *logs) String() string {
 	return l.buf.String()
 }
 
-// runDriver runs a Driver of bot at p until the test ends.
+// runDriver runs a Driver of bot at p, its messages from the inbox directory inbox, until the test
+// ends.
 func runDriver(t *testing.T, p *adapterPlace, b *v1alpha1.Bot, inbox string, waits *sleeps, out *logs) *bot.Driver {
 	t.Helper()
+	logger := slog.New(slog.NewTextHandler(out, nil))
+	return runDriverOn(t, p, b, bot.NewInbox(inbox, 10*time.Millisecond, waits.sleep, logger), waits, out)
+}
+
+// runDriverOn runs a Driver of bot at p, its messages from source, until the test ends.
+func runDriverOn(t *testing.T, p *adapterPlace, b *v1alpha1.Bot, source bot.MessageSource, waits *sleeps, out *logs) *bot.Driver {
+	t.Helper()
 	driver, err := bot.NewDriver(bot.DriverConfig{
-		Bot: b, Place: p, InboxDir: inbox, InboxPoll: 10 * time.Millisecond, Sleep: waits.sleep,
-		Logger: slog.New(slog.NewTextHandler(out, nil)),
+		Bot: b, Place: p, Messages: source, Sleep: waits.sleep, Logger: slog.New(slog.NewTextHandler(out, nil)),
 	})
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -242,10 +351,12 @@ func TestDriver_OpensTheSessionAndGivesEachMessageAsATaskInTurnRemovingItOnceDon
 	waits := &sleeps{}
 	driver := runDriver(t, p, driverBot(agentfake.Harness), inbox, waits, out)
 
-	// Control: no session is opened before the workspace runs with its tokens written.
+	// Control: no session is opened before the workspace's session tokens are written.
 	require.Eventually(t, func() bool { return driver.Status().Reason == bot.ReasonWaitingForWorkspace }, 5*time.Second, time.Millisecond)
 	_, opened := p.session()
 	assert.False(t, opened, "a session opened before the workspace's tokens are written")
+	require.Eventually(t, func() bool { return slices.Contains(waits.recorded(), 500*time.Millisecond) }, 5*time.Second, time.Millisecond)
+	assert.Empty(t, backoffs(waits), "a workspace not ready is looked at again after a back-off, not every half second")
 	p.ready.Store(true)
 
 	require.Eventually(t, func() bool { return driver.Status().Completed == 2 }, 5*time.Second, time.Millisecond)
@@ -287,6 +398,22 @@ func TestDriver_OpensTheSessionAndGivesEachMessageAsATaskInTurnRemovingItOnceDon
 	for _, secret := range []string{adapterToken, "release notes", "patch notes"} {
 		assert.NotContains(t, out.String(), secret, "the log carries no token and no input or event content")
 	}
+	assert.Equal(t, []string{"0", "2"}, p.readFrom(), "each events read starts from the last page's next")
+}
+
+func TestDriver_ChecksTheHarnessOnceTheAdaptersTokenIsWrittenBeforeTheSessionsTokens(t *testing.T) {
+	p := startAdapter(t)
+	p.ready.Store(false) // the session's tokens wait, as for the place's gateway
+	driver := runDriver(t, p, driverBot("claude-code"), t.TempDir(), &sleeps{}, &logs{})
+	require.Eventually(t, func() bool { return driver.Status().Reason == bot.ReasonHarnessMismatch }, 5*time.Second, time.Millisecond)
+
+	// Control: the adapter of the Bot's harness waits for the session's tokens.
+	q := startAdapter(t)
+	q.ready.Store(false)
+	other := runDriver(t, q, driverBot(agentfake.Harness), t.TempDir(), &sleeps{}, &logs{})
+	require.Eventually(t, func() bool { return other.Status().Reason == bot.ReasonWaitingForWorkspace }, 5*time.Second, time.Millisecond)
+	_, opened := q.session()
+	assert.False(t, opened)
 }
 
 func TestDriver_OpensNoSessionOnAnAdapterOfAnotherHarness(t *testing.T) {
@@ -381,6 +508,7 @@ func TestDriver_DialsAgainAfterABrokenConnectionFromOneSecondDoublingTo60ResetBy
 	assert.Equal(t, []string{"001 stopped", "002 completed"}, done,
 		"the task given again on each connection ran once, and the next after it")
 	assert.Empty(t, driver.Status().Reason, "the session is driven again")
+	assert.LessOrEqual(t, p.mostOpen.Load(), int32(2), "more connections open at once than the client's two")
 }
 
 func TestDriver_GivesADoneTaskWhoseMessageItCannotRemoveNoMore(t *testing.T) {
@@ -432,4 +560,223 @@ func TestDriver_WaitsBeforeDiallingAgainAnAdapterThatAnswersNoHTTP(t *testing.T)
 	assert.LessOrEqual(t, int(p.dials.Load()), len(backoffs(waits))+1, "a dial again with no wait before it")
 	assert.Equal(t, []time.Duration{time.Second, time.Second, time.Second}, backoffs(waits)[:3],
 		"each dial is answered, so each wait starts from a second")
+}
+
+// The regression of the #1299 review's F1: an earlier process gave 002 and ended; a new message 001
+// sorts before it.
+func TestDriver_SeesATaskEndedWhileAnotherWasRefusedBusyAndWaitsOnTheRunningOne(t *testing.T) {
+	p := startAdapter(t)
+	spec := agent.SessionSpec{
+		Bot:          agent.Bot{Name: "mira"},
+		Instructions: "Keep the release notes short.",
+		Model:        agent.Model{BaseURL: "https://gateway.place.test/v1", TokenFile: bot.ModelTokenPath},
+		Tools:        []agent.Tool{{Name: tool, URL: "https://tools.place.test/" + tool, TokenFile: bot.ToolTokenPath(tool)}},
+	}
+	status, body := p.call(http.MethodPut, "sessions/bot", spec)
+	require.Equal(t, http.StatusCreated, status, string(body))
+	status, body = p.call(http.MethodPost, "sessions/bot/tasks", agent.TaskRequest{ID: "002", Input: []agent.Input{{Text: agentfake.HoldText}}})
+	require.Equal(t, http.StatusAccepted, status, string(body))
+
+	inbox := t.TempDir()
+	writeFile(t, filepath.Join(inbox, "002"), agentfake.HoldText)
+	writeFile(t, filepath.Join(inbox, "001"), "write the release notes")
+	waits := &sleeps{}
+	driver := runDriver(t, p, driverBot(agentfake.Harness), inbox, waits, &logs{})
+
+	// 001 is refused busy while 002 runs, and the driver waits on 002's end in the events, not in a
+	// back-off.
+	p.awaitHeldRead()
+	assert.Equal(t, bot.SessionStatus{State: agent.SessionWorking}, driver.Status())
+	assert.Empty(t, backoffs(waits), "the running task is waited on in a back-off")
+	status, body = p.call(http.MethodPost, "sessions/bot/tasks/002/stop", nil)
+	require.Equal(t, http.StatusAccepted, status, string(body))
+	require.Eventually(t, func() bool { return driver.Status().Completed == 1 }, 5*time.Second, time.Millisecond)
+	require.Eventually(t, func() bool { return driver.Status().Stopped == 1 }, 5*time.Second, time.Millisecond,
+		"002's taskDone was read past while 001 was current: %+v", driver.Status())
+	assert.Equal(t, &bot.TaskStatus{ID: "002", Outcome: agent.OutcomeStopped}, driver.Status().LastTask)
+	var done []string
+	for _, event := range p.events() {
+		if event.Type == agent.EventTaskDone {
+			done = append(done, event.Task+" "+string(event.Outcome))
+		}
+	}
+	assert.Equal(t, []string{"002 stopped", "001 completed"}, done, "001 ran, after 002, and 002 ran once")
+	assert.NoFileExists(t, filepath.Join(inbox, "001"))
+	assert.NoFileExists(t, filepath.Join(inbox, "002"))
+}
+
+func TestDriver_HasTheTokensWrittenAgainAndGivesTheTaskToAnAdapterRestartedWhileItRan(t *testing.T) {
+	p := startAdapter(t)
+	inbox := t.TempDir()
+	writeFile(t, filepath.Join(inbox, "001"), agentfake.HoldText)
+	waits := &sleeps{}
+	driver := runDriver(t, p, driverBot(agentfake.Harness), inbox, waits, &logs{})
+	working := func() bool { s, ok := p.session(); return ok && s.State == agent.SessionWorking }
+	require.Eventually(t, working, 5*time.Second, time.Millisecond)
+	assert.Zero(t, p.rewritten(), "control: no rewrite while the adapter takes its token")
+
+	// The adapter container restarts: its token directory is empty, its session gone, and the dial
+	// still answers.
+	p.restart("restarted-adapter-token-0123456789abcdef")
+	require.Eventually(t, func() bool { return p.rewritten() > 0 }, 5*time.Second, time.Millisecond,
+		"the adapter refuses its token, and the tokens are not written again")
+	require.Eventually(t, working, 5*time.Second, time.Millisecond, "the task is not given to the restarted adapter")
+	for _, wait := range backoffs(waits) {
+		assert.LessOrEqual(t, wait, 2*time.Second, "the restart is found after a back-off, not the 40 minutes the tokens stand")
+	}
+	var tasks []string
+	for _, event := range p.events() {
+		tasks = append(tasks, event.Task+" "+string(event.Type))
+	}
+	assert.Equal(t, []string{"001 message"}, tasks, "the restarted adapter's session runs the task again")
+
+	status, body := p.call(http.MethodPost, "sessions/bot/tasks/001/stop", nil)
+	require.Equal(t, http.StatusAccepted, status, string(body))
+	require.Eventually(t, func() bool { return driver.Status().Stopped == 1 }, 5*time.Second, time.Millisecond)
+}
+
+func TestDriver_TriesTheTokenBeingWrittenWhereTheAdapterRefusesTheOneWritten(t *testing.T) {
+	p := startAdapter(t)
+	p.mu.Lock()
+	p.written, p.writing = "a-token-the-adapter-no-longer-holds", adapterToken
+	p.mu.Unlock()
+	inbox := t.TempDir()
+	writeFile(t, filepath.Join(inbox, "001"), "write the release notes")
+	driver := runDriver(t, p, driverBot(agentfake.Harness), inbox, &sleeps{}, &logs{})
+
+	require.Eventually(t, func() bool { return driver.Status().Completed == 1 }, 5*time.Second, time.Millisecond)
+	assert.Zero(t, p.rewritten(), "a token the adapter holds was answered, and no rewrite was asked")
+
+	// Control: with no token being written, the adapter's refusal asks for a rewrite.
+	q := startAdapter(t)
+	q.mu.Lock()
+	q.written = "a-token-the-adapter-no-longer-holds"
+	q.mu.Unlock()
+	runDriver(t, q, driverBot(agentfake.Harness), t.TempDir(), &sleeps{}, &logs{})
+	require.Eventually(t, func() bool { return q.rewritten() > 0 }, 5*time.Second, time.Millisecond)
+}
+
+func TestDriver_LogsAndReportsNoneOfTheAdaptersMessage(t *testing.T) {
+	p := startAdapter(t)
+	p.refuseInfo.Store(true)
+	out := &logs{}
+	driver := runDriver(t, p, driverBot(agentfake.Harness), t.TempDir(), &sleeps{}, out)
+
+	require.Eventually(t, func() bool { return strings.Contains(out.String(), "503 internal") }, 5*time.Second, time.Millisecond,
+		"control: the refusal is logged, by its status and code")
+	assert.NotContains(t, out.String(), refusalMarker)
+	status, err := json.Marshal(driver.Status())
+	require.NoError(t, err)
+	assert.Equal(t, bot.ReasonAdapterUnavailable, driver.Status().Reason)
+	assert.NotContains(t, string(status), refusalMarker)
+}
+
+func TestDriver_RejectsAMessageWhoseTaskTheAdapterRefusesThreeTimesAndGoesOn(t *testing.T) {
+	p := startAdapter(t)
+	spec := agent.SessionSpec{
+		Bot:          agent.Bot{Name: "mira"},
+		Instructions: "Keep the release notes short.",
+		Model:        agent.Model{BaseURL: "https://gateway.place.test/v1", TokenFile: bot.ModelTokenPath},
+		Tools:        []agent.Tool{{Name: tool, URL: "https://tools.place.test/" + tool, TokenFile: bot.ToolTokenPath(tool)}},
+	}
+	status, body := p.call(http.MethodPut, "sessions/bot", spec)
+	require.Equal(t, http.StatusCreated, status, string(body))
+	// 001 was given with other content: its name was used again.
+	status, body = p.call(http.MethodPost, "sessions/bot/tasks", agent.TaskRequest{ID: "001", Input: []agent.Input{{Text: "earlier content"}}})
+	require.Equal(t, http.StatusAccepted, status, string(body))
+	inbox := t.TempDir()
+	writeFile(t, filepath.Join(inbox, "001"), "other content")
+	writeFile(t, filepath.Join(inbox, "002"), "write the release notes")
+	waits := &sleeps{}
+	driver := runDriver(t, p, driverBot(agentfake.Harness), inbox, waits, &logs{})
+
+	require.Eventually(t, func() bool { return driver.Status().Completed == 1 }, 5*time.Second, time.Millisecond,
+		"the message after a refused one is not given")
+	assert.Equal(t, 1, driver.Status().Rejected)
+	assert.Equal(t, []time.Duration{time.Second, 2 * time.Second}, backoffs(waits), "two refusals waited, the third rejected")
+	assert.FileExists(t, filepath.Join(inbox, ".001.rejected"), "the rejected message is set aside")
+	assert.NoFileExists(t, filepath.Join(inbox, "001"))
+}
+
+// script is a MessageSource that answers its steps in turn, then waits, and records how it was asked.
+type script struct {
+	mu      sync.Mutex
+	steps   []step
+	asking  int
+	mostAsk int
+	out     *bot.Message
+	early   int
+	done    []string
+}
+
+type step struct {
+	message bot.Message
+	err     error
+}
+
+func (s *script) Next(ctx context.Context) (bot.Message, error) {
+	s.mu.Lock()
+	s.asking++
+	s.mostAsk = max(s.mostAsk, s.asking)
+	if s.out != nil {
+		s.early++
+	}
+	if len(s.steps) == 0 {
+		s.asking--
+		s.mu.Unlock()
+		<-ctx.Done()
+		return bot.Message{}, ctx.Err()
+	}
+	next := s.steps[0]
+	s.steps = s.steps[1:]
+	if next.err == nil {
+		s.out = &next.message
+	}
+	s.asking--
+	s.mu.Unlock()
+	return next.message, next.err
+}
+
+func (s *script) Done(_ context.Context, m bot.Message, outcome agent.Outcome) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.out = nil
+	s.done = append(s.done, m.ID+" "+string(outcome))
+	return nil
+}
+
+func (s *script) record() (done []string, mostAsk, early int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.done...), s.mostAsk, s.early
+}
+
+func TestDriver_PollsItsSourceOneMessageAtATimeAndNoSoonerThanItsRetryAfter(t *testing.T) {
+	p := startAdapter(t)
+	input := func(text string) []agent.Input { return []agent.Input{{Text: text}} }
+	source := &script{steps: []step{
+		{err: &bot.RetryLater{After: 7 * time.Second}},
+		{err: &bot.RetryLater{After: 90 * time.Second}},
+		{message: bot.Message{ID: "m-1", Input: input("write the release notes")}},
+		{err: errors.New("the mailbox is unreachable")},
+		{message: bot.Message{ID: "not a task id", Input: input("skipped")}},
+		{message: bot.Message{ID: "m-2", Input: input("and the patch notes")}},
+	}}
+	waits := &sleeps{}
+	driver := runDriverOn(t, p, driverBot(agentfake.Harness), source, waits, &logs{})
+
+	require.Eventually(t, func() bool { return driver.Status().Completed == 2 }, 5*time.Second, time.Millisecond)
+	done, mostAsk, early := source.record()
+	assert.Equal(t, []string{"m-1 completed", "not a task id rejected", "m-2 completed"}, done)
+	assert.Equal(t, 1, mostAsk, "two polls at once")
+	assert.Zero(t, early, "a poll before the last message was done")
+	assert.Equal(t, []time.Duration{7 * time.Second, 60 * time.Second, time.Second}, backoffs(waits),
+		"Retry-After waited as asked, at most 60 seconds, and a failure from a second")
+	var tasks []string
+	for _, event := range p.events() {
+		if event.Type == agent.EventTaskDone {
+			tasks = append(tasks, event.Task)
+		}
+	}
+	assert.Equal(t, []string{"m-1", "m-2"}, tasks, "each task's identifier is its message's")
 }

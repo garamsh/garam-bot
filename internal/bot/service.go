@@ -107,7 +107,11 @@ func (s *service) Run(ctx context.Context) error {
 				o.Logger.Warn("workspace not ready; retrying", "attachment", space.cfg.Attachment, "error", err)
 			})
 		})
-		if driver, err = NewDriver(DriverConfig{Bot: bot, Place: space, InboxDir: o.InboxDir, Sleep: o.Sleep, Logger: o.Logger}); err != nil {
+		var messages MessageSource
+		if o.InboxDir != "" {
+			messages = NewInbox(o.InboxDir, 0, o.Sleep, o.Logger)
+		}
+		if driver, err = NewDriver(DriverConfig{Bot: bot, Place: space, Messages: messages, Sleep: o.Sleep, Logger: o.Logger}); err != nil {
 			return err
 		}
 		background(driver.Run)

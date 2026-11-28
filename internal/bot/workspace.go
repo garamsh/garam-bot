@@ -68,8 +68,10 @@ type Workspace struct {
 	base  string
 	trust placeTrust
 
-	// reacquire wakes Run to acquire again, a call having found the workspace not running.
+	// reacquire wakes Run to acquire again, a call having found the workspace not running, and rewrite
+	// wakes it to write the tokens again, the adapter having refused them.
 	reacquire chan struct{}
+	rewrite   chan struct{}
 
 	// authMu guards authWait, the wait before the next request while the last was answered 401
 	// (AUTH-2), and zero once one was not.
@@ -79,8 +81,13 @@ type Workspace struct {
 	mu        sync.Mutex
 	client    *http.Client
 	tlsConfig *tls.Config
-	adapter   string
-	answer    access.Workspace
+	// adapter is the adapter's token last written, and writing the one a write under way, or one whose
+	// answer was lost, carries.
+	adapter string
+	writing string
+	// rewriteDue is a Rewrite the wait took and the next pass has not yet answered.
+	rewriteDue bool
+	answer     access.Workspace
 	// ready is set once the session's tokens are written after the latest acquire.
 	ready  bool
 	status WorkspaceStatus
@@ -112,7 +119,8 @@ func NewWorkspace(cfg WorkspaceConfig) (*Workspace, error) {
 	return &Workspace{
 		cfg: cfg, base: strings.TrimRight(cfg.URL, "/") + access.WorkspacesPath + url.PathEscape(cfg.Attachment),
 		trust: placeTrust{file: cfg.TrustFile}, reacquire: make(chan struct{}, 1),
-		status: WorkspaceStatus{Attachment: cfg.Attachment},
+		rewrite: make(chan struct{}, 1),
+		status:  WorkspaceStatus{Attachment: cfg.Attachment},
 	}, nil
 }
 
@@ -142,12 +150,21 @@ func (w *Workspace) Session() (access.Workspace, bool) {
 	return w.answer, w.ready
 }
 
-// AdapterToken answers the adapter's token last written into the workspace (interface 2's AUTH-1), and
-// empty before the first.
-func (w *Workspace) AdapterToken() string {
+// AdapterTokens answers the adapter's token last written into the workspace (interface 2's AUTH-1), and
+// the one a write under way carries, or one whose write's answer was lost: the adapter holds either.
+// Both are empty before the first write.
+func (w *Workspace) AdapterTokens() (written, writing string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.adapter
+	return w.adapter, w.writing
+}
+
+// Rewrite wakes Run to write the workspace's tokens again at once, rather than when they are due.
+func (w *Workspace) Rewrite() {
+	select {
+	case w.rewrite <- struct{}{}:
+	default:
+	}
 }
 
 // Run acquires the workspace and keeps its tokens written until ctx ends. A failure leaves it running:
@@ -186,18 +203,21 @@ func (w *Workspace) Run(ctx context.Context, report func(error)) {
 }
 
 // pass acquires the workspace where it is not acquired, and writes a fresh adapter token after every
-// acquire, since one that started or recovered the workspace left no token in it (WS-1). It then
-// writes the session's tokens, and answers how long they stand.
+// acquire, since one that started or recovered the workspace left no token in it (WS-1), and after a
+// Rewrite, whether or not the session's tokens can be issued. It then writes the session's tokens, and
+// answers how long they stand.
 func (w *Workspace) pass(ctx context.Context, acquired *bool) (time.Duration, error) {
-	if !*acquired {
-		// A call that found the workspace not running before this acquire asks for nothing more.
-		select {
-		case <-w.reacquire:
-		default:
-		}
-		w.setReady(false)
-		if err := w.acquire(ctx); err != nil {
-			return 0, err
+	if rewrite := w.rewriteAsked(); !*acquired || rewrite {
+		if !*acquired {
+			// A call that found the workspace not running before this acquire asks for nothing more.
+			select {
+			case <-w.reacquire:
+			default:
+			}
+			w.setReady(false)
+			if err := w.acquire(ctx); err != nil {
+				return 0, err
+			}
 		}
 		adapter, files, _, err := tokenFiles(nil)
 		if err != nil {
@@ -215,14 +235,28 @@ func (w *Workspace) pass(ctx context.Context, acquired *bool) (time.Duration, er
 	return stand, err
 }
 
+// rewriteAsked answers whether Rewrite was called since the last pass that answered it.
+func (w *Workspace) rewriteAsked() bool {
+	select {
+	case <-w.rewrite:
+		return true
+	default:
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	asked := w.rewriteDue
+	w.rewriteDue = false
+	return asked
+}
+
 func (w *Workspace) setReady(ready bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.ready = ready
 }
 
-// wait waits until the tokens are due again, and answers true where a call found the workspace not
-// running first.
+// wait waits until the tokens are due again or Rewrite is called, and answers true where a call found
+// the workspace not running first.
 func (w *Workspace) wait(ctx context.Context, d time.Duration) bool {
 	waitCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -231,6 +265,12 @@ func (w *Workspace) wait(ctx context.Context, d time.Duration) bool {
 		select {
 		case <-w.reacquire:
 			woken <- true
+			cancel()
+		case <-w.rewrite:
+			w.mu.Lock()
+			w.rewriteDue = true
+			w.mu.Unlock()
+			woken <- false
 			cancel()
 		case <-waitCtx.Done():
 			woken <- false
@@ -387,12 +427,15 @@ func (w *Workspace) write(ctx context.Context, adapter string, files []access.Fi
 	if err != nil {
 		return err
 	}
+	w.mu.Lock()
+	w.writing = adapter
+	w.mu.Unlock()
 	if _, _, err := w.call(ctx, http.MethodPut, access.FilesSuffix, body); err != nil {
 		return err
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.adapter = adapter
+	w.adapter, w.writing = adapter, ""
 	if len(files) > 1 {
 		w.status.TokensWrittenAt = w.cfg.Now()
 	}
