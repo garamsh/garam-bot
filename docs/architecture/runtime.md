@@ -15,7 +15,14 @@ Governs the runtime that runs one Bot: what `garam-bot run` reads, the status co
   - **No token.** Without the flag, the bot runs with no garam identity, as a cluster-owned bot does today.
   - **Confinement.** The token, the proof and the credential reach no log line, error or status. The token is held in memory alone.
   - **Not yet presented.** No garam route accepts a bot token yet (`bot-system.md` §Authentication), so the process holds a token nothing presents, and nothing calls `TokenSource.Refused` until the first caller.
-- **What the bot does.** It holds its Bot until SIGTERM, which exits 0. It has no work source until interfaces 2 to 4 are built (ADR 0031).
+- **What the bot does.** It holds its Bot until SIGTERM, which exits 0. It has no work source yet.
+- **What it is to do: drive its workspace and its adapter** (ADR 0043, decided and to build under garam-bot#1281).
+  - **The workspace.** It acquires the workspace of the Bot's first attachment through its connector by interface 7, on `--workspace-credential-file` beside `--connector-url` and `--connector-trust-file`.
+  - **The session.** It writes the adapter's token, checks the adapter's `info` against `spec.agent.harness`, writes the session's model and tool tokens, and opens the session `bot` with `spec.persona.instructions`.
+  - **Tasks.** It starts a task per message, from G4's long poll once garam serves it and from `--inbox-dir` until then. It long-polls the events, skipping a type it does not know.
+  - **Token files.** It rewrites them every 40 minutes.
+  - **Failures.** A workspace, adapter or gateway that fails leaves it running, with the reason in the status file, `waitingForGateway` while no model token is issued.
+  - **Confinement.** No input, event content, file content or token reaches a log line or the status file.
 
 ### The status contract
 
@@ -41,6 +48,7 @@ Governs the runtime that runs one Bot: what `garam-bot run` reads, the status co
 - ADR 0033: why a separate binary, why an exec probe over an endpoint, and the image's shape.
 - ADR 0042: why the process holds the key its token is bound to, and obtains the token from its connector rather than from a file.
 - ADR 0032: the file form it reads.
+- ADR 0043: why it reaches its workspace through its connector, and how it drives interface 2.
 
 ## Open questions
 

@@ -1,6 +1,6 @@
 # ADR 0098: Build the Bot reconciler on the restricted Pod and the pull policy alone, and keep the fence and claims with the Agent
 
-> Status: accepted
+> Status: accepted; decision 3's cluster-owned Bot reaching no connector superseded by ADR-0099
 > Date: 2026-11-28
 
 Append-only: once merged, the body below is not rewritten. A fact later found wrong is corrected in an appended note, not edited out; a revised decision is a new ADR that supersedes this one.

@@ -4,7 +4,7 @@ Governs garam-bot's public interfaces: where they live, how each is versioned an
 
 ## Current decisions
 
-- **Every component boundary is a versioned public interface with a conformance suite, and admits more than one implementation from its first version** (ADR 0031), as `docs/convention/interfaces.md` requires of every boundary between separately built components. There are six: the declaration spec, the agent, the workspace provider, the control connection protocol, the model gateway and the bot token.
+- **Every component boundary is a versioned public interface with a conformance suite, and admits more than one implementation from its first version** (ADR 0031), as `docs/convention/interfaces.md` requires of every boundary between separately built components. There are seven: the declaration spec, the agent, the workspace provider, the control connection protocol, the model gateway, the bot token and workspace access.
 - **The interfaces are the Go module `github.com/garamsh/garam-bot/api`,** apart from the root module the binary ships from, so a consumer imports an interface and not garam-bot (ADR 0032). It imports nothing from the root module, and the root module requires a published version of it, as any consumer does.
 - **Each interface version is a directory, `api/<interface>/<version>/`,** holding:
   - `README.md`, the normative specification, with numbered requirements, its compatibility rules and its open questions;
@@ -43,6 +43,13 @@ Governs garam-bot's public interfaces: where they live, how each is versioned an
   - Its implementations are the reference server in `reference/`, which stands in for the connector and for garam at once, and the cluster's connector, `operator/cmd/connector` (garam-bot-operator ADR 0097). The PC daemon's is not built yet.
   - Its server suite sits behind the build tag `conformance`. `make conformance-bot-token`, a stage of `make ci`, runs it against the reference server. Running it against the connector needs a place that issues real credentials, and arrives with the end-to-end suite on kind (garam-bot#1252).
   - Its client's rules have no suite yet. `internal/bot`'s tests hold them for `garam-bot run`.
+- **Interface 7, workspace access, is `api/workspace-access/v1alpha1/`:** how a bot's process, through its place's connector, does four things (ADR 0043):
+  - acquires its workspace for one of its attachments;
+  - writes the workspace's token files under `/run/garam-bot/`;
+  - dials its adapter's port 7700 by an HTTP upgrade;
+  - obtains the session's model and tool tokens.
+  - **Who holds what.** The connector links interface 3's providers and holds their rights. The process holds none, and authenticates with a place credential of its own audience and a DPoP proof by its key, pinned per workload instance.
+  - **What is written.** Its specification and conformance list are written. Its reference server, its server suite and the connector's implementation are not built yet (garam-bot#1281). At a cluster, garam-bot-operator ADR 0099 decides the connector's side.
 
 ## Rationale
 
@@ -52,8 +59,9 @@ Governs garam-bot's public interfaces: where they live, how each is versioned an
 - ADR 0034: why the workspace provider is a Go driver interface, why one data volume is the state, and why a naru Machine is its first production implementation.
 - ADR 0035: why the agent interface is an HTTP protocol through `Dial`, why tools are MCP servers outside the workspace, and why the bot's process keeps the memory.
 - ADR 0042: why the bot token is an interface of its own, and why the key its token is bound to stays in the bot's process.
+- ADR 0043: why a bot's process reaches its workspace through its connector rather than by linking a provider, and why the calls are cut to what interface 2's caller needs.
 
 ## Open questions
 
 - **Where a conformance suite for readers lives.** Interface 1's suite tests admission. Its reader obligations, a secret reference resolved in its object's namespace and the Running condition among them, are pending cases. garam-bot's runtime that runs one Bot reads a Bot and meets none of them yet (ADR 0033), so the harness arrives with the first reader that acts on one: the runtime once it resolves secrets or attaches workspaces, or garam-bot-operator's Bot reconciler for the Running condition.
-- **Callers' suites.** Interfaces 2 and 3 each place obligations on the caller (CRED-1, and VER-2 of each). Their cases are pending names until the first caller, the connector or the PC daemon, is built.
+- **Callers' suites.** Interfaces 2 and 3 each place obligations on the caller (CRED-1, and VER-2 of each). Their cases are pending names until the first caller is built. That caller is `garam-bot run` for interface 2 and the connector for interface 3 (ADR 0043).
