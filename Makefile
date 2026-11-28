@@ -382,7 +382,8 @@ conformance-bot-token:
 	cd api || exit 1; \
 	CONFORMANCE_BASE_URL="$$(cat "$$dir/url")" CONFORMANCE_TRUST_FILE="$$dir/ca.pem" \
 	CONFORMANCE_FIXTURE="$(BOT_TOKEN_REFERENCE) --dir $$dir" \
-		go test -tags=conformance ./bot-token/v1alpha1/conformance/server/ -v -count=1 2>&1 | tee "$$dir/log" || status=$$?; \
+		go test -tags=conformance ./bot-token/v1alpha1/conformance/server/ -v -count=1 >"$$dir/log" 2>&1 || status=$$?; \
+	cat "$$dir/log"; \
 	passed=$$(grep -c '^    --- PASS' "$$dir/log"); \
 	echo "conformance-bot-token: conformance.md's server suite against the reference server:" \
 		"$$passed passed, $$(grep -c '^    --- FAIL' "$$dir/log") failed"; \
@@ -404,7 +405,8 @@ conformance-workspace-access:
 	cd api || exit 1; \
 	CONFORMANCE_BASE_URL="$$(cat "$$dir/url")" CONFORMANCE_TRUST_FILE="$$dir/ca.pem" \
 	CONFORMANCE_FIXTURE="$(WORKSPACE_ACCESS_REFERENCE) --dir $$dir" \
-		go test -tags=conformance ./workspace-access/v1alpha1/conformance/server/ -v -count=1 2>&1 | tee "$$dir/log" || status=$$?; \
+		go test -tags=conformance ./workspace-access/v1alpha1/conformance/server/ -v -count=1 >"$$dir/log" 2>&1 || status=$$?; \
+	cat "$$dir/log"; \
 	passed=$$(grep -c '^    --- PASS' "$$dir/log"); \
 	echo "conformance-workspace-access: conformance.md's server suite against the reference server:" \
 		"$$passed passed, $$(grep -c '^    --- FAIL' "$$dir/log") failed"; \
