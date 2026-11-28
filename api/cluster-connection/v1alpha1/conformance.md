@@ -38,6 +38,7 @@ Each subcommand exits 0 and prints its answer as one JSON object, or, when the s
 | `{watch-namespaces}` | The watched namespaces, comma-separated |
 | `{rotation-period}` | Optional. How long a key signs before the client rotates it, a Go duration. Tests that rotate fill it with seconds; an argument naming it is left out of every other test |
 | `{report-only}` | Optional. `true` where the client reports only (DECL-15), and `false` otherwise |
+| `{listen-address}` | Optional. A free loopback address, `127.0.0.1:<port>`, unique to this instance, for every listener the client opens in-cluster for other interfaces. Tests run in parallel, so a client that listens takes its address from here, and not from a fixed port |
 
 A test whose placeholder the command line does not name is reported pending, by name. The client reaches the API server through the kubeconfig `KUBECONFIG` names, with the rights of `system:masters`. `CONFORMANCE_CLIENT_SECRETS` names the empty Secrets the client's installer creates in its release namespace before it starts, comma-separated.
 
@@ -146,4 +147,4 @@ The suites are built under `conformance/` beside this file, as Go tests behind t
 | `client/reports/after-restart` | REP-1, REP-5 |
 | `client/transport/never-listens` | T-1 |
 
-`client/transport/never-listens` checks that the client opens no listening socket other than its probes. The suite runs the client as a process, reads its own sockets from `/proc` (Linux alone), and allows none, so a client that serves probes is started without them. Elsewhere the test is pending.
+`client/transport/never-listens` checks that nothing listens for this protocol and that the connection to garam is outbound only. The suite runs the client as a process and reads its own sockets from `/proc` (Linux alone). It requires every listening socket to be the one at `{listen-address}`, and none where the command line does not name it. It requires that listener to answer no route of this protocol, the client to hold a connection to the server that it opened, and no connection of the client's to be one a listener accepted. It does not look for the absence of every listener: those of other interfaces are not this protocol's concern. Elsewhere the test is pending.

@@ -7,6 +7,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
@@ -14,11 +15,14 @@ import (
 	"fmt"
 	"maps"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -162,9 +166,11 @@ func unknownErrorCodeByStatus(t *testing.T) {
 	})
 }
 
-// neverListens reads the client process's own sockets from /proc and requires none of them to be
-// listening: TCP in LISTEN, or a Unix socket accepting connections. The client named here has no probe
-// port, so none is allowed.
+// neverListens reads the client process's own sockets from /proc and requires, for T-1, that nothing
+// listens for interface 4 and that the connection to garam is the client's own. The only listening
+// socket allowed is the one at the {listen-address} the client was given, which serves other interfaces
+// in-cluster. It answers no route of this protocol, and no established connection of the client's is
+// one that listener accepted.
 func neverListens(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		suite.Pending(t, "the client's sockets are read from /proc, which only Linux has")
@@ -177,10 +183,90 @@ func neverListens(t *testing.T) {
 
 	inodes := socketInodes(t, client.pid())
 	require.NotEmpty(t, inodes, "control: the client's sockets are read")
-	listening := listeningSockets(t, client.pid(), inodes)
+	sockets := tcpSockets(t, client.pid(), inodes)
+	allowed := allowedListener(h.listenAddress)
 
-	assert.Empty(t, listening, "T-1: the client opens no listening socket")
+	var serving, outbound, inbound []string
+	for _, s := range sockets {
+		switch {
+		case s.state == "0A":
+			serving = append(serving, s.local)
+		case s.state == "01" && s.remote == serverEndpoint(t, h.base):
+			outbound = append(outbound, s.local)
+		}
+	}
+	for _, listener := range serving {
+		if !allowed(listener) {
+			assert.Fail(t, "T-1: the client listens beyond its {listen-address}", "listening at %s", listener)
+		}
+	}
+	for _, s := range sockets {
+		if s.state == "01" && slices.Contains(serving, s.local) {
+			inbound = append(inbound, s.local+" from "+s.remote)
+		}
+	}
+	assert.NotEmpty(t, outbound, "control: the client holds a connection to the server it opened itself")
+	assert.Empty(t, inbound, "T-1: the client holds no connection a listener accepted")
+	assert.Empty(t, unixListeners(t, client.pid(), inodes), "T-1: the client opens no Unix socket accepting connections")
+
+	for _, listener := range serving {
+		for _, scheme := range []string{"https", "http"} {
+			assert.False(t, answersInterface4(scheme, listener),
+				"T-1: the listener at %s answers a route of this protocol over %s", listener, scheme)
+		}
+	}
 }
+
+// answersInterface4 is whether the listener at addr answers the declarations route with a success.
+func answersInterface4(scheme, addr string) bool {
+	client := &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, //nolint:gosec // a probe of a listener, whose answer is not trusted
+	}
+	resp, err := client.Get(scheme + "://" + addr + declarationsPath)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode >= 200 && resp.StatusCode < 300
+}
+
+// allowedListener is whether a /proc local address is the {listen-address} the client was given. None
+// is, when the command line does not name the placeholder.
+func allowedListener(listenAddress string) func(string) bool {
+	given := ""
+	for _, arg := range command {
+		if strings.Contains(arg, "{listen-address}") {
+			given = listenAddress
+		}
+	}
+	return func(local string) bool { return given != "" && local == procAddress(given) }
+}
+
+// serverEndpoint is the /proc form of the base URL's host and port.
+func serverEndpoint(t *testing.T, base string) string {
+	t.Helper()
+	u, err := url.Parse(base)
+	require.NoError(t, err)
+	return procAddress(u.Host)
+}
+
+// procAddress is addr, an IPv4 host and port, as /proc/net/tcp writes it: the address's bytes as one
+// little-endian hex word, then the port in hex.
+func procAddress(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return ""
+	}
+	ip := net.ParseIP(host).To4()
+	p, perr := strconv.Atoi(port)
+	if ip == nil || perr != nil {
+		return ""
+	}
+	return fmt.Sprintf("%02X%02X%02X%02X:%04X", ip[3], ip[2], ip[1], ip[0], p)
+}
+
+type tcpSocket struct{ local, remote, state string }
 
 func socketInodes(t *testing.T, pid int) map[string]bool {
 	t.Helper()
@@ -197,22 +283,30 @@ func socketInodes(t *testing.T, pid int) map[string]bool {
 	return out
 }
 
-func listeningSockets(t *testing.T, pid int, inodes map[string]bool) []string {
+// tcpSockets are the client's own TCP sockets, IPv4 and IPv6.
+func tcpSockets(t *testing.T, pid int, inodes map[string]bool) []tcpSocket {
 	t.Helper()
-	var out []string
+	var out []tcpSocket
 	for _, table := range []string{"tcp", "tcp6"} {
 		for _, fields := range procTable(t, pid, table) {
-			// sl local_address rem_address st ... inode at index 9; st 0A is LISTEN.
-			if len(fields) > 9 && fields[3] == "0A" && inodes[fields[9]] {
-				out = append(out, table+" "+fields[1])
+			// sl local_address rem_address st ... inode at index 9.
+			if len(fields) > 9 && inodes[fields[9]] {
+				out = append(out, tcpSocket{local: fields[1], remote: fields[2], state: fields[3]})
 			}
 		}
 	}
+	return out
+}
+
+// unixListeners are the client's Unix sockets accepting connections.
+func unixListeners(t *testing.T, pid int, inodes map[string]bool) []string {
+	t.Helper()
+	var out []string
 	for _, fields := range procTable(t, pid, "unix") {
 		// Num RefCount Protocol Flags Type St Inode Path; flag 0x10000 is __SO_ACCEPTCON.
 		if len(fields) > 6 && inodes[fields[6]] {
 			if flags, err := strconv.ParseUint(fields[3], 16, 64); err == nil && flags&0x10000 != 0 {
-				out = append(out, "unix "+strings.Join(fields[7:], " "))
+				out = append(out, strings.Join(fields[7:], " "))
 			}
 		}
 	}

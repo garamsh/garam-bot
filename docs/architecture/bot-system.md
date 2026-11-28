@@ -55,7 +55,7 @@ Every claim about another repository below holds at the revision it names:
 
 ### Pull only
 
-- **Every connection is opened by the place** (ADR 0036). garam opens no connection to a place, and a place opens no inbound port (garam-bot-operator ADR 0087, ADR 0091; the protocol's T-1).
+- **Every connection is opened by the place** (ADR 0036). garam opens no connection to a place, and a place opens no port that garam, or anything outside the cluster, connects to for this protocol; the listeners of interfaces 6 and 7 are in-cluster and admit only what the place's own policy admits (garam-bot-operator ADR 0087, ADR 0091; the protocol's T-1).
 - **Declarations** are long-polled with a cursor, tombstones and a purge point (the protocol's DECL-1 to DECL-6; garam ADR-0187).
 - **Reports** are pushed by the place, as its whole view, within 10 seconds of a change and every 5 minutes (the protocol's REP-1 to REP-9). garam keeps the latest as untrusted display data (garam ADR-0188).
 - **Messages to a bot** reach its process by long poll or stream that the bot's process opens with its token. garam's mailbox long poll for a bot is garam's to build (G4).
