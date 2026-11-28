@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -70,14 +71,16 @@ type intercept func(w http.ResponseWriter, r *http.Request, body []byte, next ht
 // request, a record with a registration token minted for it, a release namespace and watched
 // namespaces whose claims name the release, and the client under test.
 type harness struct {
-	t         *testing.T
-	ref       *reference.Server
-	base      string
-	trustFile string
-	record    reference.GRN
-	tokenFile string
-	releaseNS string
-	watched   []string
+	t    *testing.T
+	ref  *reference.Server
+	base string
+	// listenAddress is the address the last client start gave {listen-address}.
+	listenAddress string
+	trustFile     string
+	record        reference.GRN
+	tokenFile     string
+	releaseNS     string
+	watched       []string
 
 	mu        sync.Mutex
 	requests  []seen
@@ -366,6 +369,16 @@ func reportingOnly() func(*start) { return func(s *start) { s.reportOnly = true 
 
 func trusting(file string) func(*start) { return func(s *start) { s.trustFile = file } }
 
+// freeLoopbackAddress is a loopback address whose port nothing holds now, for one client instance's
+// in-cluster listeners. Tests run in parallel, so each instance has its own.
+func (h *harness) freeLoopbackAddress() string {
+	h.t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(h.t, err)
+	defer func() { _ = l.Close() }()
+	return l.Addr().String()
+}
+
 // supports answers whether the client's command line carries placeholder, ending t as pending where it
 // does not.
 func supports(t *testing.T, placeholder, needs string) {
@@ -385,10 +398,13 @@ func (h *harness) start(opts ...func(*start)) *process {
 	for _, set := range opts {
 		set(&s)
 	}
+	listenAddress := h.freeLoopbackAddress()
+	h.listenAddress = listenAddress
 	values := map[string]string{
 		"base-url": h.base, "trust-file": s.trustFile, "token-file": h.tokenFile,
 		"release-namespace": h.releaseNS, "release-name": release, "watch-namespaces": strings.Join(h.watched, ","),
 		"rotation-period": s.rotationPeriod, "report-only": fmt.Sprint(s.reportOnly),
+		"listen-address": listenAddress,
 	}
 	var args []string
 	for _, arg := range command {

@@ -30,7 +30,7 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as RFC 2119 defines them. 
 
 ## Transport
 
-- **T-1.** Every request MUST be made by the client, over HTTPS. The server MUST NOT open a connection to the client.
+- **T-1.** Every request MUST be made by the client, over HTTPS. The server MUST NOT open a connection to the client. The client MUST NOT open a socket that garam, or anything outside the cluster, connects to for this protocol. A listener of another interface, which only the place's own policy admits clients to, is not this protocol's concern.
 - **T-2.** The client MUST verify the server against the trust root it was configured with. It MUST NOT trust a root carried in any answer.
 - **T-3.** Every path in this document is relative to the base URL the client is configured with. It begins `/cluster-connection/v1alpha1/`.
 - **T-4.** Bodies are JSON (`application/json`). Both sides MUST ignore a member they do not know.

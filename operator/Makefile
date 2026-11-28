@@ -153,7 +153,8 @@ conformance-server: ## Run conformance.md's server suite against the reference s
 CONFORMANCE_CONNECTOR ?= $(LOCALBIN)/connector
 CONFORMANCE_CLIENT ?= $(CONFORMANCE_CONNECTOR) --garam-url={base-url} --garam-root-file={trust-file} \
 	--registration-token-file={token-file} --release-namespace={release-namespace} --release-name={release-name} \
-	--watch-namespaces={watch-namespaces} --rotation-period={rotation-period} --report-only={report-only}
+	--watch-namespaces={watch-namespaces} --rotation-period={rotation-period} --report-only={report-only} \
+	--bot-token-address={listen-address}
 .PHONY: conformance-client
 conformance-client: setup-envtest ## Run conformance.md's client suite against cmd/connector.
 	go build -o "$(CONFORMANCE_CONNECTOR)" ./cmd/connector
