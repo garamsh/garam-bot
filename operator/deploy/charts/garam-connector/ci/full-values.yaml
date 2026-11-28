@@ -1,0 +1,11 @@
+watchNamespaces: [game-team, ops-team]
+images:
+  manager: example.com/garam-bot/operator-manager:0123456789ab@sha256:1111111111111111111111111111111111111111111111111111111111111111
+  connector: example.com/garam-bot/operator-connector:0123456789ab@sha256:2222222222222222222222222222222222222222222222222222222222222222
+  runtime: example.com/garam-bot/runtime:0123456789ab@sha256:3333333333333333333333333333333333333333333333333333333333333333
+apiServer:
+  cidr: 10.0.0.1/32
+connector:
+  garamURL: https://garam.example
+  garamRoot:
+    configMap: garam-root

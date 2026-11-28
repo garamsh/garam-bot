@@ -17,6 +17,7 @@ The kubebuilder scaffold writes the manager's code into paths it names, and the 
 - `api/<version>/` holds the API kinds. It sits **below every domain**: a domain may import it, and it imports no domain.
 - `internal/controller/` holds the reconcilers. It is the domain of the `Agent` and `Bot` workloads — the Pod, its volumes and its status — under the name the scaffold gives it.
 - `test/utils/` is scaffolded test support. It is no domain, and it is not a precedent for a `utils` anywhere else.
+- **`deploy/charts/garam-connector/` is the connector chart, and `test/chart/` its check** (#1253). Neither is a domain: the chart installs the manager and the connector, and `test/chart/` renders and installs it behind `//go:build chart`, which only `make chart-check` sets.
 
 ### Surfaces and references
 

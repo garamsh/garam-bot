@@ -1,0 +1,81 @@
+# The connector chart's values (operator/docs/architecture/connector.md, ADR 0091). No value carries a
+# secret: the registration token is read from a Secret you create, named here.
+
+# watchNamespaces are the namespaces the manager runs Bots in and the connector applies garam's
+# declarations to. Each must exist before install. The chart claims each one for this release with the
+# Lease garam-connector-claim, and gives both programs a Role there. Empty watches the release
+# namespace alone. Each program can read and write what its Role names in every watched namespace, so
+# a watched namespace holds the bots' objects and nothing you would not hand these two programs.
+watchNamespaces: []
+
+# images are pinned by digest, as <repository>:<tag>@sha256:<digest>. The chart refuses another form.
+images:
+  # manager is garam-bot/operator-manager.
+  manager: ""
+  # connector is garam-bot/operator-connector.
+  connector: ""
+  # runtime is garam-bot/runtime, which every Bot's Pod runs.
+  runtime: ""
+
+# apiServer is the address range and port the programs reach the Kubernetes API at, for their
+# NetworkPolicies' egress. Where the API server lies is the distribution's, and no portable selector
+# names it, so it is required.
+apiServer:
+  cidr: ""
+  port: 443
+
+# dns is cluster DNS, which the connector's egress admits.
+dns:
+  namespace: kube-system
+  podSelector:
+    k8s-app: kube-dns
+
+connector:
+  # enabled turns the connector off where false, leaving the manager alone: the standalone cluster
+  # mode, which needs no garam connection.
+  enabled: true
+  # garamURL is the cluster-connection base URL garam serves, without /cluster-connection/v1alpha1.
+  garamURL: ""
+  # garamRoot is the ConfigMap holding the PEM root garam's certificate chains to, under key.
+  garamRoot:
+    configMap: ""
+    key: ca.crt
+  # garamEgressCIDR is the address range garam is reached at on 443 where no proxy is set.
+  garamEgressCIDR: 0.0.0.0/0
+  # registrationToken is the Secret you create holding the one-time registration token, under key.
+  # It is read only while the cluster is not registered, and may be deleted after.
+  registrationToken:
+    secret: garam-connector-registration
+    key: token
+  # reportOnly applies and deletes nothing garam sends, and still reports (DECL-15).
+  reportOnly: false
+  # rotationPeriod is how long the cluster's key signs before the connector rotates it.
+  rotationPeriod: 720h
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+manager:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+# proxy is the forward proxy the connector reaches garam through. Where url is set, the connector's
+# egress to garam goes to cidr:port alone.
+proxy:
+  url: ""
+  cidr: ""
+  port: 3128
+
+# metrics are off. Where enabled, the manager serves plain HTTP metrics on port, admitted from the
+# NetworkPolicy peers you name in from (ADR 0091 decision 4). The connector serves none.
+metrics:
+  enabled: false
+  port: 8080
+  from: []

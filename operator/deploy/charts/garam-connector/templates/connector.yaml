@@ -1,0 +1,173 @@
+{{- if .Values.connector.enabled -}}
+{{- $watched := include "garam-connector.watched" . | fromJsonArray -}}
+{{- $selector := dict "root" . "program" "connector" -}}
+{{- $c := .Values.connector -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-connector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+---
+# The cluster's key and record, which the connector writes and nothing else does. The chart creates
+# it empty and never writes its data, so an upgrade keeps the key (ADR 0088, ADR 0093).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "garam-connector.identitySecret" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+type: Opaque
+---
+# The connector's serving certificates, which it publishes under ca.crt and the manager copies to each
+# Bot. The chart creates it empty (ADR 0097).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "garam-connector.trustConfigMap" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+---
+# One replica, and Recreate, so no two connectors run at once with two spent sets (ADR 0097
+# decision 6).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-connector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+    {{- include "garam-connector.selector" $selector | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "garam-connector.selector" $selector | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "garam-connector.selector" $selector | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-connector
+      securityContext:
+        {{- include "garam-connector.podSecurity" . | nindent 8 }}
+      containers:
+        - name: connector
+          image: {{ include "garam-connector.image" (dict "name" "connector" "ref" .Values.images.connector) }}
+          imagePullPolicy: Always
+          args:
+            - --garam-url={{ required "connector.garamURL is required where the connector is enabled" $c.garamURL }}
+            - --garam-root-file=/etc/garam-connector/garam-root/{{ $c.garamRoot.key }}
+            - --registration-token-file=/etc/garam-connector/registration/{{ $c.registrationToken.key }}
+            - --release-namespace={{ .Release.Namespace }}
+            - --release-name={{ .Release.Name }}
+            - --watch-namespaces={{ join "," $watched }}
+            - --report-only={{ $c.reportOnly }}
+            - --rotation-period={{ $c.rotationPeriod }}
+            - --identity-secret={{ include "garam-connector.identitySecret" . }}
+            - --bot-token-address=:{{ include "garam-connector.botTokenPort" . }}
+            - --bot-token-service={{ include "garam-connector.serviceName" . }}
+            - --bot-token-audience={{ include "garam-connector.audience" . }}
+            - --trust-configmap={{ include "garam-connector.trustConfigMap" . }}
+          {{- if .Values.proxy.url }}
+          env:
+            - name: HTTPS_PROXY
+              value: {{ .Values.proxy.url | quote }}
+            # The API server is reached directly, as the NetworkPolicy admits it.
+            - name: NO_PROXY
+              value: {{ printf "%s,.svc,.cluster.local" .Values.apiServer.cidr | quote }}
+          {{- end }}
+          ports:
+            - name: bot-token
+              containerPort: {{ include "garam-connector.botTokenPort" . }}
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          securityContext:
+            {{- include "garam-connector.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: garam-root
+              mountPath: /etc/garam-connector/garam-root
+              readOnly: true
+            - name: registration
+              mountPath: /etc/garam-connector/registration
+              readOnly: true
+      volumes:
+        - name: garam-root
+          configMap:
+            name: {{ required "connector.garamRoot.configMap is required where the connector is enabled" $c.garamRoot.configMap }}
+        # Read only while the cluster is not registered, so it may be deleted after.
+        - name: registration
+          secret:
+            secretName: {{ $c.registrationToken.secret }}
+            optional: true
+---
+# The bot token server, which the bots' processes of the watched namespaces reach (ADR 0097 decision 4).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "garam-connector.serviceName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "garam-connector.selector" $selector | nindent 4 }}
+  ports:
+    - name: bot-token
+      port: {{ include "garam-connector.botTokenPort" . }}
+      targetPort: bot-token
+---
+# The connector admits the bots' processes of the watched namespaces on its bot token port alone, and
+# reaches garam, through the proxy where one is set, cluster DNS and the API server (ADR 0091 decision
+# 4, ADR 0097 decision 4).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-connector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "garam-connector.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "garam-connector.selector" $selector | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  {{- toYaml $watched | nindent 18 }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: garam-bot
+      ports:
+        - protocol: TCP
+          port: {{ include "garam-connector.botTokenPort" . }}
+  egress:
+    {{- if .Values.proxy.url }}
+    - to:
+        - ipBlock:
+            cidr: {{ required "proxy.cidr is required where proxy.url is set" .Values.proxy.cidr }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.proxy.port }}
+    {{- else }}
+    - to:
+        - ipBlock:
+            cidr: {{ $c.garamEgressCIDR }}
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+    {{- include "garam-connector.dnsEgress" . | nindent 4 }}
+    {{- include "garam-connector.apiServerEgress" . | nindent 4 }}
+{{- end }}

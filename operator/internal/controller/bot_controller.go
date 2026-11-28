@@ -20,10 +20,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-// claimLeaseName is the Lease that claims a watched namespace for one release of the connector chart,
+// ClaimLeaseName is the Lease that claims a watched namespace for one release of the connector chart,
 // its holderIdentity `<release-namespace>/<release-name>` (connector.md §Declarations and ownership,
 // CLAIM-2). The manager reads it and never writes it.
-const claimLeaseName = "garam-connector-claim"
+const ClaimLeaseName = "garam-connector-claim"
 
 // BotReconciler runs each Bot of a namespace claimed for its release as one StatefulSet of one of the
 // garam-bot runtime, which obtains the bot's token from the connector (ADR 0090, ADR 0097, ADR 0098).
@@ -120,7 +120,7 @@ func (r *BotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 // claimed reports whether namespace's claim names Release, and the holder it names.
 func (r *BotReconciler) claimed(ctx context.Context, namespace string) (bool, string, error) {
 	lease := &coordinationv1.Lease{}
-	err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: claimLeaseName}, lease)
+	err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: ClaimLeaseName}, lease)
 	switch {
 	case apierrors.IsNotFound(err):
 		return false, "", nil
@@ -216,7 +216,7 @@ func botOfPod(_ context.Context, pod client.Object) []reconcile.Request {
 
 // botsOfClaim maps a namespace's claim to every Bot of that namespace.
 func (r *BotReconciler) botsOfClaim(ctx context.Context, lease client.Object) []reconcile.Request {
-	if lease.GetName() != claimLeaseName {
+	if lease.GetName() != ClaimLeaseName {
 		return nil
 	}
 	return r.botsIn(ctx, client.InNamespace(lease.GetNamespace()))

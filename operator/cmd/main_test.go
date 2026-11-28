@@ -2,14 +2,21 @@ package main
 
 import (
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"testing"
 	"time"
 
 	botv1 "github.com/garamsh/garam-bot/api/declaration/v1alpha1"
+	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/yaml"
 )
@@ -121,4 +128,57 @@ func envtestBinaryDir() string {
 		}
 	}
 	return ""
+}
+
+// byObject returns options' entry for the type of object.
+func byObject(options cache.Options, object client.Object) (cache.ByObject, bool) {
+	for key, value := range options.ByObject {
+		if reflect.TypeOf(key) == reflect.TypeOf(object) {
+			return value, true
+		}
+	}
+	return cache.ByObject{}, false
+}
+
+// TestCacheOptions_ReadsOnlyWhatTheChartsRolesName checks the cache the manager starts with against
+// the connector chart's Roles: the claim Lease alone, the watched namespaces, and in the release
+// namespace the connector's trust ConfigMap alone.
+func TestCacheOptions_ReadsOnlyWhatTheChartsRolesName(t *testing.T) {
+	const release = "garam-system"
+	bots := botOptions{
+		watchNamespaces: "game-team, ops-team", releaseNamespace: release, trustConfigMap: "garam-connector-trust",
+	}
+	options := cacheOptions(bots)
+
+	leases, ok := byObject(options, &coordinationv1.Lease{})
+	if !ok || leases.Field == nil || leases.Field.String() != "metadata.name=garam-connector-claim" {
+		t.Errorf("Leases are cached by %v, want the claim alone", leases.Field)
+	}
+	if got := slices.Sorted(maps.Keys(options.DefaultNamespaces)); !slices.Equal(got, []string{"game-team", "ops-team"}) {
+		t.Errorf("the cache watches %v, want the watched namespaces", got)
+	}
+	configMaps, ok := byObject(options, &corev1.ConfigMap{})
+	if !ok {
+		t.Fatal("ConfigMaps are cached as every other kind, so not in the release namespace")
+	}
+	got := slices.Sorted(maps.Keys(configMaps.Namespaces))
+	if !slices.Equal(got, []string{"game-team", release, "ops-team"}) {
+		t.Errorf("ConfigMaps are cached in %v, want the watched and the release namespace", got)
+	}
+	if selector := configMaps.Namespaces[release].FieldSelector; selector == nil ||
+		selector.String() != "metadata.name=garam-connector-trust" {
+		t.Errorf("the release namespace's ConfigMaps are cached by %v, want the trust ConfigMap alone", selector)
+	}
+	if selector := configMaps.Namespaces["game-team"].FieldSelector; selector != nil {
+		t.Errorf("a watched namespace's ConfigMaps are cached by %v, want every one", selector)
+	}
+
+	bots.watchNamespaces = release
+	if _, ok := byObject(cacheOptions(bots), &corev1.ConfigMap{}); ok {
+		t.Error("ConfigMaps are narrowed in a watched release namespace, where the manager builds Bots")
+	}
+	bots.watchNamespaces = ""
+	if options := cacheOptions(bots); options.DefaultNamespaces != nil {
+		t.Errorf("the cache watches %v with no watched namespaces, want every namespace", options.DefaultNamespaces)
+	}
 }

@@ -51,7 +51,7 @@ func newBotNamespace(holder string, labels map[string]string) string {
 // claimNamespace writes namespace's claim, naming holder, as the connector's release does.
 func claimNamespace(namespace, holder string) {
 	GinkgoHelper()
-	lease := &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{Name: claimLeaseName, Namespace: namespace}}
+	lease := &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{Name: ClaimLeaseName, Namespace: namespace}}
 	err := createOrUpdate(lease, func() { lease.Spec.HolderIdentity = ptr.To(holder) })
 	Expect(err).NotTo(HaveOccurred())
 }
@@ -291,7 +291,7 @@ var _ = Describe("Bot Controller", func() {
 		claimNamespace(namespace, botRelease)
 		reconcileBot(r, bot)
 		Expect(absentIn(namespace, "mira", &appsv1.StatefulSet{})).To(BeFalse())
-		Expect(r.botsOfClaim(ctx, getIn(namespace, claimLeaseName, &coordinationv1.Lease{}))).
+		Expect(r.botsOfClaim(ctx, getIn(namespace, ClaimLeaseName, &coordinationv1.Lease{}))).
 			To(ConsistOf(reconcile.Request{NamespacedName: client.ObjectKeyFromObject(bot)}), "the claim's change wakes the Bot")
 		another := &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{Name: "another-lease", Namespace: namespace}}
 		Expect(r.botsOfClaim(ctx, another)).To(BeEmpty(), "control: another Lease of the namespace wakes nothing")
