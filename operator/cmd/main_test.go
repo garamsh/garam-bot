@@ -19,6 +19,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/yaml"
+
+	"github.com/garamsh/garam-bot/operator/internal/controller"
 )
 
 // TestServedKinds_FindsTheReconciledKindsTheAPIServerServes runs discovery against an API server that
@@ -180,5 +182,19 @@ func TestCacheOptions_ReadsOnlyWhatTheChartsRolesName(t *testing.T) {
 	bots.watchNamespaces = ""
 	if options := cacheOptions(bots); options.DefaultNamespaces != nil {
 		t.Errorf("the cache watches %v with no watched namespaces, want every namespace", options.DefaultNamespaces)
+	}
+}
+
+// TestRootCacheOptions_ReadsGaramsRootAlone checks the cache of garam's root against the chart's Role,
+// which names that one ConfigMap of the release namespace.
+func TestRootCacheOptions_ReadsGaramsRootAlone(t *testing.T) {
+	options := controller.RootCacheOptions("garam-system", "garam-root")
+
+	if got := slices.Sorted(maps.Keys(options.DefaultNamespaces)); !slices.Equal(got, []string{"garam-system"}) {
+		t.Errorf("garam's root is cached in %v, want the release namespace alone", got)
+	}
+	if selector := options.DefaultNamespaces["garam-system"].FieldSelector; selector == nil ||
+		selector.String() != "metadata.name=garam-root" {
+		t.Errorf("the release namespace is cached by %v, want garam's root alone", selector)
 	}
 }

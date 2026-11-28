@@ -23,6 +23,7 @@ helm install garam operator/deploy/charts/garam-connector --namespace garam-syst
 
 - **`--skip-crds`** installs without interface 1's CRDs, for a cluster whose CRDs another owner applies.
 - **Garam off**: leave `connector.garamURL` and `connector.garamRoot.configMap` unset, and skip the registration token's Secret and garam's root. The connector registers nothing and serves the bots' workspaces alone, so this is the cluster mode that needs no garam. The chart refuses one of the two values without the other, and `proxy.url` with garam off.
+- **`connector.garamMachine.url` and `.origin`** give each garam-owned Bot garam's mailbox, which its process long-polls for its tasks, trusting `connector.garamRoot`. Where `proxy.url` is set, the Bot's Pod reaches garam through it too. The chart refuses one value without the other, either with garam or the connector off, an origin other than `https://<lowercase host>[:<port>]`, and a `proxy.url` carrying a credential. Unset, a garam-owned Bot is given no task.
 - **`connector.enabled=false`** installs the manager alone. Its Bots get no workspace.
 - **`connector.reportOnly=true`** applies and deletes nothing garam sends, and still reports.
 - **`connector.naru.enabled=true`** runs the naru Machine provider in the connector, as a naru fleet's Machine API caller. Create its registration token's Secret (`connector.naru.registrationToken`) and the ConfigMap holding orch's root first, and set `connector.naru.url`, `root.configMap`, `proxyAddress`, `rootDiskBytes` and `egress`. The chart refuses a render without them.

@@ -71,7 +71,7 @@ func (s *service) subject(ctx context.Context, held claim) (GRN, error) {
 		return "", fmt.Errorf("%w: its Pod %s/%s is not the Bot's workload", errCredential, bot.Namespace,
 			held.pod.Name)
 	}
-	return botGRN(s.cfg.Record, applied.DeclarationID)
+	return BotGRN(s.cfg.Record, applied.DeclarationID)
 }
 
 // carriesNonce reports whether the proof's claims name a nonce. The proof is not verified here: garam

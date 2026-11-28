@@ -58,7 +58,7 @@ Every claim about another repository below holds at the revision it names:
 - **Every connection is opened by the place** (ADR 0036). garam opens no connection to a place, and a place opens no port that garam, or anything outside the cluster, connects to for this protocol; the listeners of interfaces 6 and 7 are in-cluster and admit only what the place's own policy admits (garam-bot-operator ADR 0087, ADR 0091; the protocol's T-1).
 - **Declarations** are long-polled with a cursor, tombstones and a purge point (the protocol's DECL-1 to DECL-6; garam ADR-0187).
 - **Reports** are pushed by the place, as its whole view, within 10 seconds of a change and every 5 minutes (the protocol's REP-1 to REP-9). garam keeps the latest as untrusted display data (garam ADR-0188).
-- **Messages to a bot** reach its process by long poll or stream that the bot's process opens with its token. garam's mailbox long poll for a bot is garam's to build (G4).
+- **Messages to a bot** reach its process by the long poll the bot's process opens itself with its token, garam's `pollBotMailbox` (garam ADR-0194), and not through its connector. `garam-bot run` polls it as its message source (ADR 0043 decision 7, `runtime.md`).
 - **naru** is reached the same way. garam declares and never calls naru's Machine API (garam#2042). The Machine API's caller is garam-bot's naru Machine provider, at the place (naru#409, naru#378).
 
 ### Authentication
@@ -364,7 +364,6 @@ A key made in code from a template that names it in no document or script is out
 - **A place-declared bot's identity.** Whether a bot declared at its place gets a garam identity is open with garam: garam#2049 leaves it out of scope, and garam-bot-operator `connector.md` keeps it open. Until garam decides, such a bot has no garam token, no messages from garam and no `garam` tool mode.
 - **The place's credential at a PC and a naru host.** Interface 6 carries the proof and the token at every place (ADR 0042). At a cluster its credential is the Bot's projected ServiceAccount token. Where the daemon is the bot process's parent, what it issues as the credential is decided with the daemon (ADR 0039, garam-bot#1207).
 - **Who presents garam's bound model and tool tokens.** The bot's process itself, or the place's gateway and tool proxy asking it to sign each proof, is settled with G3 and G6. The key does not leave the bot's process either way.
-- **Messages to a bot.** Whether a bot's process long-polls garam's mailbox itself or its connector carries messages for every bot it runs is not decided. Either is pull. The first is simpler; the second keeps one connection per place.
 - **Interface 5.** The model gateway's specification, and where it runs at each place, are not written (G3).
 - **The bot's memory.** Whether the memory store ADR 0040 keeps becomes the bot-memory interface, and where it lives at each place, is not decided.
 - **Density.** How many bots and workspaces a PC, a naru-host place and a cluster pod run is not measured (interface 2's open questions).

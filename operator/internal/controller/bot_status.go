@@ -21,6 +21,9 @@ const (
 	// reasonWaitingForTrust is a Bot whose connector has published no trust bundle yet, so no Pod is
 	// built for it.
 	reasonWaitingForTrust = "WaitingForConnectorTrust"
+	// reasonWaitingForGaramRoot is a garam-owned Bot given a mailbox whose garam root the release has
+	// not published, so no Pod is built for it.
+	reasonWaitingForGaramRoot = "WaitingForGaramRoot"
 )
 
 // conditionReason is the form the API server accepts for a condition's reason.

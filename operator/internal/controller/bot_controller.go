@@ -11,13 +11,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	"github.com/garamsh/garam-bot/operator/internal/bottoken"
 )
 
 // ClaimLeaseName is the Lease that claims a watched namespace for one release of the connector chart,
@@ -49,10 +54,44 @@ type BotReconciler struct {
 	// Bot alone.
 	ConnectorURL string
 	Audience     string
+	// Mailbox is garam's mailbox a garam-owned Bot long-polls for its tasks, and nil where the release
+	// configures none, so a garam-owned Bot is given no task. RootCache, under RootCacheOptions, holds
+	// garam's root alone, which the manager's cache does not: the root is read through it, and every
+	// Bot is woken by its change. It is set wherever Mailbox is.
+	Mailbox   *Mailbox
+	RootCache cache.Cache
 
 	// unclaimed holds each Bot already logged as standing in a namespace not claimed for Release, so
 	// it is logged once while that lasts.
 	unclaimed sync.Map
+}
+
+// Mailbox is what a garam-owned Bot is given to long-poll its garam mailbox (garam's pollBotMailbox).
+type Mailbox struct {
+	// URL is garam's machine listener as a Bot's Pod dials it, and Origin garam's machine origin.
+	URL    string
+	Origin string
+	// RootConfigMap and RootKey name, in TrustNamespace, the ConfigMap holding garam's root.
+	RootConfigMap string
+	RootKey       string
+	// Proxy is the HTTPS proxy a Bot's Pod reaches garam through, empty for none, and NoProxy what it
+	// reaches directly.
+	Proxy   string
+	NoProxy string
+}
+
+// RootCacheOptions narrow the cache of garam's root to the ConfigMap name of namespace, by a field
+// selector on its name, which RBAC applies resourceNames to.
+func RootCacheOptions(namespace, name string) cache.Options {
+	return cache.Options{DefaultNamespaces: map[string]cache.Config{namespace: {
+		FieldSelector: fields.OneTermEqualSelector("metadata.name", name),
+	}}}
+}
+
+// botMailbox is what one Bot is given of the mailbox: its GRN, and garam's root as last read.
+type botMailbox struct {
+	grn  string
+	root string
 }
 
 // +kubebuilder:rbac:groups=bot.garam.sh,resources=bots,verbs=get;list;watch
@@ -105,7 +144,18 @@ func (r *BotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 	management, err := botv1.ManagementOf(bot)
 	garamOwned := err == nil && management.Owner() == botv1.OwnerGaram
-	set, err := r.reconcileObjects(ctx, bot, bundle, garamOwned)
+	var mailbox *botMailbox
+	if garamOwned && r.Mailbox != nil && r.ConnectorURL != "" {
+		if mailbox, err = r.mailboxOf(ctx, management); err != nil {
+			return ctrl.Result{}, err
+		}
+		if mailbox == nil {
+			setBotCondition(bot, metav1.ConditionFalse, reasonWaitingForGaramRoot,
+				"The release has published no garam root in "+r.TrustNamespace+"/"+r.Mailbox.RootConfigMap+" yet.")
+			return ctrl.Result{}, r.writeBotStatus(ctx, bot)
+		}
+	}
+	set, err := r.reconcileObjects(ctx, bot, bundle, garamOwned, mailbox)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -122,6 +172,27 @@ func (r *BotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 	setRunning(bot, pod)
 	return ctrl.Result{}, r.writeBotStatus(ctx, bot)
+}
+
+// mailboxOf is what the garam-owned Bot management names is given of the mailbox, and nil while
+// garam's root is not published.
+func (r *BotReconciler) mailboxOf(ctx context.Context, management botv1.Management) (*botMailbox, error) {
+	declaration, _ := management.Garam()
+	grn, err := bottoken.BotGRN(declaration.Cluster, declaration.ID)
+	if err != nil {
+		return nil, err
+	}
+	root := &corev1.ConfigMap{}
+	err = r.RootCache.Get(ctx, client.ObjectKey{Namespace: r.TrustNamespace, Name: r.Mailbox.RootConfigMap}, root)
+	switch {
+	case apierrors.IsNotFound(err):
+		return nil, nil
+	case err != nil:
+		return nil, fmt.Errorf("read garam's root: %w", err)
+	case root.Data[r.Mailbox.RootKey] == "":
+		return nil, nil
+	}
+	return &botMailbox{grn: string(grn), root: root.Data[r.Mailbox.RootKey]}, nil
 }
 
 // claimed reports whether namespace's claim names Release, and the holder it names.
@@ -142,8 +213,10 @@ func (r *BotReconciler) claimed(ctx context.Context, namespace string) (bool, st
 // reconcileObjects creates or brings back each object the Bot runs on, every one controlled by the Bot,
 // and answers the StatefulSet as the API server now holds it. bundle is the connector's trust bundle,
 // and empty where the manager has no connector, so the Bot gets no trust copy. garamOwned gives the Bot
-// interface 6's credential too.
-func (r *BotReconciler) reconcileObjects(ctx context.Context, bot *botv1.Bot, bundle string, garamOwned bool) (
+// interface 6's credential too, and mailbox its garam mailbox, with garam's root in the trust copy.
+func (r *BotReconciler) reconcileObjects(ctx context.Context, bot *botv1.Bot, bundle string, garamOwned bool,
+	mailbox *botMailbox,
+) (
 	*appsv1.StatefulSet, error,
 ) {
 	file, err := botFile(bot)
@@ -170,9 +243,12 @@ func (r *BotReconciler) reconcileObjects(ctx context.Context, bot *botv1.Bot, bu
 		objects = append(objects, owned{trustCopy, func() {
 			trustCopy.Labels = botLabels(bot)
 			trustCopy.Data = map[string]string{r.TrustKey: bundle}
+			if mailbox != nil {
+				trustCopy.Data[garamRootName] = mailbox.root
+			}
 		}})
 	}
-	objects = append(objects, owned{set, func() { r.applyStatefulSet(bot, set, bundle != "", garamOwned) }})
+	objects = append(objects, owned{set, func() { r.applyStatefulSet(bot, set, bundle != "", garamOwned, mailbox) }})
 	for _, object := range objects {
 		operation, err := controllerutil.CreateOrUpdate(ctx, r.Client, object.object, func() error {
 			object.apply()
@@ -199,9 +275,15 @@ func (r *BotReconciler) writeBotStatus(ctx context.Context, bot *botv1.Bot) erro
 }
 
 // SetupWithManager sets the reconciler up with mgr. A Bot is woken by what it owns, by its Pod, by its
-// namespace's claim, and by the connector's trust bundle, whose every change is copied out.
+// namespace's claim, and by the connector's trust bundle and garam's root, whose every change is copied
+// out.
 func (r *BotReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr)
+	if r.RootCache != nil {
+		builder = builder.WatchesRawSource(source.Kind(r.RootCache, client.Object(&corev1.ConfigMap{}),
+			handler.EnqueueRequestsFromMapFunc(r.botsOfTrust)))
+	}
+	return builder.
 		For(&botv1.Bot{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.ServiceAccount{}).
@@ -232,10 +314,12 @@ func (r *BotReconciler) botsOfClaim(ctx context.Context, lease client.Object) []
 	return r.botsIn(ctx, client.InNamespace(lease.GetNamespace()))
 }
 
-// botsOfTrust maps the connector's trust bundle to every Bot, so a replaced certificate reaches each
-// Bot's copy.
+// botsOfTrust maps the connector's trust bundle, and garam's root where a mailbox is given, to every
+// Bot, so a replaced certificate reaches each Bot's copy.
 func (r *BotReconciler) botsOfTrust(ctx context.Context, configMap client.Object) []reconcile.Request {
-	if configMap.GetNamespace() != r.TrustNamespace || configMap.GetName() != r.TrustConfigMap {
+	name := configMap.GetName()
+	root := r.Mailbox != nil && name == r.Mailbox.RootConfigMap
+	if configMap.GetNamespace() != r.TrustNamespace || (name != r.TrustConfigMap && !root) {
 		return nil
 	}
 	return r.botsIn(ctx)

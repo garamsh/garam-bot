@@ -213,7 +213,8 @@ metadata: {name: allowed}
 }
 
 // valueSets are the renders every invariant is checked on: the full values, the connector off, a
-// proxy, metrics on, the release namespace watched alone, naru, the bots' workspaces, and garam off.
+// proxy, metrics on, the release namespace watched alone, naru, the bots' workspaces, garam off, and
+// garam's mailbox, directly and through a proxy.
 var valueSets = map[string][]string{
 	"full":          nil,
 	"connector off": {"--set=connector.enabled=false"},
@@ -228,6 +229,8 @@ var valueSets = map[string][]string{
 	"naru workspaces":         naruWorkspaceValues,
 	"garam off":               garamOffValues,
 	"garam off workspaces":    append(slices.Clone(garamOffValues), workspaceValues...),
+	"mailbox":                 mailboxValues,
+	"mailbox proxy":           mailboxProxyValues,
 }
 
 // naruValues turn the naru Machine provider on, with every value it requires.

@@ -155,3 +155,36 @@ true
 {{- fail "images.workspaceHelper, images.agents or workspaces.pod or naru is set without workspaces.namespace" -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+mailboxOn answers "true" where a garam-owned Bot long-polls its garam mailbox: connector.garamMachine.url
+and .origin are set together, with garam and the connector on. One without the other, or either with
+garam or the connector off, is refused. So is an origin of another spelling than garam's issuer, which
+would refuse every message, and a proxy.url carrying a credential, which every such Bot's Pod would
+hold.
+*/}}
+{{- define "garam-connector.mailboxOn" -}}
+{{- $m := .Values.connector.garamMachine -}}
+{{- if and $m.url $m.origin -}}
+{{- if not .Values.connector.enabled -}}
+{{- fail "connector.garamMachine is set where the connector is off: a Bot reaches no garam token without it" -}}
+{{- else if not (include "garam-connector.garamOn" .) -}}
+{{- fail "connector.garamMachine is set where garam is off" -}}
+{{- else if not (regexMatch "^https://([a-z0-9.-]+|\\[[0-9a-f:.]+\\])(:[0-9]+)?$" $m.origin) -}}
+{{- fail "connector.garamMachine.origin is https://<lowercase host>[:<port>], with no path or trailing slash" -}}
+{{- else if regexMatch "^[^/]*//[^/]*@" .Values.proxy.url -}}
+{{- fail "proxy.url carries a credential, which every garam-owned Bot's Pod would hold, where connector.garamMachine is set" -}}
+{{- end -}}
+true
+{{- else if or $m.url $m.origin -}}
+{{- fail "connector.garamMachine.url and connector.garamMachine.origin are set together, or neither is" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+botNoProxy is what a garam-owned Bot's Pod reaches directly where it reaches garam through proxy.url:
+the connector's Service and the cluster's own names.
+*/}}
+{{- define "garam-connector.botNoProxy" -}}
+{{ include "garam-connector.serviceName" . }}.{{ .Release.Namespace }}.svc,.svc,.cluster.local,localhost,127.0.0.1
+{{- end -}}

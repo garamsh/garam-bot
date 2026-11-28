@@ -107,3 +107,99 @@ func TestChart_RefusesGaramHalfOnAndAProxyWithGaramOff(t *testing.T) {
 		})
 	}
 }
+
+// mailboxValues give garam-owned Bots garam's mailbox.
+// The URL is not the origin, as behind a proxy, and garam's root is under a key other than the default.
+var mailboxValues = []string{
+	"--set=connector.garamMachine.url=https://garam-machine.proxy-side.example:8443",
+	"--set=connector.garamMachine.origin=https://machine.garam.example",
+	"--set=connector.garamRoot.key=root.pem",
+}
+
+// mailboxProxyValues give garam-owned Bots garam's mailbox through a proxy.
+var mailboxProxyValues = append(slices.Clone(mailboxValues),
+	"--set=proxy.url=http://proxy.example:3128", "--set=proxy.cidr=10.9.0.0/24")
+
+// managerArgs are the manager's arguments in a render.
+func managerArgs(t *testing.T, objects []unstructured.Unstructured) []string {
+	t.Helper()
+	manager := named[appsv1.Deployment](t, objects, "Deployment", releaseNamespace, releaseName+"-manager")
+	return manager.Spec.Template.Spec.Containers[0].Args
+}
+
+// mailboxArgs are the manager's arguments that give garam-owned Bots garam's mailbox.
+func mailboxArgs(args []string) []string {
+	var found []string
+	for _, arg := range args {
+		for _, flag := range []string{"--mailbox-", "--garam-root-", "--bot-https-proxy", "--bot-no-proxy"} {
+			if strings.HasPrefix(arg, flag) {
+				found = append(found, arg)
+			}
+		}
+	}
+	return found
+}
+
+func TestChart_GivesGaramOwnedBotsTheMailboxDirectlyOrThroughTheProxy(t *testing.T) {
+	mailbox := []string{
+		"--mailbox-url=https://garam-machine.proxy-side.example:8443",
+		"--mailbox-origin=https://machine.garam.example",
+		"--garam-root-configmap=garam-root",
+		"--garam-root-key=root.pem",
+	}
+	for name, test := range map[string]struct {
+		set  []string
+		want []string
+	}{
+		"no mailbox": {nil, nil},
+		"direct":     {valueSets["mailbox"], mailbox},
+		"proxied": {valueSets["mailbox proxy"], append(slices.Clone(mailbox),
+			"--bot-https-proxy=http://proxy.example:3128",
+			"--bot-no-proxy=garam-connector.garam-system.svc,.svc,.cluster.local,localhost,127.0.0.1")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			objects := render(t, test.set...)
+			if got := mailboxArgs(managerArgs(t, objects)); !slices.Equal(got, test.want) {
+				t.Errorf("the manager's mailbox arguments = %q, want %q", got, test.want)
+			}
+			reads := false
+			for _, rule := range roles(t, objects)[releaseNamespace+"/"+releaseName+"-manager"].Rules {
+				if slices.Contains(rule.ResourceNames, "garam-root") {
+					reads = slices.Equal(rule.Verbs, readVerbs)
+				}
+			}
+			if reads != (test.want != nil) {
+				t.Errorf("the manager gets garam's root: %v, want %v", reads, test.want != nil)
+			}
+		})
+	}
+}
+
+func TestChart_RefusesTheMailboxHalfSetOrWithoutGaramOrTheConnector(t *testing.T) {
+	if _, err := template(t, mailboxValues...); err != nil {
+		t.Fatalf("control: the mailbox renders: %v", err)
+	}
+	for name, test := range map[string]struct {
+		set  []string
+		want string
+	}{
+		"a URL without an origin": {mailboxValues[:1], "set together, or neither is"},
+		"an origin without a URL": {mailboxValues[1:2], "set together, or neither is"},
+		"an origin with a trailing slash": {append(slices.Clone(mailboxValues),
+			"--set=connector.garamMachine.origin=https://machine.garam.example/"), "with no path or trailing slash"},
+		"an origin with an uppercase host": {append(slices.Clone(mailboxValues),
+			"--set=connector.garamMachine.origin=https://Machine.garam.example"), "with no path or trailing slash"},
+		"a proxy with a credential": {append(slices.Clone(mailboxValues),
+			"--set=proxy.url=http://user:pass@proxy.example:3128", "--set=proxy.cidr=10.9.0.0/24"),
+			"proxy.url carries a credential"},
+		"garam off": {append(slices.Clone(mailboxValues), garamOffValues...), "where garam is off"},
+		"the connector off": {append(slices.Clone(mailboxValues), "--set=connector.enabled=false"),
+			"where the connector is off"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := template(t, test.set...); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Errorf("a render with %v = %v, want refused with %q", test.set, err, test.want)
+			}
+		})
+	}
+}

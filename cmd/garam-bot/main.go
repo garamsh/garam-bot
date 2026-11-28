@@ -106,7 +106,11 @@ func newRunCommand() *cobra.Command {
 	flags.StringVar(&options.ConnectorTrustFile, "connector-trust-file", "", "file holding the certificates the connector is trusted by, read again as it changes")
 	flags.StringVar(&options.CredentialFile, "credential-file", "", "file holding the place's credential naming the bot for its garam token, read again for each request; unset runs the bot with no garam identity")
 	flags.StringVar(&options.WorkspaceCredentialFile, "workspace-credential-file", "", "file holding the place's credential naming the bot for its workspace, read again for each request; unset, or for a Bot with no workspace, runs the bot with no workspace")
-	flags.StringVar(&options.InboxDir, "inbox-dir", "", "directory of message files the bot's workspace is given tasks from, one per file, its name the task's identifier and its content the input, deleted once the task is done; unset gives no task")
+	flags.StringVar(&options.InboxDir, "inbox-dir", "", "directory of message files the bot's workspace is given tasks from, one per file, its name the task's identifier and its content the input, deleted once the task is done; unset gives no task, and it excludes --mailbox-url")
+	flags.StringVar(&options.MailboxURL, "mailbox-url", "", "base URL the bot dials garam's machine listener at, to long-poll its mailbox for its tasks; given with --mailbox-origin, --garam-root-file, --bot-grn and --credential-file")
+	flags.StringVar(&options.MailboxOrigin, "mailbox-origin", "", "garam's machine origin, which the mailbox poll's proofs name and every message's signature is issued by")
+	flags.StringVar(&options.GaramRootFile, "garam-root-file", "", "file holding the root garam's machine listener's certificate chains to, read again as it changes")
+	flags.StringVar(&options.BotGRN, "bot-grn", "", "the bot's garam GRN, grn:<org>/iam/bot/<declaration id>: the mailbox polled and every message's audience")
 	flags.StringVar(&options.StatusFile, "status-file", defaultStatusFile, "file the status is written to")
 	flags.StringVar(&terminationLog, "termination-log", "/dev/termination-log", "file a failed start writes its reason to")
 

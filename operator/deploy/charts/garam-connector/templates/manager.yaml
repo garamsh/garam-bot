@@ -9,7 +9,7 @@ metadata:
     {{- include "garam-connector.labels" . | nindent 4 }}
 ---
 # The manager runs each Bot of a watched namespace claimed for this release (ADR 0090, ADR 0098). It
-# needs no garam connection.
+# needs no garam connection: what it renders of garam's mailbox, a garam-owned Bot's Pod dials.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -55,6 +55,18 @@ spec:
             - --trust-configmap={{ include "garam-connector.trustConfigMap" . }}
             - --bot-token-audience={{ include "garam-connector.audience" . }}
             - --workspace-audience={{ include "garam-connector.workspaceAudience" . }}
+            {{- if include "garam-connector.mailboxOn" . }}
+            # A garam-owned Bot long-polls its garam mailbox, trusting garam's root, which the manager
+            # copies beside the connector's trust (garam-bot ADR 0043 decision 7).
+            - --mailbox-url={{ .Values.connector.garamMachine.url }}
+            - --mailbox-origin={{ .Values.connector.garamMachine.origin }}
+            - --garam-root-configmap={{ .Values.connector.garamRoot.configMap }}
+            - --garam-root-key={{ .Values.connector.garamRoot.key }}
+            {{- if .Values.proxy.url }}
+            - --bot-https-proxy={{ .Values.proxy.url }}
+            - --bot-no-proxy={{ include "garam-connector.botNoProxy" . }}
+            {{- end }}
+            {{- end }}
             {{- end }}
           ports:
             - name: health

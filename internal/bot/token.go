@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -206,15 +208,28 @@ func (s *TokenSource) readTrust() error {
 
 // proof is a DPoP proof for the connector's htu and nonce, signed with the process's key (PROOF-1).
 func (s *TokenSource) proof() (string, error) {
+	claims := map[string]any{"htm": http.MethodPost, "htu": s.htu}
+	if s.nonce != "" {
+		claims["nonce"] = s.nonce
+	}
+	return s.sign(claims)
+}
+
+// Proof is a DPoP proof of a request of method to url presenting token, signed with the process's key
+// (KEY-1): the one token is bound to, with ath its hash (RFC 9449 §4.2).
+func (s *TokenSource) Proof(method, url, token string) (string, error) {
+	digest := sha256.Sum256([]byte(token))
+	return s.sign(map[string]any{"htm": method, "htu": url, "ath": base64.RawURLEncoding.EncodeToString(digest[:])})
+}
+
+// sign signs a proof of claims, with its iat and a fresh jti.
+func (s *TokenSource) sign(claims map[string]any) (string, error) {
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: s.key},
 		(&jose.SignerOptions{EmbedJWK: true}).WithType("dpop+jwt"))
 	if err != nil {
 		return "", fmt.Errorf("sign the proof: %w", err)
 	}
-	claims := map[string]any{"htm": http.MethodPost, "htu": s.htu, "iat": s.now().Unix(), "jti": rand.Text()}
-	if s.nonce != "" {
-		claims["nonce"] = s.nonce
-	}
+	claims["iat"], claims["jti"] = s.now().Unix(), rand.Text()
 	proof, err := jwt.Signed(signer).Claims(claims).Serialize()
 	if err != nil {
 		return "", fmt.Errorf("sign the proof: %w", err)
