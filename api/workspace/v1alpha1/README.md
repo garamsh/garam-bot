@@ -25,7 +25,7 @@ The interface is the Go interface `Provider` in this package, a driver API: an i
 |---|---|---|---|
 | `workspacefake` | memory | the conformance suite | the reference implementation, built, passing the suite |
 | naru Machine | naru's Machine API `machines/v1alpha1` | a naru host | first production implementation; to build |
-| Pod | the Kubernetes API | a cluster | to build |
+| Pod | the Kubernetes API | a cluster | built (`internal/podworkspace`), passing the suite against a kind cluster |
 | container | a container engine's API: Docker or Podman, or Apple's container framework | a Linux PC, a Mac | to build |
 | mvmd | mvmd's runtime API `v1alpha2` | a Linux PC | to build |
 
@@ -145,7 +145,7 @@ Each mapping is its implementation issue's to build, and this section is what th
 | `Create`, `Delete` | create, delete both | create, remove both | Create Machine and Create disk, Delete both |
 | `Start`, `Stop` | `Stop` deletes the Pod and keeps the claim, `Start` makes the Pod again | start, stop | Start, Stop |
 | `Exec` | the `exec` subresource | the engine's exec | Exec, then Read exec output to its end |
-| `ReadFile`, `WriteFile` | an `exec` of the image's `cat` | the engine's archive copy | Read file, Write file |
+| `ReadFile`, `WriteFile` | an `exec` of garam-bot's file helper, which an init container copies into the Pod and which reads and writes the path, `WriteFile` through a temporary file and a rename | the engine's archive copy | Read file, Write file |
 | `Dial` | the `portforward` subresource | a port published on loopback | the Machine's address on the host's bridge, under an ingress rule |
 | `Egress` | a NetworkPolicy of `ipBlock` rules | the engine cannot enforce rules: `Capabilities.Egress` false, and no network | `networkPolicy.egress` |
 | `Snapshot` | a VolumeSnapshot, where the cluster serves the API | false | Snapshot disk |
@@ -166,5 +166,4 @@ Each mapping is its implementation issue's to build, and this section is what th
 - **Exec streams.** `Exec` returns its output whole, as the Machine API's does. A streaming exec is an addition, and interface 2 does not need one: the adapter is reached through `Dial`.
 - **A file's mode.** `WriteFile` takes no mode, as the Machine API's file call takes none. Whether the token files of interface 2 need one that no other process in the workspace can read waits for the adapters.
 - **What `Timeout` leaves.** Whether an `Exec` past its timeout is a result or an error is not decided, because the Machine API does not state it.
-- **The Pod's `ReadFile`.** An `exec` of `cat` needs the image to carry it. A sidecar of garam-bot's own is the alternative.
 - **A Mac's container engine.** Docker Desktop, Podman and Apple's container framework each run a Linux VM. Which ones the container implementation supports is its issue's.

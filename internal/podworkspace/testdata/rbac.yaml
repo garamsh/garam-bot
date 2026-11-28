@@ -1,0 +1,51 @@
+# What the Pod workspace provider needs in the one namespace it works in, and
+# nothing cluster-wide (api/workspace/v1alpha1/README.md §Mapping). The e2e
+# target applies it to a kind cluster and runs the conformance suite as the
+# ServiceAccount below, so a right the provider uses and this Role omits fails
+# the run.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: garam-bot-workspaces
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pod-workspace-provider
+  namespace: garam-bot-workspaces
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-workspace-provider
+  namespace: garam-bot-workspaces
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec", "pods/portforward"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create", "delete"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots"]
+    verbs: ["get", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pod-workspace-provider
+  namespace: garam-bot-workspaces
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pod-workspace-provider
+subjects:
+  - kind: ServiceAccount
+    name: pod-workspace-provider
+    namespace: garam-bot-workspaces

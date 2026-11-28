@@ -317,6 +317,8 @@ Two repositories, two images for the agent pod. The sherlock-agent image carries
 - **The order.** That read does not prove the push grant, so the least proven repository is pushed first: a refused push there stops the run before either `sherlock` repository takes the version.
 - **After a failed push,** the read-back still runs and records the digest of each image that was pushed. A repository this project does not publish to is not sherlock's, whatever it is named.
 
+**The workspace file helper's image** (ADR 0034, `cmd/workspacefile`) is built by `make build-images` as `garam-bot-workspacefile:<commit>`, which also refuses it unless its `Config.User` is numeric. The Pod workspace provider runs it as an init container, referenced by digest, so a workspace's own image needs no shell and no `cat`. The release workflow does not publish it yet: a `garam-bot/workspacefile` repository, its push grant and the workflow's step are the PM's and the account owner's, so until then a place that runs the Pod provider names a digest it published itself. The conformance image of interface 3 (`build/conformance.Dockerfile`) is built by `make test-podworkspace` for that run only and no release carries it.
+
 **Pushing a development build by hand.** In order, from a checkout at the commit to publish:
 
 1. `make build-images` with no `REVISION=`, so the dirty-tree comparison runs and refuses a tree that differs from the commit (**What the local build produces**, below). It writes `sherlock-agent:<commit>` and `sherlock-workspace:<commit>`, where `<commit>` is `git rev-parse HEAD`.
