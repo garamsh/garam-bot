@@ -22,9 +22,12 @@ import (
 	"github.com/garamsh/garam-bot/api/workspace/v1alpha1"
 )
 
-// The exit code of the file helper for a read of a path that holds no file
-// (cmd/workspacefile).
-const exitFileNotFound = 3
+// The exit codes of the file helper (cmd/workspacefile): a read of a path that holds no file, and a
+// write whose path passes through a link.
+const (
+	exitFileNotFound = 3
+	exitLink         = 4
+)
 
 // guest reaches into a workspace's Pod: the two calls of the Kubernetes API that are not plain
 // reads and writes of objects.
@@ -88,7 +91,8 @@ func (p *Provider) ReadFile(ctx context.Context, name v1alpha1.Name, path string
 	return nil, fmt.Errorf("read %s: helper exit %d: %s", path, res.ExitCode, bytes.TrimSpace(res.Stderr))
 }
 
-// WriteFile replaces the file at path with content, written by the helper (FILE-1).
+// WriteFile replaces the file at path with content, written by the helper, which follows no link
+// (FILE-1, FILE-3).
 func (p *Provider) WriteFile(ctx context.Context, name v1alpha1.Name, path string, content []byte) error {
 	if err := v1alpha1.CheckPath(path); err != nil {
 		return err
@@ -100,11 +104,14 @@ func (p *Provider) WriteFile(ctx context.Context, name v1alpha1.Name, path strin
 	if err != nil {
 		return err
 	}
-	if res.ExitCode != 0 {
-		return fmt.Errorf("write %s: helper exit %d: %s", path, res.ExitCode, bytes.TrimSpace(res.Stderr))
+	switch res.ExitCode {
+	case 0:
+		return nil
+	case exitLink:
+		return fmt.Errorf("%w: %s passes through a symbolic link", v1alpha1.ErrInvalid, path)
 	}
 
-	return nil
+	return fmt.Errorf("write %s: helper exit %d: %s", path, res.ExitCode, bytes.TrimSpace(res.Stderr))
 }
 
 // Dial opens a connection to one of the spec's ports (DIAL-1).

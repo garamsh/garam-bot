@@ -29,6 +29,7 @@ The tests of `README.md`'s requirements: what each one is, and how a new impleme
 | EXEC-2 | `EXEC-2/stdin reaches the command with the stdin capability`, `EXEC-2/stdin is refused without the stdin capability` |
 | FILE-1 | `FILE-1/a written file reads back whole`, `FILE-1/a path that is not absolute and clean, or is a system directory, is refused`. `TestCheckPath_FILE1` |
 | FILE-2 | `FILE-2/a read of a missing file is file not found` |
+| FILE-3 | The implementations' own tests: the suite reaches a workspace only through `Provider`, which plants no link. The Pod provider's are `cmd/workspacefile`'s `TestRun_WriteReplacesALinkAtThePathAndLeavesItsTarget` and `TestRun_WriteThroughALinkedDirectoryExitsLink`. The naru Machine provider holds none until naru#455 |
 | ISO-1 | `ISO-1/one workspace does not see another's files` |
 | DIAL-1 | `DIAL-1/dial reaches a spec port and refuses another`. That the listener authenticates every connection is interface 2's AUTH-1, tested there |
 | LABEL-1 | `LABEL-1/labels are answered by every read as written`, `LABEL-1/labels are refused without the labels capability`. `TestSpecCheck_SPEC1` and `TestSameSpec_LIFE1` hold the form and the comparison |

@@ -64,6 +64,9 @@ What this interface does not carry:
 - **EXEC-2.** An implementation that reports `Capabilities.Stdin` gives the command `Stdin` as its input. One that cannot reports `Capabilities.Stdin` false, and MUST refuse an `Exec` with a non-empty `Stdin` with `ErrUnsupported`, never run the command without it. A caller with input for such an implementation writes it with `WriteFile` and names the file in the command.
 - **FILE-1.** `WriteFile` replaces the file at a path with its content, whole, and `ReadFile` returns it whole. An implementation MUST refuse with `ErrInvalid` a path `CheckPath` refuses: one that is not absolute and clean, is `/`, or is under `/proc`, `/sys` or `/dev`.
 - **FILE-2.** A read of a path that holds no file MUST answer `ErrFileNotFound`.
+- **FILE-3.** `WriteFile` MUST NOT follow a symbolic link at any component of its path, since code in the workspace can plant one where the caller writes.
+  - **At the final component**, it replaces the link, never the file the link names.
+  - **At any other component**, it writes nothing, and answers `ErrInvalid`.
 - **ISO-1.** A workspace MUST NOT see another workspace's files, whichever caller holds the other.
 - **DIAL-1.** `Dial` opens a connection to one of the spec's `Ports` in the workspace, carried as the implementation reaches its backend. An implementation MUST refuse a port the spec does not name with `ErrInvalid`. Interface 2's adapter listens on such a port, and the caller speaks to it through `Dial`.
 - **`Dial` is not an authentication.** A backend may serve a port to more than its caller: naru-proxy serves a Machine's services to whoever reaches it (naru `docs/architecture/proxy.md`). So the listener behind every port MUST authenticate each connection itself, as interface 2's AUTH-1 does with a token that lives at most an hour.
@@ -110,7 +113,7 @@ The naru Machine provider is a client of `machines/v1alpha1` (`garamsh/naru` `li
 | `Start`, `Stop(grace)` | `POST .../start`, `POST .../stop` with `graceSeconds`, `grace` rounded up to whole seconds. Above naru's bound, 240 seconds, the 422 `invalid` is `ErrInvalid` |
 | `Delete` | `DELETE .../machines/{name}`, 202. Its volumes go, its snapshots stay, and the name is held until the volumes are gone |
 | `Exec` | `POST .../machines/{name}/exec`: `command`, `timeoutSeconds`. The Machine API takes no input (naru ADR 0118), so `Capabilities.Stdin` is false and a non-empty `Stdin` is `ErrUnsupported` (EXEC-2). `Timeout` is rounded up to whole seconds, and 0 is naru's bound, 600 seconds; above it the 422 `invalid` is `ErrInvalid`. A command ended at its timeout or by a signal is a result: its `exitCode` is 128 plus the signal |
-| `ReadFile`, `WriteFile` | `GET`, `PUT .../machines/{name}/files?path=` |
+| `ReadFile`, `WriteFile` | `GET`, `PUT .../machines/{name}/files?path=`. The Machine API promises nothing about links, so the provider does not hold FILE-3 until naru#455 asks it of the file write |
 | `Dial(port)` | TLS to naru-proxy with the SNI `m-p<port>--<id>.<zone>`, the service's stable name, under the zone of the Machine's `address.name`, `m-<id>.<zone>` (naru ADR 0120), then plain TCP to the Machine |
 | `Snapshot(name, of)` | `PUT .../snapshots/{name}` with `machine`. Phases map one to one, and `DiskBytes` is the snapshot spec's one volume's `sizeBytes` |
 | `GetSnapshot`, `DeleteSnapshot` | `GET`, `DELETE .../snapshots/{name}` |
@@ -152,7 +155,7 @@ Each mapping is its implementation issue's to build, and this section is what th
 | `Create`, `Delete` | create, delete both | create, remove both | Create Machine and Create disk, Delete both |
 | `Start`, `Stop` | `Stop` deletes the Pod and keeps the claim, `Start` makes the Pod again | start, stop | Start, Stop |
 | `Exec` | the `exec` subresource | the engine's exec | Exec, then Read exec output to its end |
-| `ReadFile`, `WriteFile` | an `exec` of garam-bot's file helper, which an init container copies into the Pod and which reads and writes the path, `WriteFile` through a temporary file and a rename | the engine's archive copy | Read file, Write file |
+| `ReadFile`, `WriteFile` | an `exec` of garam-bot's file helper, which an init container copies into the Pod and which reads and writes the path. `WriteFile` opens the directory by `openat2` with `RESOLVE_NO_SYMLINKS` and writes through a temporary file and a rename (FILE-3) | the engine's archive copy | Read file, Write file |
 | `Dial` | the `portforward` subresource | a port published on loopback | the Machine's address on the host's bridge, under an ingress rule |
 | `Egress` | a NetworkPolicy of `ipBlock` rules | the engine cannot enforce rules: `Capabilities.Egress` false, and no network | `networkPolicy.egress` |
 | `Stdin` | true: the `exec` subresource carries stdin | the engine's exec | false: Exec takes no input |
@@ -163,6 +166,7 @@ Each mapping is its implementation issue's to build, and this section is what th
 
 - **A release of `v1alpha1` may add** a method on a new interface the caller asserts for, an optional field of `Spec`, a field of `Capabilities`, a phase or a sentinel. Each leaves every implementation that passed the suite passing it, and every caller that built against an earlier release building.
 - **A new version is required** to add a method to `Provider`, remove or rename anything, make a field required, tighten a rule of `Spec.Check`, or change what an operation means, its idempotency or the state it leaves after a failure.
+- **A new requirement of an implementation** that no conforming caller relies on, a tightening, is a release, as FILE-3's write that follows no link is (release 0.4.0). One a caller must act on is a new version.
 - **VER-1.** Each release has a number, `SpecRelease` in this package, from `0.1.0`, and the `api/` module's tag moves with every release.
 - **VER-2.** A caller MUST read a phase it does not know as `unknown`, and a snapshot phase it does not know as `SnapshotUnknown`. This is what makes adding a phase a compatible release.
 - **A deprecated element** is marked so here and in its Go doc comment, stays in its version, and is removed only by a new version.

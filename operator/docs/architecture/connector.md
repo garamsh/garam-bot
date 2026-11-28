@@ -157,7 +157,7 @@ These follow [ADR 0099](adr/0099-serve-every-bots-process-its-workspace-from-the
   - **The chart renders it,** labelled for its release and `pod-security.kubernetes.io/enforce: restricted`, so Helm refuses a second release that names it.
   - **The default ServiceAccount.** The connector sets `automountServiceAccountToken: false` on its `default` ServiceAccount at start.
   - **The Pod provider**, moved to garam-bot's `pkg/podworkspace`, runs there with the rights garam-bot `interfaces.md` lists. Its `Capabilities.Egress` is `workspaces.pod.enforcesNetworkPolicy`, true by default, which needs a network plugin that enforces NetworkPolicy egress.
-  - **The naru Machine provider** stays as it runs. A Machine's port is guarded by the adapter's token alone, since naru-proxy serves it to whoever reaches it.
+  - **The naru Machine provider** stays as it runs. A Machine's port is guarded by the adapter's token alone, since naru-proxy serves it to whoever reaches it. Its file write does not yet promise to follow no link, as interface 7's FILE-1 requires, so a link planted in a Machine can redirect a token file within that Machine alone, until naru#455 (ADR 0099's errata).
   - **Choosing a provider.** A WorkspaceClass's `spec.provider`, `pod` or `naru`, picks one.
 - **Each workspace is named per Bot and per release, and isolated.**
   - **Naming.** Its name is `w<release>-<bot>`, hashes of the release and of the Bot's namespace, name, UID and attachment. It carries labels naming the release and the Bot, where its provider keeps labels: the Pod provider does, and the naru Machine provider does not yet.
