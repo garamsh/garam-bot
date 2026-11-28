@@ -249,6 +249,10 @@ func TestFileCallsGoThroughTheHelperAndNeverAShell(t *testing.T) {
 	assert.False(t, errors.Is(err, v1alpha1.ErrFileNotFound))
 	assert.Contains(t, err.Error(), "disk full")
 
+	f.guest.result = v1alpha1.ExecResult{ExitCode: exitLink, Stderr: []byte("the path passes through a symbolic link")}
+	assert.ErrorIs(t, f.provider.WriteFile(ctx, "one", "/run/garam-bot/agent/token", nil), v1alpha1.ErrInvalid,
+		"a write through a link is the caller's path refused (FILE-3)")
+
 	_, err = f.provider.ReadFile(ctx, "one", "/proc/self/environ")
 	assert.ErrorIs(t, err, v1alpha1.ErrInvalid, "a system directory is refused before the Pod is reached")
 }

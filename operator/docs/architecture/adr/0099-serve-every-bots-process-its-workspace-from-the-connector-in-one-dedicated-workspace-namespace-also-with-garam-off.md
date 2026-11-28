@@ -148,3 +148,11 @@ Decision 5 says the labels "reach the backend through interface 3's optional `Sp
   - The connector sends labels only to a provider that keeps them.
   - Decision 6's sweep never deletes a workspace whose labels it cannot read. So it deletes no naru Machine, and its release prefix still scopes what it lists.
   - Until naru#453 adds caller-set Machine metadata labels, a deleted Bot's naru Machines are deleted by hand. After it, the naru Machine provider reports `Capabilities.Labels` true and naru workspaces are swept as Pod workspaces are.
+
+### 2026-11-28 — decision 4's naru Machine provider does not write as interface 7's FILE-1 requires
+
+Decision 4 says the naru Machine provider "stays as it runs" and serves naru workspaces through interface 7. Since interface 7's release 0.2.0, that requires a write that follows no link at any component of its path. The naru Machine provider as it runs does not promise one.
+
+- **Why.** The connector writes a workspace's token files through interface 3's `WriteFile`. Interface 3's FILE-3 now requires `WriteFile` to follow no link, and the Pod provider's file helper holds it with `openat2` and `RESOLVE_NO_SYMLINKS`. naru's Machine API file write, which the naru Machine provider's `WriteFile` is, promises nothing about links (`garamsh/naru` `lib/machineapi` `fd356f26c62aa97bec8eab3252d46966a24cca87`). naru#455 asks for it.
+- **What it reaches.** Code in a Machine that plants a link under `/run/garam-bot/` redirects a token file within that same Machine, and nowhere else: the Machine holds nothing of another Bot's, and the token was the Machine's own to read.
+- **What follows here.** The connector serves naru workspaces through interface 7 as decided, and does not refuse their writes. Once naru#455 lands, the naru Machine provider holds FILE-3 and the gap closes.

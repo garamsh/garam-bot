@@ -213,6 +213,7 @@ Interface 3's errors reach the client so:
   - change what a status means.
 
   A new version is served at a new path, beside the earlier one while clients move.
+- **A new requirement of the server** that no conforming client relies on, a tightening, is a release, as FILE-1's refusal of a link at any component is (release 0.2.0). One a client must act on is a new version.
 - **VER-1.** Each release has a number, `SpecRelease` in this package, from `0.1.0`, and the `api/` module's tag moves with every release.
 - **A deprecated element** is marked so here and in its Go doc comment, stays in its version, and is removed only by a new version.
 - **The first stable version, `v1`,** needs two production implementations passing the suite: the cluster connector and the daemon.
