@@ -52,7 +52,7 @@ The first two implementations, which the conformance suite runs against:
 
 ## Ownership marker
 
-Each object has exactly one owner, `garam` or the cluster (`garamsh/garam-bot-operator` ADR 0089). The marker is metadata:
+Each object has exactly one owner, `garam` or the execution place itself, marked `cluster` (`garamsh/garam-bot-operator` ADR 0089). The marker is metadata:
 
 | Key | Kind | Value |
 |---|---|---|
@@ -61,7 +61,7 @@ Each object has exactly one owner, `garam` or the cluster (`garamsh/garam-bot-op
 | `bot.garam.sh/declaration` | annotation | the garam declaration's identifier: 1 to 256 visible ASCII characters |
 | `bot.garam.sh/declaration-generation` | annotation | the declaration's generation, a decimal integer from 1 with no sign or leading zero |
 
-- **OWN-1.** An object without the `bot.garam.sh/managed-by` label, or with the value `cluster`, is the cluster's. Any other value is malformed.
+- **OWN-1.** An object without the `bot.garam.sh/managed-by` label, or with the value `cluster`, is the execution place's own, whatever kind of place it is: the cluster's at a cluster, the computer's at a PC, the host's at a naru-host place. The value stays `cluster` at every kind of place. Any other value is malformed.
 - **OWN-2.** A garam-owned object MUST carry all three annotations, each in the form above.
 - **OWN-3.** A cluster-owned object MUST NOT carry any of the three annotations.
 - **OWN-4.** Admission does not check the marker: a CEL rule cannot read labels or annotations. An implementation MUST admit an object whose marker is malformed if the rest of it is admissible. A reader that acts on ownership MUST NOT act on an object with a malformed marker as if it had either owner. `ManagementOf` in this package is the parser, and `MarkGaramOwned` writes the marker.
