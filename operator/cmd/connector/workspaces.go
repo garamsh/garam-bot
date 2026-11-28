@@ -93,6 +93,7 @@ type workspaceEnv struct {
 	namespaces []string
 	keys       workspaceaccess.Keys
 	bots       workspaceaccess.Bots
+	liveBots   workspaceaccess.LiveBots
 	pods       workspaceaccess.Pods
 	naru       workspace.Provider
 	// service and address are the bot token server's Service and listen address, whose names and port
@@ -159,7 +160,7 @@ func workspaceAccess(ctx context.Context, o workspaceOptions, env workspaceEnv) 
 	}
 	return workspaceaccess.NewService(workspaceaccess.Config{
 		Release: env.release, Namespaces: env.namespaces, Audience: o.audience, Origins: origins,
-		Keys: env.keys, Pods: env.pods, Bots: env.bots, Places: places, Images: images,
+		Keys: env.keys, Pods: env.pods, Bots: env.bots, LiveBots: env.liveBots, Places: places, Images: images,
 		MaxDials: o.maxDials, Log: env.log,
 	})
 }
@@ -173,19 +174,19 @@ const (
 	readTimeout    = 10 * time.Second
 )
 
-// workspaceClients are interface 7's rest config, for the providers, whose dials stream and so take no
-// request timeout, and a clientset of it whose every request ends at readTimeout, for the Pods and the
-// workspace namespace's ServiceAccount.
-func workspaceClients(base *rest.Config) (*rest.Config, kubernetes.Interface, error) {
+// workspaceClients are interface 7's rest config for the providers, whose dials stream and so take no
+// request timeout; one whose every request ends at readTimeout, for the sweep's live Bots; and a
+// clientset of that one, for the Pods and the workspace namespace's ServiceAccount.
+func workspaceClients(base *rest.Config) (*rest.Config, *rest.Config, kubernetes.Interface, error) {
 	streaming := rest.CopyConfig(base)
 	streaming.QPS, streaming.Burst = workspaceQPS, workspaceBurst
 	reads := rest.CopyConfig(streaming)
 	reads.Timeout = readTimeout
 	kube, err := kubernetes.NewForConfig(reads)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build interface 7's Kubernetes client: %w", err)
+		return nil, nil, nil, fmt.Errorf("build interface 7's Kubernetes client: %w", err)
 	}
-	return streaming, kube, nil
+	return streaming, reads, kube, nil
 }
 
 // unmountBackoff is how unmountDefaultToken waits for the default ServiceAccount, which the

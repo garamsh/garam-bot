@@ -161,7 +161,11 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		return err
 	}
 	release := workspaceaccess.Release{Namespace: o.releaseNamespace, Name: o.releaseName}
-	workspaceRest, workspaceKube, err := workspaceClients(restConfig)
+	workspaceRest, workspaceReads, workspaceKube, err := workspaceClients(restConfig)
+	if err != nil {
+		return err
+	}
+	liveBots, err := workspacekube.NewLiveBots(workspaceReads)
 	if err != nil {
 		return err
 	}
@@ -171,7 +175,7 @@ func run(ctx context.Context, o options, log *slog.Logger) error {
 		bots: workspacekube.Bots{
 			Reader: objects.Reader(), Claims: objects, Release: o.releaseNamespace + "/" + o.releaseName,
 		},
-		service: o.botTokenService, address: o.botTokenAddress, log: log,
+		liveBots: liveBots, service: o.botTokenService, address: o.botTokenAddress, log: log,
 	}
 	if naru != nil {
 		env.naru = naru

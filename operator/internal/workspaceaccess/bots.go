@@ -13,3 +13,10 @@ type Bots interface {
 	// Class answers the WorkspaceClass namespace/name, and false where the namespace declares none.
 	Class(ctx context.Context, namespace, name string) (Class, bool, error)
 }
+
+// LiveBots reads a Bot from the API server as it is now, never from a cache, so the deletion sweep
+// presumes no live Bot absent (ADR 0099 decision 6).
+type LiveBots interface {
+	// UID answers the Bot's UID, and false where the API server holds no Bot of that name.
+	UID(ctx context.Context, bot Bot) (string, bool, error)
+}

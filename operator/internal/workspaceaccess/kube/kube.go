@@ -10,7 +10,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/garamsh/garam-bot/operator/internal/workspaceaccess"
@@ -144,4 +146,37 @@ func wholeCPUs(q resource.Quantity) int64 {
 // bytesOf is q in bytes, rounded up, and 0 where it is negative.
 func bytesOf(q resource.Quantity) uint64 {
 	return uint64(max(0, q.Value()))
+}
+
+// LiveBots reads Bots from the API server, through a reader no cache stands behind, so the deletion
+// sweep never presumes a live Bot absent (ADR 0099 decision 6).
+type LiveBots struct {
+	Reader client.Reader
+}
+
+var _ workspaceaccess.LiveBots = LiveBots{}
+
+// NewLiveBots reads Bots through a client of cfg that has no cache.
+func NewLiveBots(cfg *rest.Config) (LiveBots, error) {
+	scheme := runtime.NewScheme()
+	if err := botv1.AddToScheme(scheme); err != nil {
+		return LiveBots{}, err
+	}
+	reader, err := client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		return LiveBots{}, fmt.Errorf("build the live Bot client: %w", err)
+	}
+	return LiveBots{Reader: reader}, nil
+}
+
+func (l LiveBots) UID(ctx context.Context, bot workspaceaccess.Bot) (string, bool, error) {
+	var read botv1.Bot
+	err := l.Reader.Get(ctx, client.ObjectKey{Namespace: bot.Namespace, Name: bot.Name}, &read)
+	switch {
+	case apierrors.IsNotFound(err):
+		return "", false, nil
+	case err != nil:
+		return "", false, fmt.Errorf("read the Bot %s: %w", bot, err)
+	}
+	return string(read.UID), true, nil
 }

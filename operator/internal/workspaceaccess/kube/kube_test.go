@@ -209,3 +209,16 @@ func TestBots_AnswersABotBeingDeletedAsAbsent(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, ok, "control: a Bot not being deleted is read")
 }
+
+func TestLiveBots_AnswersTheBotsUIDAndAnAbsentBotAsAbsent(t *testing.T) {
+	live := kube.LiveBots{Reader: reader(t, &botv1.Bot{Namespace: team, Name: mira, UID: botUID})}
+
+	uid, exists, err := live.UID(context.Background(), workspaceaccess.Bot{Namespace: team, Name: mira})
+	require.NoError(t, err)
+	assert.True(t, exists)
+	assert.Equal(t, botUID, uid)
+
+	_, exists, err = live.UID(context.Background(), workspaceaccess.Bot{Namespace: team, Name: "rin"})
+	require.NoError(t, err)
+	assert.False(t, exists)
+}

@@ -44,7 +44,7 @@ Each workspace's interface 2 port echoes what it is sent, so a dial's bytes are 
 `operator/test/workspaceaccess` serves the connector's `internal/workspaceaccess` over stand-ins for kube-apiserver's keys and Pods, the watched namespaces' Bots and claims, and `workspacefake` as the Pod provider, and is its fixture. `make -C operator conformance-workspace-access` runs the suite against it in the operator's `make ci`. It is built under the `e2e` tag for the test hooks `max-dials` and `limits` read, and no release carries it.
 
 - **What it models.** It signs each credential with a key the service trusts as the API server's, so `credential`'s flags are its own. Its provider decorates `workspacefake` with the phases `workspace` sets, an incarnation still deleting, and links that a write follows none of. `clock --advance` moves the service's clock.
-- **What it cannot model.** `exists` answers `cannotModel` until the connector's deletion sweep is built (garam-bot#1281), so the two cases that read it skip.
+- **The sweep.** `remove` and `remake` run the connector's deletion sweep twice through a test hook, the second pass with the sweep's clock past its grace, and return once it has deleted the earlier Bot's workspaces. The sweep reads its Bots from the fixture's map, as a live `GET` of the API server would answer. `exists` reads the provider.
 - **What it leaves to the cluster.** CRED-2's binding to a Pod the Bot's StatefulSet controls, and BOT-1's resolution from it, are read by `internal/workspaceaccess/kube`, which the harness stands in for. Its tests and the suite on kind hold them.
 
 ### A cluster's fixture

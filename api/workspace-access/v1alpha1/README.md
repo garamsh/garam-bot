@@ -34,7 +34,7 @@ The normative specification of garam-bot's interface 7, workspace access, at ver
 | Implementation | Place | State |
 |---|---|---|
 | `reference` | none: it issues its own place credentials, models workload instances and their restarts, holds its bots and workspaces in memory, echoes on each workspace's interface 2 port, and issues stub session tokens | the reference implementation, built, passing the server suite |
-| `operator/cmd/connector` | a user's cluster (`operator/docs/architecture/connector.md`, garam-bot-operator ADR 0099) | first production implementation, built in `operator/internal/workspaceaccess`, passing the server suite over a harness but the two cases its deletion sweep holds, which is not built yet (garam-bot#1281) |
+| `operator/cmd/connector` | a user's cluster (`operator/docs/architecture/connector.md`, garam-bot-operator ADR 0099) | first production implementation, built in `operator/internal/workspaceaccess`, passing the server suite over a harness (garam-bot#1281) |
 | the daemon | a PC or a naru host (ADR 0039) | second production implementation; to build |
 
 ## Transport
