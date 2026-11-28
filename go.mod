@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/garamsh/garam-bot/api v0.0.0-20261128023818-394c702dab9f
-	github.com/garamsh/naru/lib/machineapi v0.0.0-20261128022846-81d78696bf5f
+	github.com/garamsh/naru/lib/machineapi v0.0.0-20261128043113-fd356f26c62a
 	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0

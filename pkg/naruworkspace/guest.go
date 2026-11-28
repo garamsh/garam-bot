@@ -71,11 +71,12 @@ func (p *Provider) Dial(ctx context.Context, name v1alpha1.Name, port uint16) (n
 	p.mu.Lock()
 	e, ok := p.record[name]
 	var running, named bool
+	var id string
 	var address machineapi.Address
 	if ok {
 		running = phase(e.status.Phase) == v1alpha1.PhaseRunning
 		named = slices.Contains(e.spec.Ports, port)
-		address = e.status.Address
+		id, address = e.id, e.status.Address
 	}
 	p.mu.Unlock()
 	switch {
@@ -86,7 +87,7 @@ func (p *Provider) Dial(ctx context.Context, name v1alpha1.Name, port uint16) (n
 	case !named:
 		return nil, fmt.Errorf("%w: port %d is not among the spec's ports", v1alpha1.ErrInvalid, port)
 	}
-	host, err := serviceHost(address, port)
+	host, err := serviceHost(id, address, port)
 	if err != nil {
 		return nil, fmt.Errorf("dial port %d of the Machine %s: %v", port, name, err)
 	}

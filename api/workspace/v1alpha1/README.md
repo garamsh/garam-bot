@@ -85,7 +85,7 @@ Every refusal is one of the sentinels in `errors.go`, wrapped with `%w`, read wi
 
 ## Mapping onto naru's Machine API
 
-The naru Machine provider is a client of `machines/v1alpha1` (`garamsh/naru` `lib/machineapi` at `81d78696bf5fc61d9e30eee5f5d38c034a6aa08c`, `docs/architecture/machines.md` §The API), linked by the program that runs bots at the place, the cluster connector first. It holds a `caller` certificate that it gets by registering once with a one-time token and a key it makes on site, and renews itself (`garamsh/naru#409`). One workspace is one Machine, named by the workspace's name.
+The naru Machine provider is a client of `machines/v1alpha1` (`garamsh/naru` `lib/machineapi` at `fd356f26c62aa97bec8eab3252d46966a24cca87`, `docs/architecture/machines.md` §The API), linked by the program that runs bots at the place, the cluster connector first. It holds a `caller` certificate that it gets by registering once with a one-time token and a key it makes on site, and renews itself (`garamsh/naru#409`). One workspace is one Machine, named by the workspace's name.
 
 - **Idempotency is naru's.** Every field of a spec reaches the Machine API as written (`cpu` is whole CPUs on both sides), so naru's create comparison is `SameSpec`'s, and the provider compares nothing itself.
 - **A read is the provider's own record.** naru answers env values as `<set>` and file content not at all, so the provider answers `Get` from the spec as naru's read answers it, which is the spec it created with, its env redacted as LIFE-2 requires, and naru's status. It lists the Machines when it starts, so a restart keeps the record.
@@ -108,7 +108,7 @@ The naru Machine provider is a client of `machines/v1alpha1` (`garamsh/naru` `li
 | `Delete` | `DELETE .../machines/{name}`, 202. Its volumes go, its snapshots stay, and the name is held until the volumes are gone |
 | `Exec` | `POST .../machines/{name}/exec`: `command`, `timeoutSeconds`. The Machine API takes no input (naru ADR 0118), so `Capabilities.Stdin` is false and a non-empty `Stdin` is `ErrUnsupported` (EXEC-2). `Timeout` is rounded up to whole seconds, and 0 is naru's bound, 600 seconds; above it the 422 `invalid` is `ErrInvalid`. A command ended at its timeout or by a signal is a result: its `exitCode` is 128 plus the signal |
 | `ReadFile`, `WriteFile` | `GET`, `PUT .../machines/{name}/files?path=` |
-| `Dial(port)` | TLS to naru-proxy with the SNI `p<port>--<id>.<zone>`, the service's stable name (`address.name` with the service in front, naru ADR 0112), then plain TCP to the Machine |
+| `Dial(port)` | TLS to naru-proxy with the SNI `m-p<port>--<id>.<zone>`, the service's stable name, under the zone of the Machine's `address.name`, `m-<id>.<zone>` (naru ADR 0120), then plain TCP to the Machine |
 | `Snapshot(name, of)` | `PUT .../snapshots/{name}` with `machine`. Phases map one to one, and `DiskBytes` is the snapshot spec's one volume's `sizeBytes` |
 | `GetSnapshot`, `DeleteSnapshot` | `GET`, `DELETE .../snapshots/{name}` |
 | `Capabilities.Snapshot` | true: `capabilities.snapshot` always holds `volumes` |

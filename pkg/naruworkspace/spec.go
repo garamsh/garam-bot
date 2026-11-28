@@ -1,10 +1,11 @@
 package naruworkspace
 
 import (
-	"errors"
+	"fmt"
 	"maps"
 	"net/netip"
 	"strconv"
+	"strings"
 
 	"github.com/garamsh/naru/lib/machineapi"
 
@@ -89,14 +90,16 @@ func diskBytes(m machineapi.Spec) uint64 {
 // serviceName is the Machine service a workspace port is: p<port>.
 func serviceName(port uint16) string { return "p" + strconv.Itoa(int(port)) }
 
-// serviceHost is the name naru-proxy routes a Machine's service by, the SNI Dial sends: the
-// service in front of the Machine's stable name, <service>--<id>.<zone> (naru ADR 0112 item 1).
-func serviceHost(address machineapi.Address, port uint16) (string, error) {
-	if address.Name == "" {
-		return "", errors.New("the Machine has no stable name yet")
+// serviceHost is the name naru-proxy routes a Machine's service by, the SNI Dial sends:
+// m-<service>--<id>.<zone> (naru ADR 0120). The zone is the one the Machine's stable name,
+// m-<id>.<zone>, is under.
+func serviceHost(id string, address machineapi.Address, port uint16) (string, error) {
+	zone, ok := strings.CutPrefix(address.Name, machineapi.StableName(id, "", ""))
+	if !ok || zone == "" {
+		return "", fmt.Errorf("the Machine's stable name %q is not m-<id>.<zone>", address.Name)
 	}
 
-	return serviceName(port) + "--" + address.Name, nil
+	return machineapi.StableName(id, serviceName(port), zone), nil
 }
 
 // phase is the workspace phase a Machine phase maps to (README §Mapping onto naru's Machine API).

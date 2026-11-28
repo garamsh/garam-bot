@@ -30,7 +30,7 @@ import (
 )
 
 // zone is the zone the fake's stable names are under.
-const zone = "m.example.test"
+const zone = "example.test"
 
 // callerName is the caller the fleet's registration token names.
 const callerName = "garam-bot"
@@ -237,7 +237,7 @@ func (g *gate) open() {
 }
 
 // proxyDouble stands in for naru-proxy: it terminates TLS with a certificate for *.<zone> and, for
-// an SNI naming the tcp service of a running Machine of the caller, echoes what it is sent, as the
+// an SNI that is the stable name of the tcp service of a running Machine of the caller, echoes what it is sent, as the
 // conformance image does on its port. Any other SNI is closed.
 type proxyDouble struct {
 	addr   string
@@ -293,8 +293,7 @@ func (p *proxyDouble) serve(c net.Conn) {
 	_, _ = io.Copy(conn, conn)
 }
 
-// routes reports whether sni is p<port>--<id>.<zone> of a running Machine with a tcp service on
-// that port.
+// routes reports whether sni is m-<service>--<id>.<zone> of a running Machine's tcp service.
 func (p *proxyDouble) routes(sni string) bool {
 	list, err := p.caller.Machines(context.Background())
 	if err != nil {
@@ -305,7 +304,7 @@ func (p *proxyDouble) routes(sni string) bool {
 			continue
 		}
 		if slices.ContainsFunc(m.Spec.Services, func(s machineapi.Service) bool {
-			return s.Protocol == machineapi.ServiceTCP && sni == fmt.Sprintf("p%d--%s", s.Port, m.Status.Address.Name)
+			return s.Protocol == machineapi.ServiceTCP && sni == machineapi.StableName(m.ID, s.Name, zone)
 		}) {
 			return true
 		}

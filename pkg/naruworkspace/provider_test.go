@@ -254,7 +254,7 @@ func TestDial_SendsTheServiceNameOfThePort(t *testing.T) {
 		require.NoError(t, err)
 		tlsConn, ok := conn.(*tls.Conn)
 		require.True(t, ok, "Dial answers the TLS connection to naru-proxy")
-		assert.Equal(t, fmt.Sprintf("p%d--%s", port, m.Status.Address.Name), tlsConn.ConnectionState().ServerName)
+		assert.Equal(t, fmt.Sprintf("m-p%d--%s.%s", port, m.ID, zone), tlsConn.ConnectionState().ServerName)
 		_ = conn.Close()
 	}
 }
