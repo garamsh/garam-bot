@@ -17,12 +17,15 @@
 3. **Every tool is an MCP server outside the workspace, with a token file.** The tool's own credential, whichever of garam, secretRef or federated it is, is held and added at the execution place, never in the workspace. The model is interface 5's gateway, with a token file read again for each request, billed by API with no subscription login, and an organization may bring its own key (comment 19858505). The workspace reaches both by its egress rules.
 4. **The bot's memory is kept by the bot's process from the events,** not by the harness.
 5. **The reference implementation is `agentfake`; the first production implementations are the claude-code and codex adapters.**
+6. **The claude-code adapter reaches the model and the tools through loopback proxies, because Claude Code reads neither a token file nor a header per request.** It runs one `claude -p` per task with a clean environment, pointed at a proxy on 127.0.0.1 that forwards only to `model.baseUrl`, and each tool's MCP URL is a proxy forwarding only to that tool's URL. A proxy binds a kernel-picked port, refuses any other upstream, follows no redirect, reads its token file for each request, sets the `Authorization` header from it, and logs neither a token nor a header. The harness holds a placeholder token only. The adapter and the harness run as one numeric user, so the harness can read the token files, and a process in the workspace that reaches a proxy gains no more than that. The only mode is the organization's own API key through the gateway; whether garam may pay for usage is not decided and not built.
+7. **The claude-code adapter's image is `build/claude-code.Dockerfile`,** with the Claude Code version and the Node base pinned, a numeric non-root user, and published by digest. `make test-claude-code` runs the conformance suite against it with stand-ins for the gateway and an MCP server, outside `make ci`.
 
 ## Consequences
 
 - A harness that speaks neither HTTP nor MCP needs an adapter that does, and the adapter is a program in the workspace image.
 - The bot's process needs an MCP proxy at the place to add each tool's credential, and it is where a bot's tool permissions are enforced.
 - The token files are rewritten by the bot's process through interface 3's `WriteFile` before they expire.
+- The claude-code adapter's loopback ports are reachable by anything in the workspace, which is why a proxy only forwards to what the session names and the token files stay the only credentials.
 - A session's events live as long as the session, so a long session holds them all until a bound is added.
 
 ## Signs the decision was wrong
